@@ -39,6 +39,7 @@ contract TestTranchePool is Test {
 
         tranchePool.setMinimumDepositAmountJuniorTranche(10_00_000 * USDT);
         tranchePool.setMaxAllocationCapJuniorTranche(5_00_00_000 * USDT);
+        tranchePool.setMaxAllocationCapEquityTranche(3_00_00_000 * USDT);
 
         tranchePool.setMinimumDepositAmountEquityTranche(50_00_000 * USDT);
         tranchePool.updateWhitelist(seniorUser1, true);
@@ -286,7 +287,7 @@ contract TestTranchePool is Test {
         uint256 juniorUser1DepositAmount = 2_00_00_000 * USDT;
         uint256 juniorUser2DepositAmount = 2_00_00_000 * USDT;
         uint256 juniorUser3DepositAmount = 2_00_00_000 * USDT;
-        vm.startPrank(seniorUser1);
+        vm.startPrank(juniorUser1);
         ERC20Mock(usdt).approve(address(tranchePool), juniorUser1DepositAmount);
         tranchePool.depositJuniorTranche(juniorUser1DepositAmount);
         vm.stopPrank();
@@ -419,6 +420,149 @@ contract TestTranchePool is Test {
         assertEq(
             tranchePool.getTotalJuniorShares(),
             tranchePool.getJuniorTrancheIdleValue()
+        );
+    }
+
+    function testDepositEquityTrancheRevertIfNotOpen() public {
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        vm.startPrank(equityUser1);
+        ERC20Mock(usdt).approve(address(tranchePool), 10_00_000 * USDT);
+        vm.expectRevert(TranchePool.TranchePool__PoolIsNotOpen.selector);
+        tranchePool.depositEquityTranche(10_00_000 * USDT);
+        vm.stopPrank();
+    }
+
+    function testDepositEquityTrancheRevertIfLessThanMinimumDeposit() public {
+        vm.startPrank(equityUser1);
+        ERC20Mock(usdt).approve(address(tranchePool), 1_00_000 * USDT);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "TranchePool__LessThanDepositThreshold(uint256)",
+                1_00_000 * USDT
+            )
+        );
+        tranchePool.depositEquityTranche(1_00_000 * USDT);
+        vm.stopPrank();
+    }
+
+    function testDepositRevertIfUserIsNotWhiteListedEquityTranche() public {
+        vm.startPrank(falseUser);
+        uint256 falseUser1DepositAmount = 5_00_00_000 * USDT;
+        ERC20Mock(usdt).approve(address(tranchePool), falseUser1DepositAmount);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "TranchePool__NotWhiteListedForEquityTranche(address)",
+                falseUser
+            )
+        );
+        tranchePool.depositEquityTranche(falseUser1DepositAmount);
+        vm.stopPrank();
+    }
+
+    function testDepostiEquuityTracheRevertsIfMaxPoolCapExceeeded() public {
+        uint256 equityUser1DepositAmount = 5_00_00_000 * USDT;
+        uint256 equityUser2DepositAmount = 5_00_00_000 * USDT;
+        vm.startPrank(equityUser1);
+        ERC20Mock(usdt).approve(address(tranchePool), equityUser1DepositAmount);
+        tranchePool.depositEquityTranche(equityUser1DepositAmount);
+        vm.stopPrank();
+
+        vm.startPrank(equityUser2);
+        ERC20Mock(usdt).approve(address(tranchePool), equityUser2DepositAmount);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "TranchePool__MaxDepositCapExceeded(uint256,uint256)",
+                tranchePool.getJuniorTrancheMaxDepositCap(),
+                equityUser2DepositAmount
+            )
+        );
+        tranchePool.depositEquityTranche(equityUser2DepositAmount);
+        vm.stopPrank();
+    }
+
+    function testFullDepositEquityTranche() public {
+        uint256 equityTrancheDeposit1 = 5_0_00_000 * USDT;
+        uint256 equityTrancheDeposit2 = 5_0_00_000 * USDT;
+        assertEq(tranchePool.getEquityUserIndex(equityUser1), 0);
+        assertEq(tranchePool.getEquityUserIndex(equityUser2), 0);
+        assertEq(tranchePool.getTotalEquityShares(), 0);
+        assertEq(tranchePool.getEquityTrancheIdleValue(), 0);
+        vm.startPrank(equityUser1);
+        ERC20Mock(usdt).approve(address(tranchePool), equityTrancheDeposit1);
+        vm.expectEmit(true, false, false, true);
+        emit TranchePool.FundsDepositedToEquityTranche(
+            equityUser1,
+            equityTrancheDeposit1,
+            equityTrancheDeposit1,
+            block.timestamp
+        );
+        tranchePool.depositEquityTranche(equityTrancheDeposit1);
+        vm.stopPrank();
+        assertEq(tranchePool.getTotalEquityShares(), equityTrancheDeposit1);
+        assertEq(
+            tranchePool.getEquityTrancheIdleValue(),
+            equityTrancheDeposit1
+        );
+
+        vm.startPrank(equityUser2);
+        ERC20Mock(usdt).approve(address(tranchePool), equityTrancheDeposit2);
+        vm.expectEmit(true, false, false, true);
+        emit TranchePool.FundsDepositedToEquityTranche(
+            equityUser2,
+            equityTrancheDeposit2,
+            equityTrancheDeposit2,
+            block.timestamp
+        );
+        tranchePool.depositEquityTranche(equityTrancheDeposit2);
+        vm.stopPrank();
+        assertEq(
+            tranchePool.getEquityTrancheIdleValue(),
+            equityTrancheDeposit1 + equityTrancheDeposit2
+        );
+
+        assertEq(
+            tranchePool.getTotalEquityShares(),
+            equityTrancheDeposit1 + equityTrancheDeposit2
+        );
+
+        assertEq(
+            tranchePool.getEquityTrancheIdleValue(),
+            equityTrancheDeposit1 + equityTrancheDeposit2
+        );
+        assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
+
+        assertEq(
+            tranchePool.getTotalEquityShares(),
+            equityTrancheDeposit1 + equityTrancheDeposit2
+        );
+
+        assertEq(
+            equityTrancheDeposit1,
+            tranchePool.getEquityTrancheBalance(equityUser1)
+        );
+
+        assertEq(tranchePool.getEquityUserIndex(equityUser1), 1e18);
+
+        assertEq(
+            equityTrancheDeposit1,
+            tranchePool.getEquityTrancheShares(equityUser1)
+        );
+
+        assertEq(
+            equityTrancheDeposit2,
+            tranchePool.getEquityTrancheBalance(equityUser2)
+        );
+        assertEq(tranchePool.getEquityUserIndex(equityUser2), 1e18);
+
+        assertEq(
+            equityTrancheDeposit2,
+            tranchePool.getEquityTrancheShares(equityUser2)
+        );
+
+        assertEq(
+            tranchePool.getTotalEquityShares(),
+            tranchePool.getEquityTrancheIdleValue()
         );
     }
 }
