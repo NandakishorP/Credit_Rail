@@ -24,6 +24,10 @@ contract TranchePool is Ownable, ITranchePool {
     error TranchePool__PoolIsNotOpen();
     error TranchePool__InvalidStateTransition(PoolState state);
     error TranchePool__WithdrawNotAllowed(PoolState state);
+    error TranchePool__ZeroValueError();
+    error TranchePool__MaxDepositCapExceeded(uint256 maxCap, uint256 amount);
+    error TranchePool__PoolIsNotCommited();
+    error TranchePool__PrincipalRepaymentExceeded();
 
     // Events
 
@@ -74,6 +78,7 @@ contract TranchePool is Ownable, ITranchePool {
     event CapitalAllocated(
         uint256 seniorAmount,
         uint256 juniorAmount,
+        uint256 equityAmount,
         uint256 time
     );
 
@@ -83,9 +88,8 @@ contract TranchePool is Ownable, ITranchePool {
 
     enum PoolState {
         OPEN, // deposits allowed
+        COMMITED,
         DEPLOYED, // capital deployed, deposits paused
-        HARVEST, // repayments coming in
-        DISTRIBUTION, // interest allocation
         CLOSED // withdrawals only
     }
 
@@ -103,6 +107,9 @@ contract TranchePool is Ownable, ITranchePool {
     uint256 public s_totalEquityShares;
 
     // Total value in each tranche (this decreases when capital is allocated)
+    // why some part of the capital should stay idle.
+    // 1. Liquidity and operational buffer.
+    //
     uint256 public s_seniorTrancheIdleValue;
     uint256 public s_juniorTrancheIdleValue;
     uint256 public s_equityTrancheIdleValue;
@@ -115,6 +122,16 @@ contract TranchePool is Ownable, ITranchePool {
     uint256 public s_minimumDepositAmountSeniorTranche;
     uint256 public s_minimumDepositAmountJuniorTranche;
     uint256 public s_minimumDepositAmountEquityTranche;
+
+    // CHANGED: global interest index (scaled)
+    uint256 public seniorInterestIndex; // 1e18 precision
+    uint256 public juniorInterestIndex; // 1e18 precision
+    uint256 public equityInterestIndex; // 1e18 precision
+
+    // CHANGED: per-user last claimed index
+    mapping(address => uint256) public seniorUserIndex;
+    mapping(address => uint256) public juniorUserIndex;
+    mapping(address => uint256) public equityUserIndex;
 
     // Stable coin
     address public s_stableCoin;
@@ -129,6 +146,10 @@ contract TranchePool is Ownable, ITranchePool {
 
     uint256 public seniorAccruedInterest;
     uint256 public juniorAccruedInterest;
+
+    uint256 public s_seniorTrancheMaxCap;
+    uint256 public s_juniorTrancheMaxCap;
+    uint256 public s_equityTrancheMaxCap;
 
     PoolState public poolState = PoolState.OPEN;
 
@@ -168,31 +189,22 @@ contract TranchePool is Ownable, ITranchePool {
         if (amount < s_minimumDepositAmountSeniorTranche) {
             revert TranchePool__LessThanDepositThreshold(amount);
         }
+        // why there is a max cap exists?
+        //
+        //  1. to prevent the liquidity from sitting idle.abi
+        //
+        if (amount + s_seniorTrancheIdleValue > s_seniorTrancheMaxCap) {
+            revert TranchePool__MaxDepositCapExceeded(
+                s_seniorTrancheMaxCap,
+                amount
+            );
+        }
 
         // Calculate shares to mint
-        uint256 shares;
-        if (s_totalSeniorShares == 0) {
-            shares = amount;
-        } else {
-            // can this share be zero?
-            // why is this the right logic to mint the shares?
-            // can someone gain disproportionate advantage from this equation
-            shares =
-                (amount * s_totalSeniorShares) /
-                (s_seniorTrancheIdleValue + s_seniorTrancheDeployedValue);
-        }
-
-        // why we need this check?
-        /*
-            say total_value = idle +deployed
-            so we need amount * s_totalSeniorShares >= totalValue (invariant)
-            so if the deposit is smaller than the value of one share then the user will loss money because the floor
-            division in solidity will bring it to zero and for the same reason its placed before the tranfer of funds 
-            from the user.
-        */
-        if (shares == 0) {
-            revert TranchePool__ZeroSharesMinted();
-        }
+        // invariant: the total shares == idle value because the deposit is allowed only when
+        // the pool is open and once the pool is moved to a new state new deposits are not allowed
+        // so what shares == amount holding 1:1 is valid and is not affecting or opening any attack vectors.
+        uint256 shares = amount;
 
         IERC20(s_stableCoin).safeTransferFrom(
             msg.sender,
@@ -203,6 +215,7 @@ contract TranchePool is Ownable, ITranchePool {
         s_seniorTrancheShares[msg.sender] += shares;
         s_totalSeniorShares += shares;
         s_seniorTrancheIdleValue += amount;
+        seniorUserIndex[msg.sender] = seniorInterestIndex;
 
         emit FundsDepositedToSeniorTranche(
             msg.sender,
@@ -222,18 +235,14 @@ contract TranchePool is Ownable, ITranchePool {
             revert TranchePool__LessThanDepositThreshold(amount);
         }
 
-        uint256 shares;
-        if (s_totalJuniorShares == 0) {
-            shares = amount;
-        } else {
-            shares =
-                (amount * s_totalJuniorShares) /
-                (s_juniorTrancheIdleValue + s_juniorTrancheDeployedValue);
+        if (amount + s_juniorTrancheIdleValue > s_juniorTrancheMaxCap) {
+            revert TranchePool__MaxDepositCapExceeded(
+                s_juniorTrancheMaxCap,
+                amount
+            );
         }
 
-        if (shares == 0) {
-            revert TranchePool__ZeroSharesMinted();
-        }
+        uint256 shares = amount;
 
         IERC20(s_stableCoin).safeTransferFrom(
             msg.sender,
@@ -244,6 +253,7 @@ contract TranchePool is Ownable, ITranchePool {
         s_juniorTrancheShares[msg.sender] += shares;
         s_totalJuniorShares += shares;
         s_juniorTrancheIdleValue += amount;
+        juniorUserIndex[msg.sender] = juniorInterestIndex;
 
         emit FundsDepositedToJuniorTranche(
             msg.sender,
@@ -263,19 +273,14 @@ contract TranchePool is Ownable, ITranchePool {
             revert TranchePool__LessThanDepositThreshold(amount);
         }
 
-        uint256 shares;
-
-        if (s_totalEquityShares == 0) {
-            shares = amount;
-        } else {
-            shares =
-                (amount * s_totalEquityShares) /
-                (s_equityTrancheIdleValue + s_equityTrancheDeployedValue);
+        if (amount + s_equityTrancheIdleValue > s_equityTrancheMaxCap) {
+            revert TranchePool__MaxDepositCapExceeded(
+                s_equityTrancheMaxCap,
+                amount
+            );
         }
 
-        if (shares == 0) {
-            revert TranchePool__ZeroSharesMinted();
-        }
+        uint256 shares = amount;
 
         IERC20(s_stableCoin).safeTransferFrom(
             msg.sender,
@@ -285,6 +290,7 @@ contract TranchePool is Ownable, ITranchePool {
         s_equityTrancheShares[msg.sender] += shares;
         s_totalEquityShares += shares;
         s_equityTrancheIdleValue += amount;
+        equityUserIndex[msg.sender] = equityInterestIndex;
 
         emit FundsDepositedToEquityTranche(
             msg.sender,
@@ -302,8 +308,19 @@ contract TranchePool is Ownable, ITranchePool {
         uint256 totalAmount,
         address deployer
     ) external onlyOwner {
-        if (poolState != PoolState.OPEN) {
-            revert TranchePool__PoolIsNotOpen();
+        if (
+            poolState != PoolState.COMMITED && poolState != PoolState.DEPLOYED
+        ) {
+            revert TranchePool__PoolIsNotCommited();
+        }
+
+        if (
+            totalAmount >
+            (s_seniorTrancheIdleValue +
+                s_juniorTrancheIdleValue +
+                s_equityTrancheIdleValue)
+        ) {
+            revert TranchePool__InsufficientLiquidity();
         }
         uint256 seniorAmount = (totalAmount *
             s_capital_allocation_factor_senior) / 100;
@@ -331,68 +348,100 @@ contract TranchePool is Ownable, ITranchePool {
         // Transfer funds to wherever they're being deployed
         IERC20(s_stableCoin).safeTransfer(deployer, totalAmount);
 
-        emit CapitalAllocated(seniorAmount, juniorAmount, block.timestamp);
+        emit CapitalAllocated(
+            seniorAmount,
+            juniorAmount,
+            equityAmount,
+            block.timestamp
+        );
     }
 
-    function onRepayment(
-        uint256 principal,
-        uint256 interest
-    ) external onlyLoanEngine(msg.sender) {
-        if (principal + interest == 0) {
-            revert TranchePool__InvalidTransferAmount(principal + interest);
-        }
+    // TODO: accrued index update is pending but it can only be determined once we implement the loan engine
 
-        if (interest == 0) {
-            revert TranchePool__InvalidTransferAmount(interest);
+    function onRepayment(
+        uint256 principalRepaid,
+        uint256 interestRepaid
+    ) external onlyLoanEngine(msg.sender) {
+        if (principalRepaid == 0 && interestRepaid == 0) {
+            revert TranchePool__InvalidTransferAmount(0);
         }
 
         IERC20(s_stableCoin).safeTransferFrom(
             loanEngine,
             address(this),
-            principal + interest
+            principalRepaid + interestRepaid
         );
 
-        uint256 remaining = interest;
+        /*//////////////////////////////////////////////////////////////
+                        INTEREST WATERFALL (INDEXED)
+    //////////////////////////////////////////////////////////////*/
 
-        uint256 seniorPaid = _minimum(seniorAccruedInterest, remaining);
-        seniorAccruedInterest -= seniorPaid;
-        s_seniorTrancheIdleValue += seniorPaid;
-        remaining -= seniorPaid;
+        uint256 remainingInterest = interestRepaid;
 
-        uint256 juniorPaid = _minimum(juniorAccruedInterest, remaining);
-
-        juniorAccruedInterest -= juniorPaid;
-        s_juniorTrancheIdleValue += juniorPaid;
-        remaining -= juniorPaid;
-
-        if (remaining > 0) {
-            s_equityTrancheIdleValue += remaining;
+        // 1️⃣ Senior
+        uint256 seniorPaid = _minimum(remainingInterest, seniorAccruedInterest);
+        if (seniorPaid > 0 && s_totalSeniorShares > 0) {
+            seniorAccruedInterest -= seniorPaid;
+            seniorInterestIndex += (seniorPaid * 1e18) / s_totalSeniorShares;
+            remainingInterest -= seniorPaid;
         }
 
-        if (principal != 0) {
-            uint256 seniorAmount = (principal *
+        // 2️⃣ Junior
+        uint256 juniorPaid = _minimum(remainingInterest, juniorAccruedInterest);
+        if (juniorPaid > 0 && s_totalJuniorShares > 0) {
+            juniorAccruedInterest -= juniorPaid;
+            juniorInterestIndex += (juniorPaid * 1e18) / s_totalJuniorShares;
+            remainingInterest -= juniorPaid;
+        }
+
+        // 3️⃣ Equity (kept as raw cash or separate index)
+        if (remainingInterest > 0) {
+            if (s_totalEquityShares == 0 && s_totalJuniorShares > 0) {
+                juniorInterestIndex +=
+                    (remainingInterest * 1e18) /
+                    s_totalJuniorShares;
+            } else {
+                equityInterestIndex +=
+                    (remainingInterest * 1e18) /
+                    s_totalEquityShares;
+            }
+        }
+
+        /*//////////////////////////////////////////////////////////////
+                        PRINCIPAL (BUFFERED)
+    //////////////////////////////////////////////////////////////*/
+
+        if (principalRepaid > 0) {
+            uint256 seniorPrincipal = (principalRepaid *
                 s_capital_allocation_factor_senior) / 100;
-            uint256 juniorAmount = (principal *
+            uint256 juniorPrincipal = (principalRepaid *
                 s_capital_allocation_factor_junior) / 100;
-            uint256 equityAmount = principal - (seniorAmount + juniorAmount);
+            uint256 equityPrincipal = principalRepaid -
+                seniorPrincipal -
+                juniorPrincipal;
 
-            s_seniorTrancheDeployedValue -= seniorAmount;
-            s_juniorTrancheDeployedValue -= juniorAmount;
-            s_equityTrancheDeployedValue -= equityAmount;
+            if (
+                seniorPrincipal > s_seniorTrancheDeployedValue ||
+                juniorPrincipal > s_juniorTrancheDeployedValue ||
+                equityPrincipal > s_equityTrancheDeployedValue
+            ) {
+                revert TranchePool__PrincipalRepaymentExceeded();
+            }
 
-            s_seniorTrancheIdleValue += seniorAmount;
-            s_juniorTrancheIdleValue += juniorAmount;
-            s_equityTrancheIdleValue += equityAmount;
+            s_seniorTrancheDeployedValue -= seniorPrincipal;
+            s_juniorTrancheDeployedValue -= juniorPrincipal;
+            s_equityTrancheDeployedValue -= equityPrincipal;
+
+            s_seniorTrancheIdleValue += seniorPrincipal;
+            s_juniorTrancheIdleValue += juniorPrincipal;
+            s_equityTrancheIdleValue += equityPrincipal;
         }
     }
 
-    function onAccrual(
-        uint256 seniorInterest,
-        uint256 juniorInterest
-    ) external onlyLoanEngine(msg.sender) {
-        seniorAccruedInterest += seniorInterest;
-        juniorAccruedInterest += juniorInterest;
-    }
+    // lp profit withdrawal is pending but it can only be implemented
+    // after the loan enginge implementation which determines how the
+    // interest will be accured and the distribution is dependent on the
+    // share capacity
 
     function onLoss(uint256 loss) external onlyLoanEngine(msg.sender) {
         uint256 remaining = loss;
@@ -423,9 +472,63 @@ contract TranchePool is Ownable, ITranchePool {
         emit LossAllocated(seniorLoss, juniorLoss, equityLoss);
     }
 
+    function claimSeniorInterest() external {
+        uint256 userShares = s_seniorTrancheShares[msg.sender];
+        if (userShares == 0) revert TranchePool__InsufficientShares();
+
+        uint256 indexDelta = seniorInterestIndex - seniorUserIndex[msg.sender];
+
+        if (indexDelta == 0) revert TranchePool__ZeroWithdrawal();
+
+        uint256 claimable = (userShares * indexDelta) / 1e18;
+
+        // CHANGED: update user index BEFORE transfer
+        seniorUserIndex[msg.sender] = seniorInterestIndex;
+
+        IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
+    }
+
+    function claimJuniorInterest() external {
+        uint256 userShares = s_juniorTrancheShares[msg.sender];
+        if (userShares == 0) revert TranchePool__InsufficientShares();
+
+        uint256 indexDelta = juniorInterestIndex - juniorUserIndex[msg.sender];
+
+        if (indexDelta == 0) revert TranchePool__ZeroWithdrawal();
+
+        uint256 claimable = (userShares * indexDelta) / 1e18;
+
+        // CHANGED: update user index BEFORE transfer
+        juniorUserIndex[msg.sender] = juniorInterestIndex;
+
+        IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
+    }
+
+    function claimEquityInterest()
+        external
+        isWhiteListedForEquityTranche(msg.sender)
+    {
+        uint256 userShares = s_equityTrancheShares[msg.sender];
+        if (userShares == 0) revert TranchePool__InsufficientShares();
+
+        uint256 indexDelta = equityInterestIndex - equityUserIndex[msg.sender];
+
+        if (indexDelta == 0) revert TranchePool__ZeroWithdrawal();
+
+        uint256 claimable = (userShares * indexDelta) / 1e18;
+
+        // CHANGED: update user index BEFORE transfer
+        equityUserIndex[msg.sender] = equityInterestIndex;
+
+        IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
+    }
+
     /**
+     *
+     *
      * @notice Withdraw from senior tranche by burning shares
      * @param shares Number of shares to burn (0 = withdraw all)
+     * passing zero amount will cause the burn of all shares
      */
     function withdrawSeniorTranche(
         uint256 shares
@@ -654,7 +757,7 @@ contract TranchePool is Ownable, ITranchePool {
 
     function withdrawEquityTrancheByAmount(
         uint256 amount
-    ) external isWhiteListed(msg.sender) {
+    ) external isWhiteListedForEquityTranche(msg.sender) {
         if (poolState != PoolState.OPEN && poolState != PoolState.CLOSED) {
             revert TranchePool__WithdrawNotAllowed(poolState);
         }
@@ -748,15 +851,41 @@ contract TranchePool is Ownable, ITranchePool {
     function setTrancheCapitalAllocationFactorSenior(
         uint256 factor
     ) external onlyOwner {
-        if (factor > 100) revert TranchePool__InvalidAllocationRatio();
+        if (factor + s_capital_allocation_factor_junior > 100)
+            revert TranchePool__InvalidAllocationRatio();
         s_capital_allocation_factor_senior = factor;
         emit CapitalAllocationFactorUpdatedSenior(factor);
+    }
+
+    function setSeniorUserIndex(uint256 index_) external onlyOwner {
+        if (index_ == 0) {
+            revert TranchePool__ZeroValueError();
+        }
+
+        seniorInterestIndex = index_;
+    }
+
+    function setJuniorUserIndex(uint256 index_) external onlyOwner {
+        if (index_ == 0) {
+            revert TranchePool__ZeroValueError();
+        }
+
+        juniorInterestIndex = index_;
+    }
+
+    function setEquityUserIndex(uint256 index_) external onlyOwner {
+        if (index_ == 0) {
+            revert TranchePool__ZeroValueError();
+        }
+
+        equityInterestIndex = index_;
     }
 
     function setTrancheCapitalAllocationFactorJunior(
         uint256 factor
     ) external onlyOwner {
-        if (factor > 100) revert TranchePool__InvalidAllocationRatio();
+        if (factor + s_capital_allocation_factor_senior > 100)
+            revert TranchePool__InvalidAllocationRatio();
         s_capital_allocation_factor_junior = factor;
         emit CapitalAllocationFactorUpdatedJunior(factor);
     }
@@ -782,11 +911,52 @@ contract TranchePool is Ownable, ITranchePool {
 
         poolState = newState;
 
+        if (poolState == PoolState.CLOSED) {
+            _closePool();
+        }
+
         emit PoolStateUpdated(newState);
+    }
+
+    function _closePool() private {
+        s_seniorTrancheIdleValue += s_seniorTrancheDeployedValue;
+        s_juniorTrancheIdleValue += s_juniorTrancheDeployedValue;
+        s_equityTrancheIdleValue += s_equityTrancheDeployedValue;
+
+        s_seniorTrancheDeployedValue = 0;
+        s_juniorTrancheDeployedValue = 0;
+        s_equityTrancheDeployedValue = 0;
     }
 
     function setLoanEngine(address _loanEngine) external onlyOwner {
         loanEngine = _loanEngine;
+    }
+
+    function setMaxAllocationCapSeniorTranche(
+        uint256 amount
+    ) external onlyOwner {
+        if (amount == 0) {
+            revert TranchePool__ZeroValueError();
+        }
+        s_seniorTrancheMaxCap = amount;
+    }
+
+    function setMaxAllocationCapJuniorTranche(
+        uint256 amount
+    ) external onlyOwner {
+        if (amount == 0) {
+            revert TranchePool__ZeroValueError();
+        }
+        s_juniorTrancheMaxCap = amount;
+    }
+
+    function setMaxAllocationCapEquityTranche(
+        uint256 amount
+    ) external onlyOwner {
+        if (amount == 0) {
+            revert TranchePool__ZeroValueError();
+        }
+        s_equityTrancheMaxCap = amount;
     }
 
     function updateWhitelist(address user, bool status) external onlyOwner {
@@ -806,5 +976,59 @@ contract TranchePool is Ownable, ITranchePool {
         } else {
             return a;
         }
+    }
+
+    // getters
+
+    function getSeniorTrancheMaxDepositCap() external view returns (uint256) {
+        return s_seniorTrancheMaxCap;
+    }
+
+    function getSeniorTrancheShares(
+        address user
+    ) external view returns (uint256) {
+        return s_seniorTrancheShares[user];
+    }
+
+    function getTotalSeniorShares() external view returns (uint256) {
+        return s_totalSeniorShares;
+    }
+
+    function getSeniorTrancheIdleValue() external view returns (uint256) {
+        return s_seniorTrancheIdleValue;
+    }
+
+    function getSeniorTrancheDeployedValue() external view returns (uint256) {
+        return s_seniorTrancheDeployedValue;
+    }
+
+    function getSeniorUserIndex(address user) external view returns (uint256) {
+        return seniorUserIndex[user];
+    }
+
+    function getJuniorTrancheMaxDepositCap() external view returns (uint256) {
+        return s_juniorTrancheMaxCap;
+    }
+
+    function getJuniorTrancheShares(
+        address user
+    ) external view returns (uint256) {
+        return s_juniorTrancheShares[user];
+    }
+
+    function getTotalJuniorShares() external view returns (uint256) {
+        return s_totalJuniorShares;
+    }
+
+    function getJuniorTrancheIdleValue() external view returns (uint256) {
+        return s_juniorTrancheIdleValue;
+    }
+
+    function getJuniorTrancheDeployedValue() external view returns (uint256) {
+        return s_juniorTrancheDeployedValue;
+    }
+
+    function getJuniorUserIndex(address user) external view returns (uint256) {
+        return juniorUserIndex[user];
     }
 }
