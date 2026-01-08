@@ -16,8 +16,6 @@ interface ITranchePool {
 
     function withdrawSeniorTranche(uint256 shares) external;
 
-    function onAccrual(uint256 seniorInterest, uint256 juniorInterest) external;
-
     function onRepayment(uint256 principal, uint256 interest) external;
 
     function allocateCapital(uint256 totalAmount, address deployer) external;
