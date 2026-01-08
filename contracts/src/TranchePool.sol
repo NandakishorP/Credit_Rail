@@ -1031,4 +1031,30 @@ contract TranchePool is Ownable, ITranchePool {
     function getJuniorUserIndex(address user) external view returns (uint256) {
         return juniorUserIndex[user];
     }
+
+    function getEquityTrancheMaxDepositCap() external view returns (uint256) {
+        return s_equityTrancheMaxCap;
+    }
+
+    function getEquityTrancheShares(
+        address user
+    ) external view returns (uint256) {
+        return s_equityTrancheShares[user];
+    }
+
+    function getTotalEquityShares() external view returns (uint256) {
+        return s_totalEquityShares;
+    }
+
+    function getEquityTrancheIdleValue() external view returns (uint256) {
+        return s_equityTrancheIdleValue;
+    }
+
+    function getEquityTrancheDeployedValue() external view returns (uint256) {
+        return s_equityTrancheDeployedValue;
+    }
+
+    function getEquityUserIndex(address user) external view returns (uint256) {
+        return equityUserIndex[user];
+    }
 }
