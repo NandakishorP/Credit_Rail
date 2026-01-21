@@ -176,6 +176,9 @@ contract TranchePool is Ownable, ITranchePool {
 
     constructor(address stableCoin_) Ownable(msg.sender) {
         s_stableCoin = stableCoin_;
+        seniorInterestIndex = 1e18;
+        juniorInterestIndex = 1e18;
+        equityInterestIndex = 1e18;
     }
 
     function depositSeniorTranche(
@@ -689,7 +692,7 @@ contract TranchePool is Ownable, ITranchePool {
 
         // Calculate shares to burn for this amount
         uint256 sharesToBurn = (amount * s_totalSeniorShares) /
-            (s_seniorTrancheIdleValue + s_seniorTrancheDeployedValue);
+            (s_seniorTrancheIdleValue);
 
         // Handle rounding - ensure we don't try to withdraw more than available
         if (sharesToBurn > s_seniorTrancheShares[msg.sender]) {
@@ -735,7 +738,7 @@ contract TranchePool is Ownable, ITranchePool {
         }
 
         uint256 sharesToBurn = (amount * s_totalJuniorShares) /
-            (s_juniorTrancheIdleValue + s_juniorTrancheDeployedValue);
+            (s_juniorTrancheIdleValue);
 
         if (sharesToBurn > s_juniorTrancheShares[msg.sender]) {
             sharesToBurn = s_juniorTrancheShares[msg.sender];
@@ -776,7 +779,7 @@ contract TranchePool is Ownable, ITranchePool {
         }
 
         uint256 sharesToBurn = (amount * s_totalEquityShares) /
-            (s_equityTrancheIdleValue + s_equityTrancheDeployedValue);
+            (s_equityTrancheIdleValue);
 
         if (sharesToBurn > s_equityTrancheShares[msg.sender]) {
             sharesToBurn = s_equityTrancheShares[msg.sender];
@@ -855,30 +858,6 @@ contract TranchePool is Ownable, ITranchePool {
             revert TranchePool__InvalidAllocationRatio();
         s_capital_allocation_factor_senior = factor;
         emit CapitalAllocationFactorUpdatedSenior(factor);
-    }
-
-    function setSeniorUserIndex(uint256 index_) external onlyOwner {
-        if (index_ == 0) {
-            revert TranchePool__ZeroValueError();
-        }
-
-        seniorInterestIndex = index_;
-    }
-
-    function setJuniorUserIndex(uint256 index_) external onlyOwner {
-        if (index_ == 0) {
-            revert TranchePool__ZeroValueError();
-        }
-
-        juniorInterestIndex = index_;
-    }
-
-    function setEquityUserIndex(uint256 index_) external onlyOwner {
-        if (index_ == 0) {
-            revert TranchePool__ZeroValueError();
-        }
-
-        equityInterestIndex = index_;
     }
 
     function setTrancheCapitalAllocationFactorJunior(
