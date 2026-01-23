@@ -13,7 +13,7 @@ contract CreditPolicy {
     error CreditPolicy__PolicyFrozen(uint256 version);
     error CreditPolicy__InvalidVersion();
     error CreditPolicy__PolicyVersionExists(uint256 version);
-
+    error CreditPolicy__InvalidAdmin();
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -23,7 +23,8 @@ contract CreditPolicy {
     }
 
     modifier policyEditable(uint256 version) {
-        if (policyFrozen[version]) revert CreditPolicy__PolicyFrozen(version);
+        if (policyFrozen[version] || !policyActive[version])
+            revert CreditPolicy__PolicyFrozen(version);
         _;
     }
 
@@ -40,7 +41,6 @@ contract CreditPolicy {
     /*//////////////////////////////////////////////////////////////
                             POLICY LIFECYCLE
     //////////////////////////////////////////////////////////////*/
-    uint256 public activePolicyVersion;
     mapping(uint256 => bool) public policyCreated;
     mapping(uint256 => bool) public policyFrozen;
     mapping(uint256 => bool) public policyActive;
@@ -159,6 +159,8 @@ contract CreditPolicy {
         uint256 timestamp
     );
 
+    event PolicyAdminChanged(address newAdmin);
+
     event PolicyDocumentSet(
         uint256 version,
         bytes32 hash,
@@ -183,7 +185,6 @@ contract CreditPolicy {
 
         policyCreated[version] = true;
         policyActive[version] = true;
-        activePolicyVersion = version;
         lastUpdated[version] = block.timestamp;
         emit PolicyCreated(version, block.timestamp);
     }
@@ -191,9 +192,17 @@ contract CreditPolicy {
     function freezePolicy(
         uint256 version
     ) external onlyAdmin policyExists(version) {
+        if (policyFrozen[version]) {
+            revert CreditPolicy__PolicyFrozen(version);
+        }
         policyFrozen[version] = true;
-        policyActive[version] = false;
         emit PolicyFrozen(version, block.timestamp);
+    }
+
+    function deActivatePolicy(
+        uint256 version
+    ) external onlyAdmin policyExists(version) {
+        policyActive[version] = false;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -306,6 +315,11 @@ contract CreditPolicy {
     }
 
     function changePolicyAdmin(address newAdmin) external onlyAdmin {
+        if (newAdmin == address(0)) {
+            revert CreditPolicy__InvalidAdmin();
+        }
         policyAdmin = newAdmin;
+
+        emit PolicyAdminChanged(newAdmin);
     }
 }

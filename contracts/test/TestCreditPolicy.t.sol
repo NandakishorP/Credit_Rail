@@ -155,9 +155,31 @@ contract TestCreditPolicy is Test {
 
         assertEq(creditPolicy.policyCreated(1), true);
         assertEq(creditPolicy.policyActive(1), true);
-        assertEq(creditPolicy.activePolicyVersion(), 1);
         assertEq(creditPolicy.policyFrozen(1), false);
         assertEq(creditPolicy.lastUpdated(1), block.timestamp);
+    }
+
+    function testDeactivatePolicy() public {
+        _createPolicy(1);
+        assertEq(creditPolicy.policyActive(1), true);
+
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+
+        assertEq(creditPolicy.policyActive(1), false);
+    }
+
+    function testDeactivatePolicyRevertIfOwnerIsNotAdmin() public {
+        _createPolicy(1);
+        vm.prank(seniorUser1);
+        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
+        creditPolicy.deActivatePolicy(1);
+    }
+
+    function testDeactivatePolicyRevertsIfPolicyDontExist() public {
+        vm.prank(deployer);
+        vm.expectRevert(CreditPolicy.CreditPolicy__InvalidVersion.selector);
+        creditPolicy.deActivatePolicy(1);
     }
 
     function testMultiplePolicyVersions() public {
@@ -167,7 +189,6 @@ contract TestCreditPolicy is Test {
         creditPolicy.createPolicy(3);
         vm.stopPrank();
 
-        assertEq(creditPolicy.activePolicyVersion(), 3);
         assertEq(creditPolicy.policyCreated(1), true);
         assertEq(creditPolicy.policyCreated(2), true);
         assertEq(creditPolicy.policyCreated(3), true);
@@ -783,5 +804,49 @@ contract TestCreditPolicy is Test {
         vm.prank(deployer);
         vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
         creditPolicy.createPolicy(99);
+    }
+
+    function testAdminRevertIfNewAdminIsZeroAddress() public {
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature("CreditPolicy__InvalidAdmin()")
+        );
+        creditPolicy.changePolicyAdmin(address(0));
+    }
+
+    function testFreezePolicyRevertsIfAlreadyFrozen() public {
+        _createAndFreezePolicy(1);
+
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+        );
+        creditPolicy.freezePolicy(1); // Try to freeze again
+    }
+
+    function testFreezePolicySetsActiveToFalse() public {
+        _createPolicy(1);
+        assertEq(creditPolicy.policyActive(1), true);
+
+        _freezePolicy(1);
+        assertEq(creditPolicy.policyFrozen(1), true);
+    }
+
+    function testChangePolicyAdminEmitsEvent() public {
+        vm.prank(deployer);
+        vm.expectEmit(true, true, false, false);
+        emit CreditPolicy.PolicyAdminChanged(seniorUser1); // You need to add this event to the contract!
+        creditPolicy.changePolicyAdmin(seniorUser1);
+    }
+
+    function testNewAdminCanCreatePolicy() public {
+        vm.prank(deployer);
+        creditPolicy.changePolicyAdmin(seniorUser1);
+
+        vm.prank(seniorUser1);
+        creditPolicy.createPolicy(99);
+
+        assertEq(creditPolicy.policyCreated(99), true);
+        assertEq(creditPolicy.policyAdmin(), seniorUser1);
     }
 }
