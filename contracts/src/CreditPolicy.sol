@@ -148,9 +148,24 @@ contract CreditPolicy {
     event PolicyConcentrationUpdated(uint256 version, uint256 timestamp);
     event PolicyAttestationUpdated(uint256 version, uint256 timestamp);
     event PolicyCovenantsUpdated(uint256 version, uint256 timestamp);
-    event LoanTierUpdated(uint256 version, uint8 tierId);
-    event IndustryExcluded(uint256 version, bytes32 industry);
-    event IndustryIncluded(uint256 version, bytes32 industry);
+    event LoanTierUpdated(uint256 version, uint8 tierId, uint256 timestamp);
+    event IndustryExcluded(
+        uint256 version,
+        bytes32 industry,
+        uint256 timestamp
+    );
+    event IndustryIncluded(
+        uint256 version,
+        bytes32 industry,
+        uint256 timestamp
+    );
+
+    event PolicyDocumentSet(
+        uint256 version,
+        bytes32 hash,
+        string uri,
+        uint256 timestamp
+    );
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
@@ -255,7 +270,7 @@ contract CreditPolicy {
         if (tierId >= totalTiers[version]) {
             totalTiers[version] = tierId + 1;
         }
-        emit LoanTierUpdated(version, tierId);
+        emit LoanTierUpdated(version, tierId, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -266,7 +281,7 @@ contract CreditPolicy {
         bytes32 industry
     ) external onlyAdmin policyEditable(version) policyExists(version) {
         excludedIndustries[version][industry] = true;
-        emit IndustryExcluded(version, industry);
+        emit IndustryExcluded(version, industry, block.timestamp);
     }
 
     function includeIndustry(
@@ -274,7 +289,7 @@ contract CreditPolicy {
         bytes32 industry
     ) external onlyAdmin policyEditable(version) policyExists(version) {
         excludedIndustries[version][industry] = false;
-        emit IndustryIncluded(version, industry);
+        emit IndustryIncluded(version, industry, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -288,5 +303,7 @@ contract CreditPolicy {
         policyDocumentHash[version] = hash;
         policyDocumentURI[version] = uri;
         lastUpdated[version] = block.timestamp;
+
+        emit PolicyDocumentSet(version, hash, uri, block.timestamp);
     }
 }

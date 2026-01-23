@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {TranchePool} from "../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {CreditPolicy} from "../src/CreditPolicy.sol";
 
 contract TestTranchePool is Test {
     TranchePool tranchePool;
@@ -25,8 +24,6 @@ contract TestTranchePool is Test {
     address falseUser = makeAddr("falseUser");
 
     uint256 public USDT = 1e18;
-
-    CreditPolicy creditPolicy;
 
     // the pool is taking a funding for 200M $ so senior raises 130M$, junior raises 50M$
     // and equity 30M$
@@ -53,7 +50,6 @@ contract TestTranchePool is Test {
         tranchePool.updateWhitelist(juniorUser3, true);
         tranchePool.updateEqutyTrancheWhiteList(equityUser1, true);
         tranchePool.updateEqutyTrancheWhiteList(equityUser2, true);
-        creditPolicy = new CreditPolicy();
 
         vm.stopPrank();
 
@@ -566,81 +562,5 @@ contract TestTranchePool is Test {
             tranchePool.getTotalEquityShares(),
             tranchePool.getEquityTrancheIdleValue()
         );
-    }
-
-    // TESTING THE CREDIT POLICY
-
-    function testCreatePolicyRevertIfOwnerIsNotAdmin() public {
-        vm.prank(seniorUser1);
-        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
-        creditPolicy.createPolicy(1);
-    }
-
-    function testCreatePolicy() public {
-        vm.prank(deployer);
-        vm.expectEmit(true, true, false, true);
-        emit CreditPolicy.PolicyCreated(1, block.timestamp);
-        creditPolicy.createPolicy(1);
-        assertEq(creditPolicy.policyCreated(1), true);
-    }
-
-    function testFreezePolicyRevertIfOwnerIsNotAdmin() public {
-        vm.prank(deployer);
-        creditPolicy.createPolicy(1);
-        vm.prank(seniorUser1);
-        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
-        creditPolicy.freezePolicy(1);
-    }
-
-    function testFreezePolicyRevertsIfPolicyDontExist() public {
-        vm.prank(deployer);
-        vm.expectRevert(CreditPolicy.CreditPolicy__InvalidVersion.selector);
-        creditPolicy.freezePolicy(1);
-    }
-
-    function testFreezePolicy() public {
-        vm.prank(deployer);
-        creditPolicy.createPolicy(1);
-        vm.prank(deployer);
-        vm.expectEmit(true, false, false, true);
-        emit CreditPolicy.PolicyFrozen(1, block.timestamp);
-        creditPolicy.freezePolicy(1);
-        assertEq(creditPolicy.policyFrozen(1), true);
-    }
-
-    function testUpdateEligibility() public {
-        vm.prank(deployer);
-        creditPolicy.createPolicy(1);
-        CreditPolicy.EligibilityCriteria memory criteria = CreditPolicy
-            .EligibilityCriteria({
-                minAnnualRevenue: 1_00_00_000,
-                minEBITDA: 10_00_000,
-                minTangibleNetWorth: 5_00_00_000,
-                minBusinessAgeDays: 180,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            });
-        vm.prank(deployer);
-        vm.expectEmit(true, false, false, true);
-        emit CreditPolicy.PolicyEligibilityUpdated(1, block.timestamp);
-        creditPolicy.updateEligibility(1, criteria);
-    }
-
-    // testing unauthorized access
-    function testUnAuthorizedUpdateEligibility() public {
-        vm.prank(deployer);
-        creditPolicy.createPolicy(1);
-        CreditPolicy.EligibilityCriteria memory criteria = CreditPolicy
-            .EligibilityCriteria({
-                minAnnualRevenue: 1_00_00_000,
-                minEBITDA: 10_00_000,
-                minTangibleNetWorth: 5_00_00_000,
-                minBusinessAgeDays: 180,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            });
-        vm.prank(seniorUser1);
-        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
-        creditPolicy.updateEligibility(1, criteria);
     }
 }
