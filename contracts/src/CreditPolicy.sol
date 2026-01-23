@@ -143,7 +143,11 @@ contract CreditPolicy {
     //////////////////////////////////////////////////////////////*/
     event PolicyCreated(uint256 version, uint256 timestamp);
     event PolicyFrozen(uint256 version, uint256 timestamp);
-    event PolicyUpdated(uint256 version);
+    event PolicyEligibilityUpdated(uint256 version, uint256 timestamp);
+    event PolicyRatiosUpdated(uint256 version, uint256 timestamp);
+    event PolicyConcentrationUpdated(uint256 version, uint256 timestamp);
+    event PolicyAttestationUpdated(uint256 version, uint256 timestamp);
+    event PolicyCovenantsUpdated(uint256 version, uint256 timestamp);
     event LoanTierUpdated(uint256 version, uint8 tierId);
     event IndustryExcluded(uint256 version, bytes32 industry);
     event IndustryIncluded(uint256 version, bytes32 industry);
@@ -188,7 +192,7 @@ contract CreditPolicy {
     ) external onlyAdmin policyEditable(version) policyExists(version) {
         eligibility[version] = data;
         lastUpdated[version] = block.timestamp;
-        emit PolicyUpdated(version);
+        emit PolicyEligibilityUpdated(version, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -200,7 +204,7 @@ contract CreditPolicy {
     ) external onlyAdmin policyEditable(version) policyExists(version) {
         ratios[version] = data;
         lastUpdated[version] = block.timestamp;
-        emit PolicyUpdated(version);
+        emit PolicyRatiosUpdated(version, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -212,7 +216,7 @@ contract CreditPolicy {
     ) external onlyAdmin policyEditable(version) policyExists(version) {
         concentration[version] = data;
         lastUpdated[version] = block.timestamp;
-        emit PolicyUpdated(version);
+        emit PolicyConcentrationUpdated(version, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -224,7 +228,7 @@ contract CreditPolicy {
     ) external onlyAdmin policyEditable(version) policyExists(version) {
         attestation[version] = data;
         lastUpdated[version] = block.timestamp;
-        emit PolicyUpdated(version);
+        emit PolicyAttestationUpdated(version, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -236,7 +240,7 @@ contract CreditPolicy {
     ) external onlyAdmin policyEditable(version) policyExists(version) {
         covenants[version] = data;
         lastUpdated[version] = block.timestamp;
-        emit PolicyUpdated(version);
+        emit PolicyCovenantsUpdated(version, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////

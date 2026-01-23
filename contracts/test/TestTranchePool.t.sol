@@ -463,7 +463,7 @@ contract TestTranchePool is Test {
     }
 
     function testDepostiEquuityTracheRevertsIfMaxPoolCapExceeeded() public {
-        uint256 equityUser1DepositAmount = 5_00_00_000 * USDT;
+        uint256 equityUser1DepositAmount = 2_00_00_000 * USDT;
         uint256 equityUser2DepositAmount = 5_00_00_000 * USDT;
         vm.startPrank(equityUser1);
         ERC20Mock(usdt).approve(address(tranchePool), equityUser1DepositAmount);
@@ -475,7 +475,7 @@ contract TestTranchePool is Test {
         vm.expectRevert(
             abi.encodeWithSignature(
                 "TranchePool__MaxDepositCapExceeded(uint256,uint256)",
-                tranchePool.getJuniorTrancheMaxDepositCap(),
+                tranchePool.getEquityTrancheMaxDepositCap(),
                 equityUser2DepositAmount
             )
         );
@@ -606,5 +606,41 @@ contract TestTranchePool is Test {
         emit CreditPolicy.PolicyFrozen(1, block.timestamp);
         creditPolicy.freezePolicy(1);
         assertEq(creditPolicy.policyFrozen(1), true);
+    }
+
+    function testUpdateEligibility() public {
+        vm.prank(deployer);
+        creditPolicy.createPolicy(1);
+        CreditPolicy.EligibilityCriteria memory criteria = CreditPolicy
+            .EligibilityCriteria({
+                minAnnualRevenue: 1_00_00_000,
+                minEBITDA: 10_00_000,
+                minTangibleNetWorth: 5_00_00_000,
+                minBusinessAgeDays: 180,
+                maxDefaultsLast36Months: 0,
+                bankruptcyExcluded: true
+            });
+        vm.prank(deployer);
+        vm.expectEmit(true, false, false, true);
+        emit CreditPolicy.PolicyEligibilityUpdated(1, block.timestamp);
+        creditPolicy.updateEligibility(1, criteria);
+    }
+
+    // testing unauthorized access
+    function testUnAuthorizedUpdateEligibility() public {
+        vm.prank(deployer);
+        creditPolicy.createPolicy(1);
+        CreditPolicy.EligibilityCriteria memory criteria = CreditPolicy
+            .EligibilityCriteria({
+                minAnnualRevenue: 1_00_00_000,
+                minEBITDA: 10_00_000,
+                minTangibleNetWorth: 5_00_00_000,
+                minBusinessAgeDays: 180,
+                maxDefaultsLast36Months: 0,
+                bankruptcyExcluded: true
+            });
+        vm.prank(seniorUser1);
+        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
+        creditPolicy.updateEligibility(1, criteria);
     }
 }
