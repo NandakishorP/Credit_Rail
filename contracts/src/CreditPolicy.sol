@@ -12,7 +12,6 @@ contract CreditPolicy {
     error CreditPolicy__Unauthorized();
     error CreditPolicy__PolicyFrozen(uint256 version);
     error CreditPolicy__InvalidVersion();
-    error CreditPolicy__PolicyInactive();
     error CreditPolicy__PolicyVersionExists(uint256 version);
 
     /*//////////////////////////////////////////////////////////////
@@ -186,7 +185,6 @@ contract CreditPolicy {
         policyActive[version] = true;
         activePolicyVersion = version;
         lastUpdated[version] = block.timestamp;
-
         emit PolicyCreated(version, block.timestamp);
     }
 
@@ -194,7 +192,7 @@ contract CreditPolicy {
         uint256 version
     ) external onlyAdmin policyExists(version) {
         policyFrozen[version] = true;
-
+        policyActive[version] = false;
         emit PolicyFrozen(version, block.timestamp);
     }
 
@@ -204,7 +202,7 @@ contract CreditPolicy {
     function updateEligibility(
         uint256 version,
         EligibilityCriteria calldata data
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         eligibility[version] = data;
         lastUpdated[version] = block.timestamp;
         emit PolicyEligibilityUpdated(version, block.timestamp);
@@ -216,7 +214,7 @@ contract CreditPolicy {
     function updateRatios(
         uint256 version,
         FinancialRatios calldata data
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         ratios[version] = data;
         lastUpdated[version] = block.timestamp;
         emit PolicyRatiosUpdated(version, block.timestamp);
@@ -228,7 +226,7 @@ contract CreditPolicy {
     function updateConcentration(
         uint256 version,
         ConcentrationLimits calldata data
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         concentration[version] = data;
         lastUpdated[version] = block.timestamp;
         emit PolicyConcentrationUpdated(version, block.timestamp);
@@ -240,7 +238,7 @@ contract CreditPolicy {
     function updateAttestation(
         uint256 version,
         AttestationRequirements calldata data
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         attestation[version] = data;
         lastUpdated[version] = block.timestamp;
         emit PolicyAttestationUpdated(version, block.timestamp);
@@ -252,7 +250,7 @@ contract CreditPolicy {
     function updateCovenants(
         uint256 version,
         MaintenanceCovenants calldata data
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         covenants[version] = data;
         lastUpdated[version] = block.timestamp;
         emit PolicyCovenantsUpdated(version, block.timestamp);
@@ -265,7 +263,7 @@ contract CreditPolicy {
         uint256 version,
         uint8 tierId,
         LoanTier calldata tier
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         loanTiers[version][tierId] = tier;
         if (tierId >= totalTiers[version]) {
             totalTiers[version] = tierId + 1;
@@ -279,7 +277,7 @@ contract CreditPolicy {
     function excludeIndustry(
         uint256 version,
         bytes32 industry
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         excludedIndustries[version][industry] = true;
         emit IndustryExcluded(version, industry, block.timestamp);
     }
@@ -287,7 +285,7 @@ contract CreditPolicy {
     function includeIndustry(
         uint256 version,
         bytes32 industry
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         excludedIndustries[version][industry] = false;
         emit IndustryIncluded(version, industry, block.timestamp);
     }
@@ -299,11 +297,15 @@ contract CreditPolicy {
         uint256 version,
         bytes32 hash,
         string calldata uri
-    ) external onlyAdmin policyEditable(version) policyExists(version) {
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
         policyDocumentHash[version] = hash;
         policyDocumentURI[version] = uri;
         lastUpdated[version] = block.timestamp;
 
         emit PolicyDocumentSet(version, hash, uri, block.timestamp);
+    }
+
+    function changePolicyAdmin(address newAdmin) external onlyAdmin {
+        policyAdmin = newAdmin;
     }
 }
