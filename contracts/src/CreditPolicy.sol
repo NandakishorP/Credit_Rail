@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
+import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
 
 /**
  * @title CreditPolicy
  * @notice Immutable-by-version credit constitution for private credit funds
  */
-contract CreditPolicy {
+contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -18,19 +19,31 @@ contract CreditPolicy {
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
     modifier onlyAdmin() {
-        if (msg.sender != policyAdmin) revert CreditPolicy__Unauthorized();
+        _onlyAdmin();
         _;
+    }
+
+    function _onlyAdmin() internal view {
+        if (msg.sender != policyAdmin) revert CreditPolicy__Unauthorized();
     }
 
     modifier policyEditable(uint256 version) {
-        if (policyFrozen[version] || !policyActive[version])
-            revert CreditPolicy__PolicyFrozen(version);
+        _policyEditable(version);
         _;
     }
 
+    function _policyEditable(uint256 version) internal view {
+        if (policyFrozen[version] || !policyActive[version])
+            revert CreditPolicy__PolicyFrozen(version);
+    }
+
     modifier policyExists(uint256 version) {
-        if (!policyCreated[version]) revert CreditPolicy__InvalidVersion();
+        _policyExists(version);
         _;
+    }
+
+    function _policyExists(uint256 version) internal view {
+        if (!policyCreated[version]) revert CreditPolicy__InvalidVersion();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -91,6 +104,7 @@ contract CreditPolicy {
 
     mapping(uint256 => mapping(uint8 => LoanTier)) public loanTiers;
     mapping(uint256 => uint8) public totalTiers;
+    mapping(uint256 => mapping(uint8 => bool)) public tierExists;
 
     /*//////////////////////////////////////////////////////////////
                         CONCENTRATION LIMITS
@@ -274,6 +288,7 @@ contract CreditPolicy {
         LoanTier calldata tier
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         loanTiers[version][tierId] = tier;
+        tierExists[version][tierId] = true;
         if (tierId >= totalTiers[version]) {
             totalTiers[version] = tierId + 1;
         }
@@ -321,5 +336,22 @@ contract CreditPolicy {
         policyAdmin = newAdmin;
 
         emit PolicyAdminChanged(newAdmin);
+    }
+
+    // getters for interface compliance
+
+    function isPolicyActive(uint256 version) external view returns (bool) {
+        return policyActive[version];
+    }
+
+    function isPolicyFrozen(uint256 version) external view returns (bool) {
+        return policyFrozen[version];
+    }
+
+    function tierExistsInPolicy(
+        uint256 version,
+        uint8 tierId
+    ) external view returns (bool) {
+        return tierExists[version][tierId];
     }
 }

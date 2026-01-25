@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
+import {TranchePool} from "../TranchePool.sol";
 
 interface ITranchePool {
     // logic functions
@@ -33,6 +34,8 @@ interface ITranchePool {
 
     // setters
 
+    function onLoss(uint256 loss) external;
+
     function setLoanEngine(address _loanEngine) external;
 
     function setTargetJuniorAPR(uint256 apr) external;
@@ -61,4 +64,6 @@ interface ITranchePool {
     function getSeniorTrancheBalance(
         address user
     ) external view returns (uint256);
+
+    function getPoolState() external view returns (TranchePool.PoolState);
 }

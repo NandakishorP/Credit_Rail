@@ -177,6 +177,8 @@ Repayments occur **off-chain** and are recorded on-chain.
 2. Apply payment to accrued interest
 3. Apply remaining amount to outstanding principal
 4. Forward repayment to the `TranchePool` via `onRepayment()`
+5. Any excess repayment above outstanding principal or interest is ignored and must be reconciled off-chain by the fund administrator.
+
 
 ### Loan Closure
 

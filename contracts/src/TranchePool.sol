@@ -3,9 +3,8 @@ pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ITranchePool} from "./interfaces/ITranchePool.sol";
 
-contract TranchePool is Ownable, ITranchePool {
+contract TranchePool is Ownable {
     using SafeERC20 for IERC20;
 
     // Errors
@@ -154,24 +153,36 @@ contract TranchePool is Ownable, ITranchePool {
     PoolState public poolState = PoolState.OPEN;
 
     modifier isWhiteListed(address user) {
+        _isWhiteListed(user);
+        _;
+    }
+
+    function _isWhiteListed(address user) internal view {
         if (!whiteListedLps[user]) {
             revert TranchePool__NotWhiteListed(user);
         }
-        _;
     }
 
     modifier onlyLoanEngine(address user) {
-        if (user != loanEngine) {
-            revert TranchePool__InvalidCaller(user);
-        }
+        _onlyLoanEngine(user);
         _;
     }
 
+    function _onlyLoanEngine(address user) internal view {
+        if (user != loanEngine) {
+            revert TranchePool__InvalidCaller(user);
+        }
+    }
+
     modifier isWhiteListedForEquityTranche(address user) {
+        _isWhiteListedForEquityTranche(user);
+        _;
+    }
+
+    function _isWhiteListedForEquityTranche(address user) internal view {
         if (!whiteListedForEquityTranche[user]) {
             revert TranchePool__NotWhiteListedForEquityTranche(user);
         }
-        _;
     }
 
     constructor(address stableCoin_) Ownable(msg.sender) {
@@ -310,7 +321,7 @@ contract TranchePool is Ownable, ITranchePool {
     function allocateCapital(
         uint256 totalAmount,
         address deployer
-    ) external onlyOwner {
+    ) external onlyLoanEngine(msg.sender) {
         if (
             poolState != PoolState.COMMITED && poolState != PoolState.DEPLOYED
         ) {
@@ -338,6 +349,11 @@ contract TranchePool is Ownable, ITranchePool {
             revert TranchePool__InsufficientLiquidity();
         }
 
+        if (poolState == PoolState.COMMITED) {
+            poolState = PoolState.DEPLOYED;
+            emit PoolStateUpdated(PoolState.DEPLOYED);
+        }
+
         // Simply reduce the total value - shares remain unchanged
         s_seniorTrancheIdleValue -= seniorAmount;
         s_juniorTrancheIdleValue -= juniorAmount;
@@ -346,7 +362,6 @@ contract TranchePool is Ownable, ITranchePool {
         s_seniorTrancheDeployedValue += seniorAmount;
         s_juniorTrancheDeployedValue += juniorAmount;
         s_equityTrancheDeployedValue += equityAmount;
-        poolState = PoolState.DEPLOYED;
 
         // Transfer funds to wherever they're being deployed
         IERC20(s_stableCoin).safeTransfer(deployer, totalAmount);
@@ -368,12 +383,6 @@ contract TranchePool is Ownable, ITranchePool {
         if (principalRepaid == 0 && interestRepaid == 0) {
             revert TranchePool__InvalidTransferAmount(0);
         }
-
-        IERC20(s_stableCoin).safeTransferFrom(
-            loanEngine,
-            address(this),
-            principalRepaid + interestRepaid
-        );
 
         /*//////////////////////////////////////////////////////////////
                         INTEREST WATERFALL (INDEXED)
@@ -1035,5 +1044,9 @@ contract TranchePool is Ownable, ITranchePool {
 
     function getEquityUserIndex(address user) external view returns (uint256) {
         return equityUserIndex[user];
+    }
+
+    function getPoolState() external view returns (PoolState) {
+        return poolState;
     }
 }
