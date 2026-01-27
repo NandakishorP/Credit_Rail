@@ -19,7 +19,14 @@ interface ITranchePool {
 
     function onRepayment(uint256 principal, uint256 interest) external;
 
-    function allocateCapital(uint256 totalAmount, address deployer) external;
+    function onRecovery(uint256 amount) external;
+
+    function allocateCapital(
+        uint256 totalDisbursement,
+        uint256 fees,
+        address deployer,
+        address feeManager
+    ) external;
 
     function depositEquityTranche(uint256 amount) external;
 

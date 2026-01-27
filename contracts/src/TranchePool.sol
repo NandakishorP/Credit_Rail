@@ -80,7 +80,10 @@ contract TranchePool is Ownable {
         uint256 equityAmount,
         uint256 time
     );
-
+    event RecoverAmountTransferredToTranchePool(
+        uint256 amount,
+        uint256 timeStamp
+    );
     event ProfitTransferredToTranchePool(uint256 amount, uint256 timeStamp);
     event CapitalAllocationFactorUpdatedSenior(uint256 newFactor);
     event CapitalAllocationFactorUpdatedJunior(uint256 newFactor);
@@ -316,17 +319,21 @@ contract TranchePool is Ownable {
 
     /**
      * @notice Allocate capital according to the 80/20 split
-     * @param totalAmount Total amount to allocate from the pool
+     * @param totalDisbursement Total amount to allocate from the pool
+     * @param fees Total fees to be collected
      */
     function allocateCapital(
-        uint256 totalAmount,
-        address deployer
+        uint256 totalDisbursement,
+        uint256 fees,
+        address deployer,
+        address feeManager
     ) external onlyLoanEngine(msg.sender) {
         if (
             poolState != PoolState.COMMITED && poolState != PoolState.DEPLOYED
         ) {
             revert TranchePool__PoolIsNotCommited();
         }
+        uint256 totalAmount = totalDisbursement + fees;
 
         if (
             totalAmount >
@@ -364,8 +371,10 @@ contract TranchePool is Ownable {
         s_equityTrancheDeployedValue += equityAmount;
 
         // Transfer funds to wherever they're being deployed
-        IERC20(s_stableCoin).safeTransfer(deployer, totalAmount);
-
+        IERC20(s_stableCoin).safeTransfer(deployer, totalDisbursement);
+        if (fees > 0) {
+            IERC20(s_stableCoin).safeTransfer(feeManager, fees);
+        }
         emit CapitalAllocated(
             seniorAmount,
             juniorAmount,
@@ -482,6 +491,21 @@ contract TranchePool is Ownable {
         }
 
         emit LossAllocated(seniorLoss, juniorLoss, equityLoss);
+    }
+
+    function onRecovery(uint256 amount) external onlyLoanEngine(msg.sender) {
+        // treat as pure cash inflow
+        uint256 seniorAmount = (amount * s_capital_allocation_factor_senior) /
+            100;
+        uint256 juniorAmount = (amount * s_capital_allocation_factor_junior) /
+            100;
+        uint256 equityAmount = amount - seniorAmount - juniorAmount;
+
+        s_seniorTrancheIdleValue += seniorAmount;
+        s_juniorTrancheIdleValue += juniorAmount;
+        s_equityTrancheIdleValue += equityAmount;
+
+        emit RecoverAmountTransferredToTranchePool(amount, block.timestamp);
     }
 
     function claimSeniorInterest() external {

@@ -164,8 +164,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
     event LoanRecovered(
         uint256 indexed loanId,
-        uint256 principalRecovered,
-        uint256 interestRecovered,
+        uint256 amount,
         uint256 timestamp
     );
 
@@ -275,7 +274,8 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     */
     function activateLoan(
         uint256 loanId,
-        address receivingEntity
+        address receivingEntity,
+        address feeManager
     )
         external
         onlyOwner
@@ -300,7 +300,12 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         s_originationFees[loanId] = originationFee;
 
         uint256 totalDisbursement = loan.principalIssued - originationFee;
-        tranchePool.allocateCapital(totalDisbursement, receivingEntity);
+        tranchePool.allocateCapital(
+            totalDisbursement,
+            originationFee,
+            receivingEntity,
+            feeManager
+        );
         emit LoanActivated(
             loan.loanId,
             loan.principalIssued,
@@ -314,11 +319,11 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         uint256 loanId,
         uint256 principalAmount,
         uint256 interestAmount,
-        address repaymetAgent
+        address repaymentAgent
     )
         external
         onlyOwner
-        isWhiteListedRepaymentAgent(repaymetAgent)
+        isWhiteListedRepaymentAgent(repaymentAgent)
         nonReentrant
     {
         // Implementation goes here
@@ -350,12 +355,12 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         if (fullyRepaid) {
             loan.state = LoanState.REPAID;
         }
+        tranchePool.onRepayment(principalPaid, interestPaid);
         IERC20(s_stableCoinAddress).safeTransferFrom(
-            repaymetAgent,
+            repaymentAgent,
             address(tranchePool),
             principalPaid + interestPaid
         );
-        tranchePool.onRepayment(principalPaid, interestPaid);
 
         emit LoanRepaid(
             loan.loanId,
@@ -388,10 +393,11 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         if (loan.state != LoanState.DEFAULTED) {
             revert LoanEngine__LoanIsNotDefaulted(loanId);
         }
-        uint256 loss = loan.principalOutstanding + loan.interestAccrued;
+        uint256 loss = loan.principalOutstanding;
         if (loss == 0) {
             revert LoanEngine__ZeroLossOnWriteOff(loanId);
         }
+
         loan.principalOutstanding = 0;
         loan.interestAccrued = 0;
         loan.state = LoanState.WRITTEN_OFF;
@@ -401,31 +407,24 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
     function recoverLoan(
         uint256 loanId,
-        uint256 principalAmount,
-        uint256 interestAmount,
+        uint256 amount,
         address recoveryAgent
     ) external onlyOwner isWhiteListedRecoveryAgent(recoveryAgent) {
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.WRITTEN_OFF) {
             revert LoanEngine__LoanNotRecoverable(loanId);
         }
-        if (principalAmount == 0 && interestAmount == 0) {
+        if (amount == 0) {
             revert LoanEngine__ZeroRecovery();
         }
-        uint256 totalRecovered = principalAmount + interestAmount;
-        loan.totalRecovered += totalRecovered;
+        loan.totalRecovered += amount;
         IERC20(s_stableCoinAddress).safeTransferFrom(
             recoveryAgent,
             address(tranchePool),
-            totalRecovered
+            amount
         );
-        tranchePool.onRepayment(principalAmount, interestAmount);
-        emit LoanRecovered(
-            loanId,
-            principalAmount,
-            interestAmount,
-            block.timestamp
-        );
+        tranchePool.onRecovery(amount);
+        emit LoanRecovered(loanId, amount, block.timestamp);
     }
 
     function _accrueInterest(uint256 loanId) internal {
