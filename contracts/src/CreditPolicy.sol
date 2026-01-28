@@ -20,6 +20,7 @@ contract CreditPolicy is ICreditPolicy {
     error CreditPolicy__IncompletePolicy(uint256 version);
     error CreditPolicy__InvalidIndustryHash();
     error CreditPolicy__PolicyNotActive(uint256 version);
+    error CreditPolicy__InvalidTierCount(uint256 count);
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -55,6 +56,7 @@ contract CreditPolicy is ICreditPolicy {
                                 CORE ROLES
     //////////////////////////////////////////////////////////////*/
     address public policyAdmin;
+    uint8 internal maxTiers;
 
     /*//////////////////////////////////////////////////////////////
                             POLICY LIFECYCLE
@@ -178,6 +180,7 @@ contract CreditPolicy is ICreditPolicy {
         bytes32 industry,
         uint256 timestamp
     );
+    event MaxTiersChanged(uint8 maxTiers);
     event IndustryIncluded(
         uint256 version,
         bytes32 industry,
@@ -328,6 +331,10 @@ contract CreditPolicy is ICreditPolicy {
         uint8 tierId,
         LoanTier calldata tier
     ) external onlyAdmin policyExists(version) policyEditable(version) {
+        if (tierId >= maxTiers) {
+            revert CreditPolicy__InvalidTierCount(tierId);
+        }
+        console.log("here");
         loanTiers[version][tierId] = tier;
         tierExists[version][tierId] = true;
         if (tierId >= totalTiers[version]) {
@@ -404,5 +411,17 @@ contract CreditPolicy is ICreditPolicy {
         uint8 tierId
     ) external view returns (bool) {
         return tierExists[version][tierId];
+    }
+
+    function setMaxTiers(uint8 _maxTiers) external onlyAdmin {
+        if (_maxTiers == 255) {
+            revert CreditPolicy__InvalidTierCount(_maxTiers);
+        }
+        maxTiers = _maxTiers;
+        emit MaxTiersChanged(_maxTiers);
+    }
+
+    function getMaxTiers() external view returns (uint8) {
+        return maxTiers;
     }
 }

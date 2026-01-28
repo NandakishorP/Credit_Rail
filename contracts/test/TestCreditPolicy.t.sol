@@ -10,8 +10,10 @@ contract TestCreditPolicy is Test {
     CreditPolicy creditPolicy;
 
     function setUp() public {
-        vm.prank(deployer);
+        vm.startPrank(deployer);
         creditPolicy = new CreditPolicy();
+        creditPolicy.setMaxTiers(50);
+        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -552,6 +554,27 @@ contract TestCreditPolicy is Test {
         vm.stopPrank();
     }
 
+    function testFreezePolicyRevertsIfNoDocumentHashSet() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        // Note: NOT setting document hash
+
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__IncompletePolicy(uint256)",
+                1
+            )
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
     /*//////////////////////////////////////////////////////////////
                         ADMIN TESTS
     //////////////////////////////////////////////////////////////*/
@@ -623,6 +646,33 @@ contract TestCreditPolicy is Test {
         vm.expectEmit(true, false, false, true);
         emit CreditPolicy.PolicyEligibilityUpdated(1, block.timestamp);
         creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+    }
+
+    function testMultipleEligibilityUpdates() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        uint256 t1 = creditPolicy.lastUpdated(1);
+
+        vm.warp(block.timestamp + 100);
+
+        CreditPolicy.EligibilityCriteria memory newCriteria = CreditPolicy
+            .EligibilityCriteria({
+                minAnnualRevenue: 2_00_00_000,
+                minEBITDA: 20_00_000,
+                minTangibleNetWorth: 10_00_00_000,
+                minBusinessAgeDays: 365,
+                maxDefaultsLast36Months: 1,
+                bankruptcyExcluded: false
+            });
+
+        creditPolicy.updateEligibility(1, newCriteria);
+        assertGt(creditPolicy.lastUpdated(1), t1);
+
+        (uint256 minRev, , , , , ) = creditPolicy.eligibility(1);
+        assertEq(minRev, 2_00_00_000); // Verify it was overwritten
+        vm.stopPrank();
     }
 
     function testUpdateEligibilityStoresDataCorrectly() public {
@@ -915,6 +965,18 @@ contract TestCreditPolicy is Test {
         creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
     }
 
+    function testSetLoanTierWithMaxUint8RevertBecauseOfMaxTierLimit() public {
+        _createPolicy(1);
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__InvalidTierCount(uint256)",
+                255
+            )
+        );
+        creditPolicy.setLoanTier(1, 255, _createMockTier("Max Tier"));
+    }
+
     function testSetLoanTierStoresDataCorrectly() public {
         _createPolicy(1);
         CreditPolicy.LoanTier memory tier = _createMockTier("Premium Tier");
@@ -1009,6 +1071,25 @@ contract TestCreditPolicy is Test {
         assertFalse(creditPolicy.tierExistsInPolicy(1, 1));
     }
 
+    function testOverwriteExistingTier() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+
+        CreditPolicy.LoanTier memory tier1 = _createMockTier("Original");
+        tier1.interestRateBps = 800;
+        creditPolicy.setLoanTier(1, 0, tier1);
+
+        CreditPolicy.LoanTier memory tier2 = _createMockTier("Updated");
+        tier2.interestRateBps = 900;
+        creditPolicy.setLoanTier(1, 0, tier2);
+
+        (string memory name, , , , , , uint256 rate, , , ) = creditPolicy
+            .loanTiers(1, 0);
+        assertEq(name, "Updated");
+        assertEq(rate, 900);
+        vm.stopPrank();
+    }
+
     /*//////////////////////////////////////////////////////////////
                         INDUSTRY EXCLUSION TESTS
     //////////////////////////////////////////////////////////////*/
@@ -1030,6 +1111,19 @@ contract TestCreditPolicy is Test {
         vm.prank(seniorUser1);
         vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
         creditPolicy.excludeIndustry(1, _hashString("IndustryA"));
+    }
+
+    function testExcludeIndustryIsIdempotent() public {
+        _createPolicy(1);
+        bytes32 industry = _hashString("Gambling");
+
+        vm.startPrank(deployer);
+        creditPolicy.excludeIndustry(1, industry);
+        assertTrue(creditPolicy.excludedIndustries(1, industry));
+
+        creditPolicy.excludeIndustry(1, industry);
+        assertTrue(creditPolicy.excludedIndustries(1, industry));
+        vm.stopPrank();
     }
 
     function testExcludeIndustryRevertsIfDataIsZeroHash() public {
@@ -1072,6 +1166,16 @@ contract TestCreditPolicy is Test {
         );
         creditPolicy.includeIndustry(1, _hashString("IndustryA"));
         vm.stopPrank();
+    }
+
+    function testIncludeNeverExcludedIndustry() public {
+        _createPolicy(1);
+        bytes32 industry = _hashString("Tech");
+
+        vm.prank(deployer);
+        creditPolicy.includeIndustry(1, industry); // Should work, sets to false
+
+        assertFalse(creditPolicy.excludedIndustries(1, industry));
     }
 
     function testIncludeIndustryRevertsIfDataIsZeroHash() public {
@@ -1175,6 +1279,19 @@ contract TestCreditPolicy is Test {
         assertEq(creditPolicy.lastUpdated(1), block.timestamp);
     }
 
+    function testUpdatePolicyDocumentMultipleTimes() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+
+        creditPolicy.setPolicyDocument(1, _hashString("doc1"), "uri1");
+        assertEq(creditPolicy.policyDocumentHash(1), _hashString("doc1"));
+
+        creditPolicy.setPolicyDocument(1, _hashString("doc2"), "uri2");
+        assertEq(creditPolicy.policyDocumentHash(1), _hashString("doc2"));
+        assertEq(creditPolicy.policyDocumentURI(1), "uri2");
+        vm.stopPrank();
+    }
+
     function testSetPolicyDocumentRevertsIfNotAdmin() public {
         _createPolicy(1);
         vm.prank(seniorUser1);
@@ -1238,5 +1355,128 @@ contract TestCreditPolicy is Test {
         vm.prank(deployer);
         creditPolicy.updateRatios(1, _createFinancialRatios());
         assertGt(creditPolicy.lastUpdated(1), t1);
+    }
+
+    // Test complete lifecycle
+    function testCompletePolicyLifecycle() public {
+        _createPolicy(1);
+        assertTrue(creditPolicy.policyActive(1));
+        assertFalse(creditPolicy.policyFrozen(1));
+
+        // Build policy
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("T1"));
+        creditPolicy.setPolicyDocument(1, _hashString("doc"), "uri");
+        vm.stopPrank();
+
+        // Freeze
+        _freezePolicy(1);
+        assertTrue(creditPolicy.policyFrozen(1));
+        assertTrue(creditPolicy.policyActive(1));
+
+        // Cannot deactivate frozen policy? - TEST THIS
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+        assertFalse(creditPolicy.policyActive(1));
+        assertTrue(creditPolicy.policyFrozen(1)); // Still frozen
+    }
+
+    // Test interaction between deactivate and freeze
+    function testCannotFreezeDeactivatedPolicy() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("T1"));
+        creditPolicy.setPolicyDocument(1, _hashString("doc"), "uri");
+
+        creditPolicy.deActivatePolicy(1);
+
+        vm.expectRevert(
+            abi.encodeWithSignature("CreditPolicy__PolicyNotActive(uint256)", 1)
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
+    function testIsPolicyActiveGetter() public {
+        _createPolicy(1);
+        assertTrue(creditPolicy.isPolicyActive(1));
+
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+        assertFalse(creditPolicy.isPolicyActive(1));
+    }
+
+    function testIsPolicyFrozenGetter() public {
+        _createAndFreezePolicy(1);
+        assertTrue(creditPolicy.isPolicyFrozen(1));
+
+        _createPolicy(2);
+        assertFalse(creditPolicy.isPolicyFrozen(2));
+    }
+
+    // Test with extremely large version numbers
+    function testPolicyWithLargeVersionNumber() public {
+        uint256 largeVersion = type(uint256).max - 1;
+        vm.prank(deployer);
+        creditPolicy.createPolicy(largeVersion);
+        assertTrue(creditPolicy.policyCreated(largeVersion));
+    }
+
+    // Test setting empty string for tier name
+    function testLoanTierWithEmptyName() public {
+        _createPolicy(1);
+        CreditPolicy.LoanTier memory tier = _createMockTier("");
+
+        vm.prank(deployer);
+        creditPolicy.setLoanTier(1, 0, tier);
+
+        (string memory name, , , , , , , , , ) = creditPolicy.loanTiers(1, 0);
+        assertEq(name, "");
+    }
+
+    function testSetMaxTiersRevertsIfNotAdmin() public {
+        _createPolicy(1);
+        vm.prank(seniorUser1);
+        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
+        creditPolicy.setMaxTiers(30);
+    }
+
+    function testSetMaxTiersRevertIfItsMoreThan255() public {
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__InvalidTierCount(uint256)",
+                255
+            )
+        );
+        creditPolicy.setMaxTiers(255);
+    }
+
+    function testSetMaxTiersUnitTest() public {
+        vm.prank(deployer);
+        vm.expectEmit(true, false, false, true);
+        emit CreditPolicy.MaxTiersChanged(20);
+        creditPolicy.setMaxTiers(20);
+
+        assertEq(creditPolicy.getMaxTiers(), 20);
+    }
+
+    // Test setting empty URI
+    function testSetPolicyDocumentWithEmptyURI() public {
+        _createPolicy(1);
+        vm.prank(deployer);
+        creditPolicy.setPolicyDocument(1, _hashString("hash"), "");
+
+        assertEq(creditPolicy.policyDocumentURI(1), "");
     }
 }
