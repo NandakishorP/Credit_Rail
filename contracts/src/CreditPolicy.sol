@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
+import {console} from "forge-std/console.sol";
 
 /**
  * @title CreditPolicy
@@ -15,6 +16,8 @@ contract CreditPolicy is ICreditPolicy {
     error CreditPolicy__InvalidVersion();
     error CreditPolicy__PolicyVersionExists(uint256 version);
     error CreditPolicy__InvalidAdmin();
+    error CreditPolicy__PolicyNotEditable(uint256 version);
+    error CreditPolicy__IncompletePolicy(uint256 version);
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -34,7 +37,7 @@ contract CreditPolicy is ICreditPolicy {
 
     function _policyEditable(uint256 version) internal view {
         if (policyFrozen[version] || !policyActive[version])
-            revert CreditPolicy__PolicyFrozen(version);
+            revert CreditPolicy__PolicyNotEditable(version);
     }
 
     modifier policyExists(uint256 version) {
@@ -151,6 +154,13 @@ contract CreditPolicy is ICreditPolicy {
     mapping(uint256 => bytes32) public policyDocumentHash;
     mapping(uint256 => string) public policyDocumentURI;
 
+    mapping(uint256 => bool) public eligibilitySet;
+    mapping(uint256 => bool) public ratiosSet;
+    mapping(uint256 => bool) public concentrationSet;
+    mapping(uint256 => bool) public attestationSet;
+    mapping(uint256 => bool) public covenantsSet;
+    mapping(uint256 => bool) public hasAtLeastOneTier;
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -192,7 +202,11 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         POLICY CREATION
     //////////////////////////////////////////////////////////////*/
+
     function createPolicy(uint256 version) external onlyAdmin {
+        if (version == 0) {
+            revert CreditPolicy__InvalidVersion();
+        }
         if (policyCreated[version]) {
             revert CreditPolicy__PolicyVersionExists(version);
         }
@@ -209,6 +223,27 @@ contract CreditPolicy is ICreditPolicy {
         if (policyFrozen[version]) {
             revert CreditPolicy__PolicyFrozen(version);
         }
+        console.log("eligibilitySet:", eligibilitySet[version]);
+        console.log("ratiosSet:", ratiosSet[version]);
+        console.log("concentrationSet:", concentrationSet[version]);
+        console.log("attestationSet:", attestationSet[version]);
+        console.log("covenantsSet:", covenantsSet[version]);
+        console.log("hasAtLeastOneTier:", hasAtLeastOneTier[version]);
+        if (
+            !eligibilitySet[version] ||
+            !ratiosSet[version] ||
+            !concentrationSet[version] ||
+            !attestationSet[version] ||
+            !covenantsSet[version] ||
+            !hasAtLeastOneTier[version]
+        ) {
+            revert CreditPolicy__IncompletePolicy(version);
+        }
+        console.log("here");
+        if (policyDocumentHash[version] == bytes32(0)) {
+            revert CreditPolicy__IncompletePolicy(version);
+        }
+
         policyFrozen[version] = true;
         emit PolicyFrozen(version, block.timestamp);
     }
@@ -228,6 +263,7 @@ contract CreditPolicy is ICreditPolicy {
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         eligibility[version] = data;
         lastUpdated[version] = block.timestamp;
+        eligibilitySet[version] = true;
         emit PolicyEligibilityUpdated(version, block.timestamp);
     }
 
@@ -240,6 +276,7 @@ contract CreditPolicy is ICreditPolicy {
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         ratios[version] = data;
         lastUpdated[version] = block.timestamp;
+        ratiosSet[version] = true;
         emit PolicyRatiosUpdated(version, block.timestamp);
     }
 
@@ -252,6 +289,7 @@ contract CreditPolicy is ICreditPolicy {
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         concentration[version] = data;
         lastUpdated[version] = block.timestamp;
+        concentrationSet[version] = true;
         emit PolicyConcentrationUpdated(version, block.timestamp);
     }
 
@@ -264,6 +302,7 @@ contract CreditPolicy is ICreditPolicy {
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         attestation[version] = data;
         lastUpdated[version] = block.timestamp;
+        attestationSet[version] = true;
         emit PolicyAttestationUpdated(version, block.timestamp);
     }
 
@@ -276,6 +315,7 @@ contract CreditPolicy is ICreditPolicy {
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         covenants[version] = data;
         lastUpdated[version] = block.timestamp;
+        covenantsSet[version] = true;
         emit PolicyCovenantsUpdated(version, block.timestamp);
     }
 
@@ -292,6 +332,8 @@ contract CreditPolicy is ICreditPolicy {
         if (tierId >= totalTiers[version]) {
             totalTiers[version] = tierId + 1;
         }
+        hasAtLeastOneTier[version] = true;
+        lastUpdated[version] = block.timestamp;
         emit LoanTierUpdated(version, tierId, block.timestamp);
     }
 
@@ -303,6 +345,7 @@ contract CreditPolicy is ICreditPolicy {
         bytes32 industry
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         excludedIndustries[version][industry] = true;
+        lastUpdated[version] = block.timestamp;
         emit IndustryExcluded(version, industry, block.timestamp);
     }
 
@@ -311,6 +354,7 @@ contract CreditPolicy is ICreditPolicy {
         bytes32 industry
     ) external onlyAdmin policyExists(version) policyEditable(version) {
         excludedIndustries[version][industry] = false;
+        lastUpdated[version] = block.timestamp;
         emit IndustryIncluded(version, industry, block.timestamp);
     }
 

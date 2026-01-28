@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.24;
 
 import {LoanEngine} from "../src/LoanEngine.sol";
 import {Test} from "forge-std/Test.sol";
@@ -27,14 +27,19 @@ contract TestLoanEngine is Test {
         tranchePool.updateWhitelist(seniorUser1, true);
         creditPolicy = new CreditPolicy();
 
-        _createPolicy(1);
+        creditPolicy.createPolicy(1);
         creditPolicy.updateEligibility(1, _createEligibilityCriteria());
         creditPolicy.updateRatios(1, _createFinancialRatios());
         creditPolicy.updateConcentration(1, _createConcentrationLimits());
         creditPolicy.updateAttestation(1, _createAttestationRequirements());
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
-        creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
-        _freezePolicy(1);
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+        creditPolicy.freezePolicy(1);
         loanEngine = new LoanEngine(
             address(creditPolicy),
             address(verifier),

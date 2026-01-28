@@ -468,7 +468,6 @@ contract TestTranchePoolComplete is Test {
         tranchePool.onRepayment(principalRepaid, interestRepaid);
 
         // Verify principal returned
-        uint256 expectedSenior = (principalRepaid * 80) / 100;
         assertGt(tranchePool.getSeniorTrancheIdleValue(), 0);
     }
 
@@ -847,7 +846,7 @@ contract TestTranchePoolComplete is Test {
         );
     }
 
-    function test_GetBalances_ReturnsZero_WhenNoShares() public {
+    function test_GetBalances_ReturnsZero_WhenNoShares() public view {
         assertEq(tranchePool.getSeniorTrancheBalance(seniorUser1), 0);
         assertEq(tranchePool.getJuniorTrancheBalance(juniorUser1), 0);
         assertEq(tranchePool.getEquityTrancheBalance(equityUser1), 0);

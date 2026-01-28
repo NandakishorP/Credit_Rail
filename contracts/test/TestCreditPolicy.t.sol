@@ -30,6 +30,19 @@ contract TestCreditPolicy is Test {
 
     function _createAndFreezePolicy(uint256 version) internal {
         _createPolicy(version);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+        vm.stopPrank();
         _freezePolicy(version);
     }
 
@@ -135,6 +148,12 @@ contract TestCreditPolicy is Test {
         creditPolicy.createPolicy(1);
     }
 
+    function testCreatePolicyRevertsIfVersionIsZero() public {
+        vm.prank(deployer);
+        vm.expectRevert(CreditPolicy.CreditPolicy__InvalidVersion.selector);
+        creditPolicy.createPolicy(0);
+    }
+
     function testCreatePolicyRevertsIfVersionExists() public {
         _createPolicy(1);
         vm.prank(deployer);
@@ -211,12 +230,24 @@ contract TestCreditPolicy is Test {
         creditPolicy.freezePolicy(1);
     }
 
-    function testFreezePolicy() public {
+    function testFreezePolicyUnitTest() public {
         _createPolicy(1);
-        vm.prank(deployer);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
         vm.expectEmit(true, false, false, true);
         emit CreditPolicy.PolicyFrozen(1, block.timestamp);
         creditPolicy.freezePolicy(1);
+        vm.stopPrank();
         assertEq(creditPolicy.policyFrozen(1), true);
     }
 
@@ -258,7 +289,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.updateEligibility(1, _createEligibilityCriteria());
     }
@@ -331,7 +365,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.updateRatios(1, _createFinancialRatios());
     }
@@ -377,7 +414,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.updateConcentration(1, _createConcentrationLimits());
     }
@@ -423,7 +463,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.updateAttestation(1, _createAttestationRequirements());
     }
@@ -477,7 +520,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
     }
@@ -538,7 +584,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
     }
@@ -611,7 +660,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.excludeIndustry(1, _hashString("IndustryA"));
     }
@@ -648,7 +700,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.includeIndustry(1, _hashString("IndustryA"));
     }
@@ -745,7 +800,10 @@ contract TestCreditPolicy is Test {
         _createAndFreezePolicy(1);
         vm.prank(deployer);
         vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
         );
         creditPolicy.setPolicyDocument(
             1,
@@ -827,7 +885,19 @@ contract TestCreditPolicy is Test {
     function testFreezePolicySetsActiveToFalse() public {
         _createPolicy(1);
         assertEq(creditPolicy.policyActive(1), true);
-
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+        vm.stopPrank();
         _freezePolicy(1);
         assertEq(creditPolicy.policyFrozen(1), true);
     }

@@ -494,6 +494,9 @@ contract TranchePool is Ownable {
     }
 
     function onRecovery(uint256 amount) external onlyLoanEngine(msg.sender) {
+        if (amount == 0) {
+            revert TranchePool__ZeroValueError();
+        }
         // treat as pure cash inflow
         uint256 seniorAmount = (amount * s_capital_allocation_factor_senior) /
             100;
