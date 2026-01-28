@@ -178,6 +178,35 @@ contract TestCreditPolicy is Test {
         assertEq(creditPolicy.lastUpdated(1), block.timestamp);
     }
 
+    function testMultiplePolicyVersions() public {
+        vm.startPrank(deployer);
+        creditPolicy.createPolicy(1);
+        creditPolicy.createPolicy(2);
+        creditPolicy.createPolicy(3);
+        vm.stopPrank();
+
+        assertEq(creditPolicy.policyCreated(1), true);
+        assertEq(creditPolicy.policyCreated(2), true);
+        assertEq(creditPolicy.policyCreated(3), true);
+    }
+
+    function testPolicyVersionIsolation() public {
+        vm.startPrank(deployer);
+        creditPolicy.createPolicy(1);
+        creditPolicy.createPolicy(2);
+
+        bytes32 industry = _hashString("Gambling");
+        creditPolicy.excludeIndustry(1, industry);
+
+        assertTrue(creditPolicy.excludedIndustries(1, industry));
+        assertFalse(creditPolicy.excludedIndustries(2, industry));
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        DEACTIVATE POLICY TESTS
+    //////////////////////////////////////////////////////////////*/
+
     function testDeactivatePolicy() public {
         _createPolicy(1);
         assertEq(creditPolicy.policyActive(1), true);
@@ -201,34 +230,53 @@ contract TestCreditPolicy is Test {
         creditPolicy.deActivatePolicy(1);
     }
 
-    function testMultiplePolicyVersions() public {
-        vm.startPrank(deployer);
-        creditPolicy.createPolicy(1);
-        creditPolicy.createPolicy(2);
-        creditPolicy.createPolicy(3);
-        vm.stopPrank();
+    function testDeactivateUpdatesLastUpdated() public {
+        _createPolicy(1);
+        uint256 t1 = creditPolicy.lastUpdated(1);
 
-        assertEq(creditPolicy.policyCreated(1), true);
-        assertEq(creditPolicy.policyCreated(2), true);
-        assertEq(creditPolicy.policyCreated(3), true);
+        vm.warp(block.timestamp + 100);
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+
+        assertEq(creditPolicy.lastUpdated(1), block.timestamp);
+        assertGt(creditPolicy.lastUpdated(1), t1);
+    }
+
+    function testDeactivatePolicyIsIdempotent() public {
+        _createPolicy(1);
+
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+
+        uint256 t1 = creditPolicy.lastUpdated(1);
+
+        vm.warp(block.timestamp + 10);
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+
+        assertFalse(creditPolicy.policyActive(1));
+        assertEq(creditPolicy.lastUpdated(1), block.timestamp);
+        assertGt(creditPolicy.lastUpdated(1), t1);
+    }
+
+    function testUpdateRevertsIfPolicyInactive() public {
+        _createPolicy(1);
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__PolicyNotEditable(uint256)",
+                1
+            )
+        );
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
     }
 
     /*//////////////////////////////////////////////////////////////
                         FREEZE POLICY TESTS
     //////////////////////////////////////////////////////////////*/
-
-    function testFreezePolicyRevertIfOwnerIsNotAdmin() public {
-        _createPolicy(1);
-        vm.prank(seniorUser1);
-        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
-        creditPolicy.freezePolicy(1);
-    }
-
-    function testFreezePolicyRevertsIfPolicyDontExist() public {
-        vm.prank(deployer);
-        vm.expectRevert(CreditPolicy.CreditPolicy__InvalidVersion.selector);
-        creditPolicy.freezePolicy(1);
-    }
 
     function testFreezePolicyUnitTest() public {
         _createPolicy(1);
@@ -249,6 +297,320 @@ contract TestCreditPolicy is Test {
         creditPolicy.freezePolicy(1);
         vm.stopPrank();
         assertEq(creditPolicy.policyFrozen(1), true);
+    }
+
+    function testFreezePolicyRevertIfOwnerIsNotAdmin() public {
+        _createPolicy(1);
+        vm.prank(seniorUser1);
+        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
+        creditPolicy.freezePolicy(1);
+    }
+
+    function testFreezePolicyRevertsIfPolicyDontExist() public {
+        vm.prank(deployer);
+        vm.expectRevert(CreditPolicy.CreditPolicy__InvalidVersion.selector);
+        creditPolicy.freezePolicy(1);
+    }
+
+    function testFreezePolicyReverstIfPolicyIsNotActive() public {
+        _createPolicy(1);
+        vm.prank(deployer);
+        creditPolicy.deActivatePolicy(1);
+
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature("CreditPolicy__PolicyNotActive(uint256)", 1)
+        );
+        creditPolicy.freezePolicy(1);
+    }
+
+    function testFreezePolicyRevertsIfAlreadyFrozen() public {
+        _createAndFreezePolicy(1);
+
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
+        );
+        creditPolicy.freezePolicy(1); // Try to freeze again
+    }
+
+    function testFreezePolicyMarksPolicyAsFrozen() public {
+        _createPolicy(1);
+        assertEq(creditPolicy.policyActive(1), true);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+        vm.stopPrank();
+        _freezePolicy(1);
+        assertEq(creditPolicy.policyFrozen(1), true);
+    }
+
+    function testFreezeUpdatesLastUpdated() public {
+        _createPolicy(1);
+
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier"));
+        creditPolicy.setPolicyDocument(1, _hashString("doc"), "uri");
+        vm.stopPrank();
+
+        uint256 t1 = creditPolicy.lastUpdated(1);
+
+        vm.warp(block.timestamp + 10);
+        vm.prank(deployer);
+        creditPolicy.freezePolicy(1);
+
+        assertEq(creditPolicy.lastUpdated(1), block.timestamp);
+        assertGt(creditPolicy.lastUpdated(1), t1);
+    }
+
+    function testFreezeDoesNotDeactivatePolicy() public {
+        _createAndFreezePolicy(1);
+        assertTrue(creditPolicy.policyActive(1));
+        assertTrue(creditPolicy.policyFrozen(1));
+    }
+
+    function testFrozenPolicyIsFullyImmutable() public {
+        _createAndFreezePolicy(1);
+
+        vm.startPrank(deployer);
+
+        vm.expectRevert();
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        vm.expectRevert();
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        vm.expectRevert();
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        vm.expectRevert();
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        vm.expectRevert();
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        vm.expectRevert();
+        creditPolicy.setLoanTier(1, 1, _createMockTier("T2"));
+        vm.expectRevert();
+        creditPolicy.excludeIndustry(1, _hashString("X"));
+        vm.expectRevert();
+        creditPolicy.setPolicyDocument(1, _hashString("x"), "uri");
+
+        vm.stopPrank();
+    }
+
+    function testFreezePolicyRevertsIfNoEligibilitySet() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__IncompletePolicy(uint256)",
+                1
+            )
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
+    function testFreezePolicyRevertsIfNoRatiosSet() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__IncompletePolicy(uint256)",
+                1
+            )
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
+    function testFreezePolicyRevertsIfNoConcentrationSet() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__IncompletePolicy(uint256)",
+                1
+            )
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
+    function testFreezePolicyRevertsIfNoAttestationSet() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__IncompletePolicy(uint256)",
+                1
+            )
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
+    function testFreezePolicyRevertsIfNoCovenantsSet() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__IncompletePolicy(uint256)",
+                1
+            )
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
+    function testFreezePolicyRevertsIfNoLoanTiersSet() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "CreditPolicy__IncompletePolicy(uint256)",
+                1
+            )
+        );
+        creditPolicy.freezePolicy(1);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ADMIN TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function testChangePolicyAdmin() public {
+        vm.prank(deployer);
+        creditPolicy.changePolicyAdmin(seniorUser1);
+        assertEq(creditPolicy.policyAdmin(), seniorUser1);
+    }
+
+    function testChaingePolicyAdminRevertsIfNotAdmin() public {
+        vm.prank(seniorUser1);
+        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
+        creditPolicy.changePolicyAdmin(seniorUser2);
+    }
+
+    function testAdminRevertIfNewAdminIsZeroAddress() public {
+        vm.prank(deployer);
+        vm.expectRevert(
+            abi.encodeWithSignature("CreditPolicy__InvalidAdmin()")
+        );
+        creditPolicy.changePolicyAdmin(address(0));
+    }
+
+    function testChangePolicyAdminEmitsEvent() public {
+        vm.prank(deployer);
+        vm.expectEmit(true, true, false, false);
+        emit CreditPolicy.PolicyAdminChanged(seniorUser1); // You need to add this event to the contract!
+        creditPolicy.changePolicyAdmin(seniorUser1);
+    }
+
+    function testOldAdminLosesAccessAfterAdminChange() public {
+        vm.prank(deployer);
+        creditPolicy.changePolicyAdmin(seniorUser1);
+
+        vm.prank(deployer);
+        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
+        creditPolicy.createPolicy(99);
+    }
+
+    function testNewAdminCanCreatePolicy() public {
+        vm.prank(deployer);
+        creditPolicy.changePolicyAdmin(seniorUser1);
+
+        vm.prank(seniorUser1);
+        creditPolicy.createPolicy(99);
+
+        assertEq(creditPolicy.policyCreated(99), true);
+        assertEq(creditPolicy.policyAdmin(), seniorUser1);
+    }
+
+    function testNewAdminCanManageExistingPolicy() public {
+        _createPolicy(1);
+
+        vm.prank(deployer);
+        creditPolicy.changePolicyAdmin(seniorUser1);
+
+        vm.prank(seniorUser1);
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -627,6 +989,26 @@ contract TestCreditPolicy is Test {
         vm.stopPrank();
     }
 
+    function testTotalTiersDoesNotDecrease() public {
+        _createPolicy(1);
+        vm.startPrank(deployer);
+
+        creditPolicy.setLoanTier(1, 5, _createMockTier("T5"));
+        assertEq(creditPolicy.totalTiers(1), 6);
+
+        creditPolicy.setLoanTier(1, 2, _createMockTier("T2"));
+        assertEq(creditPolicy.totalTiers(1), 6);
+    }
+
+    function testTierExistsGetter() public {
+        _createPolicy(1);
+        vm.prank(deployer);
+        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier"));
+
+        assertTrue(creditPolicy.tierExistsInPolicy(1, 0));
+        assertFalse(creditPolicy.tierExistsInPolicy(1, 1));
+    }
+
     /*//////////////////////////////////////////////////////////////
                         INDUSTRY EXCLUSION TESTS
     //////////////////////////////////////////////////////////////*/
@@ -648,6 +1030,15 @@ contract TestCreditPolicy is Test {
         vm.prank(seniorUser1);
         vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
         creditPolicy.excludeIndustry(1, _hashString("IndustryA"));
+    }
+
+    function testExcludeIndustryRevertsIfDataIsZeroHash() public {
+        _createPolicy(1);
+        vm.prank(deployer);
+        vm.expectRevert(
+            CreditPolicy.CreditPolicy__InvalidIndustryHash.selector
+        );
+        creditPolicy.excludeIndustry(1, bytes32(0));
     }
 
     function testExcludeIndustryRevertsIfPolicyDontExist() public {
@@ -681,6 +1072,15 @@ contract TestCreditPolicy is Test {
         );
         creditPolicy.includeIndustry(1, _hashString("IndustryA"));
         vm.stopPrank();
+    }
+
+    function testIncludeIndustryRevertsIfDataIsZeroHash() public {
+        _createPolicy(1);
+        vm.prank(deployer);
+        vm.expectRevert(
+            CreditPolicy.CreditPolicy__InvalidIndustryHash.selector
+        );
+        creditPolicy.includeIndustry(1, bytes32(0));
     }
 
     function testIncludeIndustryRevertsIfNotAdmin() public {
@@ -830,93 +1230,13 @@ contract TestCreditPolicy is Test {
         assertEq(updateTime, block.timestamp);
     }
 
-    function testPolicyVersionIsolation() public {
-        vm.startPrank(deployer);
-        creditPolicy.createPolicy(1);
-        creditPolicy.createPolicy(2);
-
-        bytes32 industry = _hashString("Gambling");
-        creditPolicy.excludeIndustry(1, industry);
-
-        assertTrue(creditPolicy.excludedIndustries(1, industry));
-        assertFalse(creditPolicy.excludedIndustries(2, industry));
-        vm.stopPrank();
-    }
-
-    function testChangePolicyAdmin() public {
-        vm.prank(deployer);
-        creditPolicy.changePolicyAdmin(seniorUser1);
-        assertEq(creditPolicy.policyAdmin(), seniorUser1);
-    }
-
-    function testChaingePolicyAdminRevertsIfNotAdmin() public {
-        vm.prank(seniorUser1);
-        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
-        creditPolicy.changePolicyAdmin(seniorUser2);
-    }
-
-    function testOldAdminLosesAccessAfterAdminChange() public {
-        vm.prank(deployer);
-        creditPolicy.changePolicyAdmin(seniorUser1);
-
-        vm.prank(deployer);
-        vm.expectRevert(CreditPolicy.CreditPolicy__Unauthorized.selector);
-        creditPolicy.createPolicy(99);
-    }
-
-    function testAdminRevertIfNewAdminIsZeroAddress() public {
-        vm.prank(deployer);
-        vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__InvalidAdmin()")
-        );
-        creditPolicy.changePolicyAdmin(address(0));
-    }
-
-    function testFreezePolicyRevertsIfAlreadyFrozen() public {
-        _createAndFreezePolicy(1);
-
-        vm.prank(deployer);
-        vm.expectRevert(
-            abi.encodeWithSignature("CreditPolicy__PolicyFrozen(uint256)", 1)
-        );
-        creditPolicy.freezePolicy(1); // Try to freeze again
-    }
-
-    function testFreezePolicySetsActiveToFalse() public {
+    function testLastUpdatedAlwaysMovesForward() public {
         _createPolicy(1);
-        assertEq(creditPolicy.policyActive(1), true);
-        vm.startPrank(deployer);
-        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        uint256 t1 = creditPolicy.lastUpdated(1);
+
+        vm.warp(block.timestamp + 10);
+        vm.prank(deployer);
         creditPolicy.updateRatios(1, _createFinancialRatios());
-        creditPolicy.updateConcentration(1, _createConcentrationLimits());
-        creditPolicy.updateAttestation(1, _createAttestationRequirements());
-        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
-        creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
-        creditPolicy.setPolicyDocument(
-            1,
-            _hashString("document"),
-            "ipfs://policyDocHash"
-        );
-        vm.stopPrank();
-        _freezePolicy(1);
-        assertEq(creditPolicy.policyFrozen(1), true);
-    }
-
-    function testChangePolicyAdminEmitsEvent() public {
-        vm.prank(deployer);
-        vm.expectEmit(true, true, false, false);
-        emit CreditPolicy.PolicyAdminChanged(seniorUser1); // You need to add this event to the contract!
-        creditPolicy.changePolicyAdmin(seniorUser1);
-    }
-
-    function testNewAdminCanCreatePolicy() public {
-        vm.prank(deployer);
-        creditPolicy.changePolicyAdmin(seniorUser1);
-
-        vm.prank(seniorUser1);
-        creditPolicy.createPolicy(99);
-
-        assertEq(creditPolicy.policyCreated(99), true);
-        assertEq(creditPolicy.policyAdmin(), seniorUser1);
+        assertGt(creditPolicy.lastUpdated(1), t1);
     }
 }

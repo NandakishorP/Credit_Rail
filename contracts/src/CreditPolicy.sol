@@ -18,6 +18,8 @@ contract CreditPolicy is ICreditPolicy {
     error CreditPolicy__InvalidAdmin();
     error CreditPolicy__PolicyNotEditable(uint256 version);
     error CreditPolicy__IncompletePolicy(uint256 version);
+    error CreditPolicy__InvalidIndustryHash();
+    error CreditPolicy__PolicyNotActive(uint256 version);
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -60,7 +62,6 @@ contract CreditPolicy is ICreditPolicy {
     mapping(uint256 => bool) public policyCreated;
     mapping(uint256 => bool) public policyFrozen;
     mapping(uint256 => bool) public policyActive;
-
     mapping(uint256 => uint256) public lastUpdated;
 
     /*//////////////////////////////////////////////////////////////
@@ -191,6 +192,7 @@ contract CreditPolicy is ICreditPolicy {
         string uri,
         uint256 timestamp
     );
+    event PolicyDeactivated(uint256 version, uint256 timestamp);
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
@@ -223,12 +225,9 @@ contract CreditPolicy is ICreditPolicy {
         if (policyFrozen[version]) {
             revert CreditPolicy__PolicyFrozen(version);
         }
-        console.log("eligibilitySet:", eligibilitySet[version]);
-        console.log("ratiosSet:", ratiosSet[version]);
-        console.log("concentrationSet:", concentrationSet[version]);
-        console.log("attestationSet:", attestationSet[version]);
-        console.log("covenantsSet:", covenantsSet[version]);
-        console.log("hasAtLeastOneTier:", hasAtLeastOneTier[version]);
+        if (policyActive[version] == false) {
+            revert CreditPolicy__PolicyNotActive(version);
+        }
         if (
             !eligibilitySet[version] ||
             !ratiosSet[version] ||
@@ -239,12 +238,12 @@ contract CreditPolicy is ICreditPolicy {
         ) {
             revert CreditPolicy__IncompletePolicy(version);
         }
-        console.log("here");
         if (policyDocumentHash[version] == bytes32(0)) {
             revert CreditPolicy__IncompletePolicy(version);
         }
 
         policyFrozen[version] = true;
+        lastUpdated[version] = block.timestamp;
         emit PolicyFrozen(version, block.timestamp);
     }
 
@@ -252,6 +251,8 @@ contract CreditPolicy is ICreditPolicy {
         uint256 version
     ) external onlyAdmin policyExists(version) {
         policyActive[version] = false;
+        lastUpdated[version] = block.timestamp;
+        emit PolicyDeactivated(version, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -344,6 +345,9 @@ contract CreditPolicy is ICreditPolicy {
         uint256 version,
         bytes32 industry
     ) external onlyAdmin policyExists(version) policyEditable(version) {
+        if (industry == bytes32(0)) {
+            revert CreditPolicy__InvalidIndustryHash();
+        }
         excludedIndustries[version][industry] = true;
         lastUpdated[version] = block.timestamp;
         emit IndustryExcluded(version, industry, block.timestamp);
@@ -353,6 +357,9 @@ contract CreditPolicy is ICreditPolicy {
         uint256 version,
         bytes32 industry
     ) external onlyAdmin policyExists(version) policyEditable(version) {
+        if (industry == bytes32(0)) {
+            revert CreditPolicy__InvalidIndustryHash();
+        }
         excludedIndustries[version][industry] = false;
         lastUpdated[version] = block.timestamp;
         emit IndustryIncluded(version, industry, block.timestamp);
