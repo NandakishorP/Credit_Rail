@@ -146,12 +146,17 @@ contract TranchePool is Ownable {
     uint256 public s_senior_apr;
     uint256 public s_target_junior_apr;
 
+    // why are we tracking the senior and junior interest but not the equity tranche,
+    // ans: because we don't have a specific target promise for the equity tranche,what ever is left goes to equity tranche
+    // but the senior and junior tranche have a specific target/promised apr so we need to track that specifically
     uint256 public seniorAccruedInterest;
     uint256 public juniorAccruedInterest;
 
     uint256 public s_seniorTrancheMaxCap;
     uint256 public s_juniorTrancheMaxCap;
     uint256 public s_equityTrancheMaxCap;
+
+    uint256 public s_protocolRevenue;
 
     PoolState public poolState = PoolState.OPEN;
 
@@ -383,7 +388,19 @@ contract TranchePool is Ownable {
         );
     }
 
-    // TODO: accrued index update is pending but it can only be determined once we implement the loan engine
+    function onInterestAccrued(
+        uint256 interestAmount
+    ) external onlyLoanEngine(msg.sender) {
+        if (interestAmount == 0) return;
+
+        uint256 seniorShare = (interestAmount *
+            s_capital_allocation_factor_senior) / 100;
+        uint256 juniorShare = (interestAmount *
+            s_capital_allocation_factor_junior) / 100;
+
+        seniorAccruedInterest += seniorShare;
+        juniorAccruedInterest += juniorShare;
+    }
 
     function onRepayment(
         uint256 principalRepaid,
@@ -416,15 +433,20 @@ contract TranchePool is Ownable {
         }
 
         // 3️⃣ Equity (kept as raw cash or separate index)
+        // what if there is no junior or equity and senior obligations are paid off?
+        // yet to answer
         if (remainingInterest > 0) {
             if (s_totalEquityShares == 0 && s_totalJuniorShares > 0) {
                 juniorInterestIndex +=
                     (remainingInterest * 1e18) /
                     s_totalJuniorShares;
-            } else {
+            } else if (s_totalEquityShares > 0) {
                 equityInterestIndex +=
                     (remainingInterest * 1e18) /
                     s_totalEquityShares;
+            } else {
+                // all tranches are done, protocol takes the rest
+                s_protocolRevenue += remainingInterest;
             }
         }
 
@@ -502,6 +524,8 @@ contract TranchePool is Ownable {
             100;
         uint256 juniorAmount = (amount * s_capital_allocation_factor_junior) /
             100;
+        // why this won't overflow, because the total allocation factor is 100 and
+        // at most possibility is equity gets zero allocation
         uint256 equityAmount = amount - seniorAmount - juniorAmount;
 
         s_seniorTrancheIdleValue += seniorAmount;
@@ -1075,5 +1099,12 @@ contract TranchePool is Ownable {
 
     function getPoolState() external view returns (PoolState) {
         return poolState;
+    }
+
+    function getTotalDeployedValue() external view returns (uint256) {
+        return
+            s_seniorTrancheDeployedValue +
+            s_juniorTrancheDeployedValue +
+            s_equityTrancheDeployedValue;
     }
 }

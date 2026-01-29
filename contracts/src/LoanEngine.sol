@@ -42,6 +42,9 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     error LoanEngine__ZeroRecovery();
     error LoanEngine__LoanNotRecoverable(uint256 loanId);
     error LoanEngine__ZeroLossOnWriteOff(uint256 loanId);
+    error LoanEngine__InvalidFeeManagerEntity(address manager);
+    error LoanEngine__InvalidRecoveryAgent(address agent);
+    error LoanEngine__InvalidRepaymentAgent(address agent);
     modifier isWhiteListedOffRampingEntity(address entity) {
         _isWhiteListedOffRampingEntity(entity);
         _;
@@ -60,7 +63,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
     function _isWhiteListedRecoveryAgent(address agent) internal view {
         if (!whitelistedRecoveryAgents[agent]) {
-            revert LoanEngine__InvalidOffRampingEntity(agent);
+            revert LoanEngine__InvalidRecoveryAgent(agent);
         }
     }
 
@@ -71,7 +74,18 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
     function _isWhiteListedRepaymentAgent(address agent) internal view {
         if (!whitelistedRepaymentAgents[agent]) {
-            revert LoanEngine__InvalidOffRampingEntity(agent);
+            revert LoanEngine__InvalidRepaymentAgent(agent);
+        }
+    }
+
+    modifier isWhiteListedFeeManager(address manager) {
+        _isWhiteListedFeeManager(manager);
+        _;
+    }
+
+    function _isWhiteListedFeeManager(address manager) internal view {
+        if (!whitelistedFeeManagers[manager]) {
+            revert LoanEngine__InvalidFeeManagerEntity(manager);
         }
     }
 
@@ -88,6 +102,9 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
     mapping(address whiteListedRepaymentAgent => bool)
         public whitelistedRepaymentAgents;
+
+    mapping(address whiteListedFeeManager => bool)
+        public whitelistedFeeManagers;
     uint256 public s_nextLoanId = 1;
     uint256 public s_maxOriginationFeeBps;
     address public s_stableCoinAddress;
@@ -280,6 +297,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         external
         onlyOwner
         isWhiteListedOffRampingEntity(receivingEntity)
+        isWhiteListedFeeManager(feeManager)
         nonReentrant
     {
         // Implementation goes here
@@ -445,6 +463,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         if (interest > 0) {
             loan.interestAccrued += interest;
+            tranchePool.onInterestAccrued(interest);
         }
         loan.lastAccrualTimestamp = block.timestamp;
     }
@@ -476,5 +495,12 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         bool isWhitelisted
     ) external onlyOwner {
         whitelistedRepaymentAgents[agent] = isWhitelisted;
+    }
+
+    function setWhitelistedFeeManager(
+        address manager,
+        bool isWhitelisted
+    ) external onlyOwner {
+        whitelistedFeeManagers[manager] = isWhitelisted;
     }
 }
