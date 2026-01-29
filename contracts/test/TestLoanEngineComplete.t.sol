@@ -127,6 +127,8 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             LoanEngine.LoanState state,
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -295,6 +297,8 @@ contract TestLoanEngineComplete is Test {
             uint256 maturityTimestamp,
             ,
             LoanEngine.LoanState state,
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -426,6 +430,8 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             LoanEngine.LoanState state,
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -478,6 +484,8 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             LoanEngine.LoanState state,
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -563,6 +571,8 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             LoanEngine.LoanState state,
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -624,6 +634,8 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             LoanEngine.LoanState stateBefore, // state (position 14) // totalRecovered (position 15)
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -656,6 +668,8 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             LoanEngine.LoanState state, // state (position 14) // totalRecovered (position 15)
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -738,7 +752,7 @@ contract TestLoanEngineComplete is Test {
             recoveryAgent
         );
 
-        (, , , , , , , , , , , , , , , uint256 totalRecovered) = loanEngine
+        (, , , , , , , , , , , , , , , uint256 totalRecovered, , ) = loanEngine
             .s_loans(1);
 
         assertEq(totalRecovered, recoveryPrincipal + recoveryInterest);
@@ -787,7 +801,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         loanEngine.repayLoan(1, 0, 1, repaymentAgent);
 
-        (, , , , , , , , uint256 interestAccrued, , , , , , , ) = loanEngine
+        (, , , , , , , , uint256 interestAccrued, , , , , , , , , ) = loanEngine
             .s_loans(1);
 
         uint256 expectedInterest = (testPrincipal * testAprBps * timeElapsed) /
@@ -809,7 +823,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         loanEngine.repayLoan(1, 0, 1, repaymentAgent);
 
-        (, , , , , , , , uint256 interestAccrued, , , , , , , ) = loanEngine
+        (, , , , , , , , uint256 interestAccrued, , , , , , , , , ) = loanEngine
             .s_loans(1);
 
         // After 1 year at 8% APR
@@ -924,6 +938,8 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             LoanEngine.LoanState state,
+            ,
+            ,
 
         ) = loanEngine.s_loans(1);
 
@@ -973,7 +989,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         loanEngine.recoverLoan(1, recoveryAmount, recoveryAgent);
 
-        (, , , , , , , , , , , , , , , uint256 totalRecovered) = loanEngine
+        (, , , , , , , , , , , , , , , uint256 totalRecovered, , ) = loanEngine
             .s_loans(1);
 
         assertEq(totalRecovered, recoveryAmount);

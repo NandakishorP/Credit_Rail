@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {TranchePool} from "../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {VmSafe} from "forge-std/Vm.sol";
+import {LoanEngine} from "../src/LoanEngine.sol";
 
 contract TestTranchePoolComplete is Test {
     TranchePool tranchePool;
@@ -24,6 +26,9 @@ contract TestTranchePoolComplete is Test {
     address equityUser2 = makeAddr("equityUser2");
 
     address falseUser = makeAddr("falseUser");
+
+    address borrower = makeAddr("borrower");
+    address feeManager = makeAddr("feeManager");
 
     uint256 public USDT = 1e18;
 
@@ -1026,15 +1031,15 @@ contract TestTranchePoolComplete is Test {
 
         uint256 totalDisbursement = 1_00_00_000 * USDT;
         uint256 fees = 10_000 * USDT;
-        address borrower = makeAddr("borrower");
-        address feeManager = makeAddr("feeManager");
+        address borrower_ = makeAddr("borrower");
+        address feeManager_ = makeAddr("feeManager");
 
         vm.prank(loanEngine);
         tranchePool.allocateCapital(
             totalDisbursement,
             fees,
-            borrower,
-            feeManager
+            borrower_,
+            feeManager_
         );
 
         // Check deployed values
@@ -1048,8 +1053,8 @@ contract TestTranchePoolComplete is Test {
         assertEq(tranchePool.getEquityTrancheDeployedValue(), expectedEquity);
 
         // Check transfers
-        assertEq(usdt.balanceOf(borrower), totalDisbursement);
-        assertEq(usdt.balanceOf(feeManager), fees);
+        assertEq(usdt.balanceOf(borrower_), totalDisbursement);
+        assertEq(usdt.balanceOf(feeManager_), fees);
 
         // Check pool state changed to DEPLOYED
         assertEq(
@@ -1065,14 +1070,19 @@ contract TestTranchePoolComplete is Test {
         tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
 
         uint256 totalDisbursement = 1_00_00_000 * USDT;
-        address borrower = makeAddr("borrower");
-        address feeManager = makeAddr("feeManager");
+        address borrower_ = makeAddr("borrower");
+        address feeManager_ = makeAddr("feeManager");
 
         vm.prank(loanEngine);
-        tranchePool.allocateCapital(totalDisbursement, 0, borrower, feeManager);
+        tranchePool.allocateCapital(
+            totalDisbursement,
+            0,
+            borrower_,
+            feeManager_
+        );
 
-        assertEq(usdt.balanceOf(borrower), totalDisbursement);
-        assertEq(usdt.balanceOf(feeManager), 0);
+        assertEq(usdt.balanceOf(borrower_), totalDisbursement);
+        assertEq(usdt.balanceOf(feeManager_), 0);
     }
 
     function test_AllocateCapital_RevertIf_NotCommited() public {
@@ -1088,7 +1098,9 @@ contract TestTranchePoolComplete is Test {
         );
     }
 
-    function test_AllocateCapital_RevertIf_NotDeployed() public {
+    function test_AllocateCapital_RevertIf_Pool_Is_Commited_Or_Deployed()
+        public
+    {
         _depositToAllTranches();
 
         vm.prank(loanEngine);
@@ -1142,6 +1154,417 @@ contract TestTranchePoolComplete is Test {
         );
     }
 
+    function test_AllocateCapital_WhenAlreadyDeployed_Success() public {
+        // Setup: Deposit to all tranches
+        _depositToAllTranches();
+
+        // Move to COMMITTED and then allocate (which moves to DEPLOYED)
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        uint256 firstDisbursement = 50_00_000 * USDT;
+        uint256 firstFees = 5_000 * USDT;
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            firstDisbursement,
+            firstFees,
+            borrower,
+            feeManager
+        );
+
+        // Verify we're in DEPLOYED state
+        assertEq(
+            uint256(tranchePool.getPoolState()),
+            uint256(TranchePool.PoolState.DEPLOYED)
+        );
+
+        // Record state before second allocation
+        uint256 seniorDeployedBefore = tranchePool
+            .getSeniorTrancheDeployedValue();
+        uint256 juniorDeployedBefore = tranchePool
+            .getJuniorTrancheDeployedValue();
+        uint256 equityDeployedBefore = tranchePool
+            .getEquityTrancheDeployedValue();
+
+        uint256 seniorIdleBefore = tranchePool.getSeniorTrancheIdleValue();
+        uint256 juniorIdleBefore = tranchePool.getJuniorTrancheIdleValue();
+        uint256 equityIdleBefore = tranchePool.getEquityTrancheIdleValue();
+
+        // Second allocation while already in DEPLOYED state
+        uint256 secondDisbursement = 30_00_000 * USDT;
+        uint256 secondFees = 3_000 * USDT;
+
+        // Listen for events - should NOT emit PoolStateUpdated
+        vm.recordLogs();
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            secondDisbursement,
+            secondFees,
+            borrower,
+            feeManager
+        );
+
+        // Verify state remains DEPLOYED
+        assertEq(
+            uint256(tranchePool.getPoolState()),
+            uint256(TranchePool.PoolState.DEPLOYED),
+            "Pool state should remain DEPLOYED"
+        );
+
+        // Calculate expected allocations for second disbursement
+        uint256 totalAmount = secondDisbursement + secondFees;
+        uint256 expectedSenior = (totalAmount * 80) / 100;
+        uint256 expectedJunior = (totalAmount * 15) / 100;
+        uint256 expectedEquity = totalAmount - expectedSenior - expectedJunior;
+
+        // Verify deployed values increased correctly
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            seniorDeployedBefore + expectedSenior,
+            "Senior deployed should increase by expected amount"
+        );
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            juniorDeployedBefore + expectedJunior,
+            "Junior deployed should increase by expected amount"
+        );
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            equityDeployedBefore + expectedEquity,
+            "Equity deployed should increase by expected amount"
+        );
+
+        // Verify idle values decreased correctly
+        assertEq(
+            tranchePool.getSeniorTrancheIdleValue(),
+            seniorIdleBefore - expectedSenior,
+            "Senior idle should decrease by expected amount"
+        );
+        assertEq(
+            tranchePool.getJuniorTrancheIdleValue(),
+            juniorIdleBefore - expectedJunior,
+            "Junior idle should decrease by expected amount"
+        );
+        assertEq(
+            tranchePool.getEquityTrancheIdleValue(),
+            equityIdleBefore - expectedEquity,
+            "Equity idle should decrease by expected amount"
+        );
+
+        // Verify NO extra PoolStateUpdated event was emitted
+        VmSafe.Log[] memory logs = vm.getRecordedLogs();
+        uint256 poolStateUpdateCount = 0;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            // PoolStateUpdated event signature
+            if (logs[i].topics[0] == keccak256("PoolStateUpdated(uint8)")) {
+                poolStateUpdateCount++;
+            }
+        }
+
+        assertEq(
+            poolStateUpdateCount,
+            0,
+            "Should not emit PoolStateUpdated when already DEPLOYED"
+        );
+    }
+
+    function test_AllocateCapital_WhenClosed_Reverts() public {
+        // Setup: Deposit to all tranches
+        _depositToAllTranches();
+
+        // Move to CLOSED state
+        vm.startPrank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(TranchePool.PoolState.DEPLOYED);
+        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
+        vm.stopPrank();
+
+        // Try to allocate when CLOSED - should revert
+        uint256 disbursement = 50_00_000 * USDT;
+        uint256 fees = 5_000 * USDT;
+
+        vm.prank(loanEngine);
+        vm.expectRevert(TranchePool.TranchePool__PoolIsNotCommited.selector);
+        tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
+    }
+
+    function test_AllocateCapital_WhenOpen_Reverts() public {
+        // Setup: Deposit to all tranches but stay in OPEN state
+        _depositToAllTranches();
+
+        // Pool is still in OPEN state
+        assertEq(
+            uint256(tranchePool.getPoolState()),
+            uint256(TranchePool.PoolState.OPEN)
+        );
+
+        // Try to allocate when OPEN - should revert
+        uint256 disbursement = 50_00_000 * USDT;
+        uint256 fees = 5_000 * USDT;
+
+        vm.prank(loanEngine);
+        vm.expectRevert(TranchePool.TranchePool__PoolIsNotCommited.selector);
+        tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
+    }
+
+    function test_AllocateCapital_ExactLiquidityMatch_WithRedistribution()
+        public
+    {
+        // ------------------------------------------------------------
+        // Arrange
+        // ------------------------------------------------------------
+
+        uint256 seniorDeposit = 80_00_000 * USDT;
+        uint256 juniorDeposit = 15_00_000 * USDT;
+        uint256 equityDeposit = 50_00_000 * USDT;
+
+        // Senior deposit
+        vm.startPrank(seniorUser1);
+        usdt.approve(address(tranchePool), seniorDeposit);
+        tranchePool.depositSeniorTranche(seniorDeposit);
+        vm.stopPrank();
+
+        // Junior deposit
+        vm.startPrank(juniorUser1);
+        usdt.approve(address(tranchePool), juniorDeposit);
+        tranchePool.depositJuniorTranche(juniorDeposit);
+        vm.stopPrank();
+
+        // Equity deposit
+        vm.startPrank(equityUser1);
+        usdt.approve(address(tranchePool), equityDeposit);
+        tranchePool.depositEquityTranche(equityDeposit);
+        vm.stopPrank();
+
+        uint256 totalAvailable = seniorDeposit + juniorDeposit + equityDeposit;
+
+        // Move pool to COMMITED
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        uint256 disbursement = 144_00_000 * USDT;
+        uint256 fees = 1_00_000 * USDT;
+        uint256 totalAmount = disbursement + fees;
+
+        assertEq(totalAmount, totalAvailable);
+
+        // ------------------------------------------------------------
+        // Act
+        // ------------------------------------------------------------
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
+
+        // ------------------------------------------------------------
+        // Assert — GLOBAL INVARIANTS
+        // ------------------------------------------------------------
+
+        // 1️⃣ All capital must be deployed
+        assertEq(
+            tranchePool.getTotalDeployedValue(),
+            totalAmount,
+            "Total deployed must equal total liquidity"
+        );
+
+        // 2️⃣ Idle + deployed conservation
+        assertEq(
+            tranchePool.getSeniorTrancheIdleValue() +
+                tranchePool.getSeniorTrancheDeployedValue(),
+            seniorDeposit,
+            "Senior capital conserved"
+        );
+
+        assertEq(
+            tranchePool.getJuniorTrancheIdleValue() +
+                tranchePool.getJuniorTrancheDeployedValue(),
+            juniorDeposit,
+            "Junior capital conserved"
+        );
+
+        assertEq(
+            tranchePool.getEquityTrancheIdleValue() +
+                tranchePool.getEquityTrancheDeployedValue(),
+            equityDeposit,
+            "Equity capital conserved"
+        );
+
+        // ------------------------------------------------------------
+        // Assert — PER-TRANCHE DEPLOYMENT
+        // ------------------------------------------------------------
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            seniorDeposit,
+            "Senior capped by liquidity"
+        );
+
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            juniorDeposit,
+            "Junior capped by liquidity"
+        );
+
+        assertEq(
+            tranchePool.getTotalDeployedValue(),
+            totalAmount,
+            "All capital deployed"
+        );
+
+        assertLe(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            seniorDeposit,
+            "Senior never exceeds liquidity"
+        );
+
+        assertLe(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            juniorDeposit,
+            "Junior never exceeds liquidity"
+        );
+
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            equityDeposit,
+            "Equity absorbs remaining allocation"
+        );
+
+        // ------------------------------------------------------------
+        // Assert — IDLE VALUES (ONLY BECAUSE THIS CASE IS PROPORTIONAL)
+        // ------------------------------------------------------------
+
+        assertEq(
+            tranchePool.getSeniorTrancheIdleValue(),
+            0,
+            "Senior idle should be zero"
+        );
+
+        assertEq(
+            tranchePool.getJuniorTrancheIdleValue(),
+            0,
+            "Junior idle should be zero"
+        );
+
+        assertEq(
+            tranchePool.getEquityTrancheIdleValue(),
+            0,
+            "Equity idle should be zero"
+        );
+
+        // ------------------------------------------------------------
+        // Assert — TRANSFERS
+        // ------------------------------------------------------------
+
+        assertEq(
+            usdt.balanceOf(borrower),
+            disbursement,
+            "Borrower received disbursement"
+        );
+
+        assertEq(usdt.balanceOf(feeManager), fees, "Fee manager received fees");
+    }
+
+    // testing the protocol reverts if the total disbursment + fees is more than the total idle value
+    function test_AllocateCapital_Reverts_If_Total_Disbursed_Plus_Fees_Exceeds_Idle_Value()
+        public
+    {
+        // ------------------------------------------------------------
+        // Arrange
+        // ------------------------------------------------------------
+
+        uint256 seniorDeposit = 80_00_000 * USDT;
+        uint256 juniorDeposit = 15_00_000 * USDT;
+        uint256 equityDeposit = 50_00_000 * USDT;
+
+        // Senior deposit
+        vm.startPrank(seniorUser1);
+        usdt.approve(address(tranchePool), seniorDeposit);
+        tranchePool.depositSeniorTranche(seniorDeposit);
+        vm.stopPrank();
+
+        // Junior deposit
+        vm.startPrank(juniorUser1);
+        usdt.approve(address(tranchePool), juniorDeposit);
+        tranchePool.depositJuniorTranche(juniorDeposit);
+        vm.stopPrank();
+
+        // Equity deposit
+        vm.startPrank(equityUser1);
+        usdt.approve(address(tranchePool), equityDeposit);
+        tranchePool.depositEquityTranche(equityDeposit);
+        vm.stopPrank();
+
+        uint256 totalAvailable = seniorDeposit + juniorDeposit + equityDeposit;
+
+        // Move pool to COMMITED
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        uint256 disbursement = 151_00_000 * USDT;
+        uint256 fees = 1_00_000 * USDT;
+        uint256 totalAmount = disbursement + fees;
+
+        assertGt(totalAmount, totalAvailable);
+
+        // ------------------------------------------------------------
+        // Act & Assert
+        // ------------------------------------------------------------
+
+        vm.prank(loanEngine);
+        vm.expectRevert(
+            TranchePool.TranchePool__InsufficientLiquidity.selector
+        );
+        tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
+    }
+
+    // pending allocation tests, this one should be tested aggresively because it has most blast radius
+    /*
+        1. all allocations should succeed untill the cap is hit if the pool is in state of in deployed or commited state
+
+        2. allocations should revert if the pool is in open or closed state
+
+        3. tranche level allocations should not exceed the deployed value
+
+        Partial absorption boundary tests
+	•	Equity absorbs exactly remaining amount (not over)
+	•	Junior absorbs exactly remaining amount
+	•	Senior absorbs exactly remaining amount
+	•	_minimum() logic never causes under- or over-allocation
+
+These catch off-by-one / rounding edge cases.
+
+⸻
+
+    */
+
+    // testing equitty tranche not having enough liquidity to cover its allocation
+    // 1. equity_idle < equity_allocation -> junior_absorbs
+    // 2. equity_idle + junior_idle < equity_allocation -> senior_absorbs
+    // 3. equity_idle = 0 -> junior and senior absorbs
+
+    // testing junior tranche not having enough liquidity to cover its allocation
+    // 1. junior_idle < junior_allocation -> equity_absorbs -> senior_absorbs
+    // 2. junior_idle = 0 -> equity_aborbs -> senior absorbs
+    // 3. junior_idle + equity_idle < junior_allocation -> senior_absorbs
+
+    // proper testing of the order is demanded
+    // junior should not absorb before equity tranche
+    // senior should not absorb before junior and equity tranche => senior iff junior + equity is insufficient
+
+    // test with different allocation factor
+    // 1. senior: 100%, junior: 0%, equity: 0%
+    // 2. senior: 0%, junior: 100%, equity: 0%
+    // 3. senior: 0%, junior: 0%, equity: 100%
+    // 4. senior: 70%, junior: 20%, equity: rest
+    // 5. senior + junior = 100%, equity: 0%
+    // mid lifecycle changing of allocation factor, should not affect deployed capital
+    // what if allocation factor change mid lifecycle
+    // what if the allocation factor is initially 80-15-5 and then change to 70-20-10
+    // changing the repayment and loss allocation models to take account of the allocation factor based on the info stored locally not the global allocation factors.
+    // TODO: need exhaustive testing there
+
     /*//////////////////////////////////////////////////////////////
                         REPAYMENT TESTS
     //////////////////////////////////////////////////////////////*/
@@ -1160,7 +1583,7 @@ contract TestTranchePoolComplete is Test {
             .getEquityTrancheDeployedValue();
 
         vm.prank(loanEngine);
-        tranchePool.onRepayment(principalRepaid, 0);
+        tranchePool.onRepayment(principalRepaid, 0, 80, 15);
 
         uint256 expectedSenior = (principalRepaid * 80) / 100;
         uint256 expectedJunior = (principalRepaid * 15) / 100;
@@ -1190,7 +1613,7 @@ contract TestTranchePoolComplete is Test {
 
         // No accrued interest initially, so all goes to equity
         vm.prank(loanEngine);
-        tranchePool.onRepayment(0, interestRepaid);
+        tranchePool.onRepayment(0, interestRepaid, 80, 15);
 
         uint256 expectedEquityIndex = 1e18 +
             (interestRepaid * 1e18) /
@@ -1206,7 +1629,7 @@ contract TestTranchePoolComplete is Test {
         uint256 interestRepaid = 5_00_000 * USDT;
 
         vm.prank(loanEngine);
-        tranchePool.onRepayment(principalRepaid, interestRepaid);
+        tranchePool.onRepayment(principalRepaid, interestRepaid, 80, 15);
 
         // Verify principal returned
         assertGt(tranchePool.getSeniorTrancheIdleValue(), 0);
@@ -1220,7 +1643,7 @@ contract TestTranchePoolComplete is Test {
                 0
             )
         );
-        tranchePool.onRepayment(0, 0);
+        tranchePool.onRepayment(0, 0, 80, 15);
     }
 
     function test_OnRepayment_RevertIf_PrincipalExceedsDeployed() public {
@@ -1233,7 +1656,7 @@ contract TestTranchePoolComplete is Test {
         vm.expectRevert(
             TranchePool.TranchePool__PrincipalRepaymentExceeded.selector
         );
-        tranchePool.onRepayment(excessivePrincipal, 0);
+        tranchePool.onRepayment(excessivePrincipal, 0, 80, 15);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1342,7 +1765,7 @@ contract TestTranchePoolComplete is Test {
         uint256 equityIdleBefore = tranchePool.getEquityTrancheIdleValue();
 
         vm.prank(loanEngine);
-        tranchePool.onRecovery(recoveryAmount);
+        tranchePool.onRecovery(recoveryAmount, 80, 15);
 
         uint256 expectedSenior = (recoveryAmount * 80) / 100;
         uint256 expectedJunior = (recoveryAmount * 15) / 100;
@@ -1629,4 +2052,6 @@ contract TestTranchePoolComplete is Test {
             makeAddr("feeManager")
         );
     }
+
+    // extra pending tests
 }

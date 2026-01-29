@@ -140,6 +140,9 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         // State
         LoanState state;
         uint256 totalRecovered;
+        // allocation_ratio
+        uint256 seniorAllocationRatio;
+        uint256 juniorAllocationRatio;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -269,7 +272,9 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             maturityTimestamp: 0,
             termDays: termDays,
             state: LoanState.CREATED,
-            totalRecovered: 0
+            totalRecovered: 0,
+            seniorAllocationRatio: 0,
+            juniorAllocationRatio: 0
         });
 
         s_loans[s_nextLoanId++] = newLoan;
@@ -311,6 +316,8 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         loan.startTimestamp = block.timestamp;
         loan.maturityTimestamp = block.timestamp + (loan.termDays * 1 days);
         loan.state = LoanState.ACTIVE;
+        loan.seniorAllocationRatio = tranchePool.getSeniorAllocationRatio();
+        loan.juniorAllocationRatio = tranchePool.getJuniorAllocationRatio();
 
         uint256 originationFee = (loan.principalIssued *
             loan.originationFeeBps) / 10000;
@@ -373,7 +380,12 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         if (fullyRepaid) {
             loan.state = LoanState.REPAID;
         }
-        tranchePool.onRepayment(principalPaid, interestPaid);
+        tranchePool.onRepayment(
+            principalPaid,
+            interestPaid,
+            loan.seniorAllocationRatio,
+            loan.juniorAllocationRatio
+        );
         IERC20(s_stableCoinAddress).safeTransferFrom(
             repaymentAgent,
             address(tranchePool),
@@ -441,7 +453,11 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             address(tranchePool),
             amount
         );
-        tranchePool.onRecovery(amount);
+        tranchePool.onRecovery(
+            amount,
+            loan.seniorAllocationRatio,
+            loan.juniorAllocationRatio
+        );
         emit LoanRecovered(loanId, amount, block.timestamp);
     }
 
@@ -463,7 +479,11 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         if (interest > 0) {
             loan.interestAccrued += interest;
-            tranchePool.onInterestAccrued(interest);
+            tranchePool.onInterestAccrued(
+                interest,
+                loan.seniorAllocationRatio,
+                loan.juniorAllocationRatio
+            );
         }
         loan.lastAccrualTimestamp = block.timestamp;
     }

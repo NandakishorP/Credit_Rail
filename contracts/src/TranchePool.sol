@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {console} from "forge-std/console.sol";
 
 contract TranchePool is Ownable {
     using SafeERC20 for IERC20;
@@ -27,6 +28,7 @@ contract TranchePool is Ownable {
     error TranchePool__MaxDepositCapExceeded(uint256 maxCap, uint256 amount);
     error TranchePool__PoolIsNotCommited();
     error TranchePool__PrincipalRepaymentExceeded();
+    error TranchePool__ZeroAddressError();
 
     // Events
 
@@ -338,26 +340,68 @@ contract TranchePool is Ownable {
         ) {
             revert TranchePool__PoolIsNotCommited();
         }
+
         uint256 totalAmount = totalDisbursement + fees;
 
-        if (
-            totalAmount >
-            (s_seniorTrancheIdleValue +
-                s_juniorTrancheIdleValue +
-                s_equityTrancheIdleValue)
-        ) {
+        // Global liquidity check
+        uint256 totalIdle = s_seniorTrancheIdleValue +
+            s_juniorTrancheIdleValue +
+            s_equityTrancheIdleValue;
+
+        if (totalAmount > totalIdle) {
             revert TranchePool__InsufficientLiquidity();
         }
-        uint256 seniorAmount = (totalAmount *
+
+        uint256 targetSenior = (totalAmount *
             s_capital_allocation_factor_senior) / 100;
-        uint256 juniorAmount = (totalAmount *
+
+        uint256 targetJunior = (totalAmount *
             s_capital_allocation_factor_junior) / 100;
-        uint256 equityAmount = totalAmount - (seniorAmount + juniorAmount);
-        if (
-            seniorAmount > s_seniorTrancheIdleValue ||
-            juniorAmount > s_juniorTrancheIdleValue ||
-            equityAmount > s_equityTrancheIdleValue
-        ) {
+
+        uint256 targetEquity = totalAmount - targetSenior - targetJunior;
+
+        uint256 seniorAmount = _minimum(targetSenior, s_seniorTrancheIdleValue);
+
+        uint256 juniorAmount = _minimum(targetJunior, s_juniorTrancheIdleValue);
+
+        uint256 equityAmount = _minimum(targetEquity, s_equityTrancheIdleValue);
+
+        uint256 allocated = seniorAmount + juniorAmount + equityAmount;
+
+        uint256 remaining = totalAmount - allocated;
+
+        // Equity absorbs first
+        if (remaining > 0 && s_equityTrancheIdleValue > equityAmount) {
+            uint256 extra = _minimum(
+                remaining,
+                s_equityTrancheIdleValue - equityAmount
+            );
+            equityAmount += extra;
+            remaining -= extra;
+        }
+
+        // Junior absorbs next
+        if (remaining > 0 && s_juniorTrancheIdleValue > juniorAmount) {
+            uint256 extra = _minimum(
+                remaining,
+                s_juniorTrancheIdleValue - juniorAmount
+            );
+            juniorAmount += extra;
+            remaining -= extra;
+        }
+
+        // Senior absorbs last
+        if (remaining > 0 && s_seniorTrancheIdleValue > seniorAmount) {
+            uint256 extra = _minimum(
+                remaining,
+                s_seniorTrancheIdleValue - seniorAmount
+            );
+            seniorAmount += extra;
+            remaining -= extra;
+        }
+
+        // Final safety check
+        if (remaining > 0) {
             revert TranchePool__InsufficientLiquidity();
         }
 
@@ -366,7 +410,6 @@ contract TranchePool is Ownable {
             emit PoolStateUpdated(PoolState.DEPLOYED);
         }
 
-        // Simply reduce the total value - shares remain unchanged
         s_seniorTrancheIdleValue -= seniorAmount;
         s_juniorTrancheIdleValue -= juniorAmount;
         s_equityTrancheIdleValue -= equityAmount;
@@ -375,11 +418,12 @@ contract TranchePool is Ownable {
         s_juniorTrancheDeployedValue += juniorAmount;
         s_equityTrancheDeployedValue += equityAmount;
 
-        // Transfer funds to wherever they're being deployed
         IERC20(s_stableCoin).safeTransfer(deployer, totalDisbursement);
+
         if (fees > 0) {
             IERC20(s_stableCoin).safeTransfer(feeManager, fees);
         }
+
         emit CapitalAllocated(
             seniorAmount,
             juniorAmount,
@@ -389,14 +433,14 @@ contract TranchePool is Ownable {
     }
 
     function onInterestAccrued(
-        uint256 interestAmount
+        uint256 interestAmount,
+        uint256 seniorAllocationFactor,
+        uint256 juniorAllocationFactor
     ) external onlyLoanEngine(msg.sender) {
         if (interestAmount == 0) return;
 
-        uint256 seniorShare = (interestAmount *
-            s_capital_allocation_factor_senior) / 100;
-        uint256 juniorShare = (interestAmount *
-            s_capital_allocation_factor_junior) / 100;
+        uint256 seniorShare = (interestAmount * seniorAllocationFactor) / 100;
+        uint256 juniorShare = (interestAmount * juniorAllocationFactor) / 100;
 
         seniorAccruedInterest += seniorShare;
         juniorAccruedInterest += juniorShare;
@@ -404,7 +448,9 @@ contract TranchePool is Ownable {
 
     function onRepayment(
         uint256 principalRepaid,
-        uint256 interestRepaid
+        uint256 interestRepaid,
+        uint256 seniorAllocationRatio,
+        uint256 juniorAllocationRatio
     ) external onlyLoanEngine(msg.sender) {
         if (principalRepaid == 0 && interestRepaid == 0) {
             revert TranchePool__InvalidTransferAmount(0);
@@ -456,9 +502,9 @@ contract TranchePool is Ownable {
 
         if (principalRepaid > 0) {
             uint256 seniorPrincipal = (principalRepaid *
-                s_capital_allocation_factor_senior) / 100;
+                seniorAllocationRatio) / 100;
             uint256 juniorPrincipal = (principalRepaid *
-                s_capital_allocation_factor_junior) / 100;
+                juniorAllocationRatio) / 100;
             uint256 equityPrincipal = principalRepaid -
                 seniorPrincipal -
                 juniorPrincipal;
@@ -515,15 +561,17 @@ contract TranchePool is Ownable {
         emit LossAllocated(seniorLoss, juniorLoss, equityLoss);
     }
 
-    function onRecovery(uint256 amount) external onlyLoanEngine(msg.sender) {
+    function onRecovery(
+        uint256 amount,
+        uint256 seniorAllocationRatio,
+        uint256 juniorAllocationRatio
+    ) external onlyLoanEngine(msg.sender) {
         if (amount == 0) {
             revert TranchePool__ZeroValueError();
         }
         // treat as pure cash inflow
-        uint256 seniorAmount = (amount * s_capital_allocation_factor_senior) /
-            100;
-        uint256 juniorAmount = (amount * s_capital_allocation_factor_junior) /
-            100;
+        uint256 seniorAmount = (amount * seniorAllocationRatio) / 100;
+        uint256 juniorAmount = (amount * juniorAllocationRatio) / 100;
         // why this won't overflow, because the total allocation factor is 100 and
         // at most possibility is equity gets zero allocation
         uint256 equityAmount = amount - seniorAmount - juniorAmount;
@@ -968,6 +1016,9 @@ contract TranchePool is Ownable {
     }
 
     function setLoanEngine(address _loanEngine) external onlyOwner {
+        if (_loanEngine == address(0)) {
+            revert TranchePool__ZeroAddressError();
+        }
         loanEngine = _loanEngine;
     }
 
@@ -1106,5 +1157,13 @@ contract TranchePool is Ownable {
             s_seniorTrancheDeployedValue +
             s_juniorTrancheDeployedValue +
             s_equityTrancheDeployedValue;
+    }
+
+    function getSeniorAllocationRatio() external view returns (uint256) {
+        return s_capital_allocation_factor_senior;
+    }
+
+    function getJuniorAllocationRatio() external view returns (uint256) {
+        return s_capital_allocation_factor_junior;
     }
 }

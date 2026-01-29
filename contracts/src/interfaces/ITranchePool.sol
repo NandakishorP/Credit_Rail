@@ -17,11 +17,24 @@ interface ITranchePool {
 
     function withdrawSeniorTranche(uint256 shares) external;
 
-    function onInterestAccrued(uint256 interestAmount) external;
+    function onInterestAccrued(
+        uint256 interestAmount,
+        uint256 seniorAllocationFactor,
+        uint256 juniorAllocationFactor
+    ) external;
 
-    function onRepayment(uint256 principal, uint256 interest) external;
+    function onRepayment(
+        uint256 principal,
+        uint256 interest,
+        uint256 seniorAllocationRatio,
+        uint256 juniorAllocationRatio
+    ) external;
 
-    function onRecovery(uint256 amount) external;
+    function onRecovery(
+        uint256 amount,
+        uint256 seniorAllocationRatio,
+        uint256 juniorAllocationRatio
+    ) external;
 
     function allocateCapital(
         uint256 totalDisbursement,
@@ -75,4 +88,8 @@ interface ITranchePool {
     ) external view returns (uint256);
 
     function getPoolState() external view returns (TranchePool.PoolState);
+
+    function getSeniorAllocationRatio() external view returns (uint256);
+
+    function getJuniorAllocationRatio() external view returns (uint256);
 }
