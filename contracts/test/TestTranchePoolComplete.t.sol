@@ -78,6 +78,10 @@ contract TestTranchePoolComplete is Test {
         usdt.mint(falseUser, 50_00_00_000 * USDT);
     }
 
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
     function testDepositSeniorTrancheRevertsIfPoolIsNotOpen() public {
         vm.prank(deployer);
         tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
@@ -1836,7 +1840,6 @@ These catch off-by-one / rounding edge cases.
         // Deposits: Senior has plenty, Junior has some, Equity is ZERO
         uint256 seniorDeposit = 2_00_00_000 * USDT; // Plenty
         uint256 juniorDeposit = 30_00_000 * USDT; // Some
-        uint256 equityDeposit = 0 * USDT; // ZERO
 
         vm.startPrank(seniorUser1);
         usdt.approve(address(tranchePool), seniorDeposit);
@@ -1908,8 +1911,231 @@ These catch off-by-one / rounding edge cases.
 
     // testing junior tranche not having enough liquidity to cover its allocation
     // 1. junior_idle < junior_allocation -> equity_absorbs -> senior_absorbs
+    function test_AllocateCapital_JuniorInsufficient_EquityThenSeniorAbsorb()
+        public
+    {
+        // ------------------------------------------------------------
+        // Arrange
+        // ------------------------------------------------------------
+
+        uint256 seniorDeposit = 12_50_00_000 * USDT; // 125M
+        uint256 juniorDeposit = 10_00_000 * USDT; // 1M
+        uint256 equityDeposit = 50_00_000 * USDT; // 5M
+
+        // Senior deposit
+        vm.startPrank(seniorUser1);
+        usdt.approve(address(tranchePool), seniorDeposit);
+        tranchePool.depositSeniorTranche(seniorDeposit);
+        vm.stopPrank();
+
+        // Junior deposit (insufficient)
+        vm.startPrank(juniorUser1);
+        usdt.approve(address(tranchePool), juniorDeposit);
+        tranchePool.depositJuniorTranche(juniorDeposit);
+        vm.stopPrank();
+
+        // Equity deposit (partial buffer)
+        vm.startPrank(equityUser1);
+        usdt.approve(address(tranchePool), equityDeposit);
+        tranchePool.depositEquityTranche(equityDeposit);
+        vm.stopPrank();
+
+        // Move pool to COMMITED
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        // Allocation request
+        uint256 totalAmount = 12_00_00_000 * USDT; // 120M
+        uint256 disbursement = totalAmount - 10_00_000 * USDT;
+        uint256 fees = 10_00_000 * USDT;
+
+        // ------------------------------------------------------------
+        // Act
+        // ------------------------------------------------------------
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
+
+        // ------------------------------------------------------------
+        // Assert
+        // ------------------------------------------------------------
+
+        // Junior is capped immediately
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            juniorDeposit,
+            "Junior should be fully deployed"
+        );
+
+        // Equity is capped immediately
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            equityDeposit,
+            "Equity should be fully deployed"
+        );
+
+        // Senior absorbs *all remaining*
+        uint256 expectedSeniorDeployed = totalAmount -
+            juniorDeposit -
+            equityDeposit;
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            expectedSeniorDeployed,
+            "Senior absorbs all remaining allocation"
+        );
+
+        // Global invariant
+        assertEq(
+            tranchePool.getTotalDeployedValue(),
+            totalAmount,
+            "Total deployed must equal total allocation"
+        );
+    }
+
     // 2. junior_idle = 0 -> equity_aborbs -> senior absorbs
+    function test_AllocateCapital_JuniorZero_EquityThenSeniorAbsorb() public {
+        // ------------------------------------------------------------
+        // Arrange
+        // ------------------------------------------------------------
+
+        uint256 seniorDeposit = 12_00_00_000 * USDT; // 120M
+        uint256 equityDeposit = 50_00_000 * USDT; // 5M
+        // juniorDeposit = 0
+
+        vm.startPrank(seniorUser1);
+        usdt.approve(address(tranchePool), seniorDeposit);
+        tranchePool.depositSeniorTranche(seniorDeposit);
+        vm.stopPrank();
+
+        vm.startPrank(equityUser1);
+        usdt.approve(address(tranchePool), equityDeposit);
+        tranchePool.depositEquityTranche(equityDeposit);
+        vm.stopPrank();
+
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        uint256 totalAmount = 10_00_00_000 * USDT; // 100M
+        uint256 disbursement = totalAmount - 10_00_000 * USDT;
+        uint256 fees = 10_00_000 * USDT;
+
+        // ------------------------------------------------------------
+        // Act
+        // ------------------------------------------------------------
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
+
+        // ------------------------------------------------------------
+        // Assert
+        // ------------------------------------------------------------
+
+        // Junior skipped entirely
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            0,
+            "Junior deployed should be zero"
+        );
+
+        // Equity capped at idle
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            equityDeposit,
+            "Equity fully deployed"
+        );
+
+        // Senior absorbs remaining
+        uint256 expectedSenior = totalAmount - equityDeposit;
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            expectedSenior,
+            "Senior absorbs all remaining"
+        );
+
+        assertEq(
+            tranchePool.getTotalDeployedValue(),
+            totalAmount,
+            "Total deployed invariant"
+        );
+    }
+
     // 3. junior_idle + equity_idle < junior_allocation -> senior_absorbs
+
+    function test_AllocateCapital_JuniorAndEquityInsufficient_SeniorAbsorbs()
+        public
+    {
+        // ------------------------------------------------------------
+        // Arrange
+        // ------------------------------------------------------------
+
+        uint256 seniorDeposit = 13_00_00_000 * USDT; // 130M
+        uint256 juniorDeposit = 10_00_000 * USDT; // 1M
+        uint256 equityDeposit = 50_00_000 * USDT; // 5M
+
+        vm.startPrank(seniorUser1);
+        usdt.approve(address(tranchePool), seniorDeposit);
+        tranchePool.depositSeniorTranche(seniorDeposit);
+        vm.stopPrank();
+
+        vm.startPrank(juniorUser1);
+        usdt.approve(address(tranchePool), juniorDeposit);
+        tranchePool.depositJuniorTranche(juniorDeposit);
+        vm.stopPrank();
+
+        vm.startPrank(equityUser1);
+        usdt.approve(address(tranchePool), equityDeposit);
+        tranchePool.depositEquityTranche(equityDeposit);
+        vm.stopPrank();
+
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        uint256 totalAmount = 10_00_00_000 * USDT; // 100M
+        uint256 disbursement = totalAmount - 10_00_000 * USDT;
+        uint256 fees = 10_00_000 * USDT;
+
+        // ------------------------------------------------------------
+        // Act
+        // ------------------------------------------------------------
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
+
+        // ------------------------------------------------------------
+        // Assert
+        // ------------------------------------------------------------
+
+        // Junior fully exhausted
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            juniorDeposit,
+            "Junior fully exhausted"
+        );
+
+        // Equity fully exhausted
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            equityDeposit,
+            "Equity fully exhausted"
+        );
+
+        // Senior absorbs everything else
+        uint256 expectedSenior = totalAmount - juniorDeposit - equityDeposit;
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            expectedSenior,
+            "Senior absorbs combined shortfall"
+        );
+
+        assertEq(
+            tranchePool.getTotalDeployedValue(),
+            totalAmount,
+            "Total deployed invariant"
+        );
+    }
 
     // proper testing of the order is demanded
     // junior should not absorb before equity tranche
@@ -1917,13 +2143,247 @@ These catch off-by-one / rounding edge cases.
 
     // test with different allocation factor
     // 1. senior: 100%, junior: 0%, equity: 0%
+    function test_AllocateCapital_Senior100Percent() public {
+        _depositToAllTranches();
+
+        vm.startPrank(deployer);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(0);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(100);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        vm.stopPrank();
+
+        uint256 totalAmount = 1_00_00_000 * USDT;
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            totalAmount - 10_000 * USDT,
+            10_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            totalAmount,
+            "Senior gets 100%"
+        );
+        assertEq(tranchePool.getJuniorTrancheDeployedValue(), 0);
+        assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
+    }
+
     // 2. senior: 0%, junior: 100%, equity: 0%
+    function test_AllocateCapital_Junior100Percent() public {
+        _depositToAllTranches();
+
+        vm.startPrank(deployer);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(0);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(100);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        vm.stopPrank();
+
+        uint256 totalAmount = 1_00_00_000 * USDT;
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            totalAmount - 10_000 * USDT,
+            10_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        assertEq(tranchePool.getSeniorTrancheDeployedValue(), 0);
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            totalAmount,
+            "Junior gets 100%"
+        );
+        assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
+    }
+
     // 3. senior: 0%, junior: 0%, equity: 100%
+    function test_AllocateCapital_Equity100Percent() public {
+        _depositToAllTranches();
+
+        vm.startPrank(deployer);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(0);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(0);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        vm.stopPrank();
+
+        uint256 totalAmount = 1_00_00_000 * USDT;
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            totalAmount - 10_000 * USDT,
+            10_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        assertEq(tranchePool.getSeniorTrancheDeployedValue(), 0);
+        assertEq(tranchePool.getJuniorTrancheDeployedValue(), 0);
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            totalAmount,
+            "Equity gets 100%"
+        );
+    }
+
     // 4. senior: 70%, junior: 20%, equity: rest
+    function test_AllocateCapital_70_20_10() public {
+        _depositToAllTranches();
+
+        vm.startPrank(deployer);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(20);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(70);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        vm.stopPrank();
+
+        uint256 totalAmount = 1_00_00_000 * USDT;
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            totalAmount - 10_000 * USDT,
+            10_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            (totalAmount * 70) / 100
+        );
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            (totalAmount * 20) / 100
+        );
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            totalAmount - (totalAmount * 70) / 100 - (totalAmount * 20) / 100
+        );
+    }
+
     // 5. senior + junior = 100%, equity: 0%
+    function test_AllocateCapital_80_20_0() public {
+        _depositToAllTranches();
+
+        vm.startPrank(deployer);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(80);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(20);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        vm.stopPrank();
+
+        uint256 totalAmount = 1_00_00_000 * USDT;
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            totalAmount - 10_000 * USDT,
+            10_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            (totalAmount * 80) / 100
+        );
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            (totalAmount * 20) / 100
+        );
+        assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
+    }
+
     // mid lifecycle changing of allocation factor, should not affect deployed capital
+    function test_AllocationFactorChange_DoesNotAffectDeployedCapital() public {
+        _depositToAllTranches();
+
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        uint256 totalAmount = 1_00_00_000 * USDT;
+
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            totalAmount - 10_000 * USDT,
+            10_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        uint256 seniorBefore = tranchePool.getSeniorTrancheDeployedValue();
+        uint256 juniorBefore = tranchePool.getJuniorTrancheDeployedValue();
+        uint256 equityBefore = tranchePool.getEquityTrancheDeployedValue();
+
+        // Change factors mid lifecycle
+        vm.startPrank(deployer);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(70);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(20);
+        vm.stopPrank();
+
+        // Deployed values must NOT change
+        assertEq(tranchePool.getSeniorTrancheDeployedValue(), seniorBefore);
+        assertEq(tranchePool.getJuniorTrancheDeployedValue(), juniorBefore);
+        assertEq(tranchePool.getEquityTrancheDeployedValue(), equityBefore);
+    }
+
     // what if allocation factor change mid lifecycle
     // what if the allocation factor is initially 80-15-5 and then change to 70-20-10
+    function test_AllocationFactorChange_AffectsFutureAllocations() public {
+        _depositToAllTranches();
+
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+
+        // First allocation (80/15/5)
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            50_00_000 * USDT,
+            5_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        // Change factors
+        vm.startPrank(deployer);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(70);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(20);
+        vm.stopPrank();
+
+        uint256 seniorBefore = tranchePool.getSeniorTrancheDeployedValue();
+        uint256 juniorBefore = tranchePool.getJuniorTrancheDeployedValue();
+        uint256 equityBefore = tranchePool.getEquityTrancheDeployedValue();
+
+        // Second allocation (70/20/10)
+        vm.prank(loanEngine);
+        tranchePool.allocateCapital(
+            50_00_000 * USDT,
+            5_000 * USDT,
+            borrower,
+            feeManager
+        );
+
+        uint256 secondTotal = 50_05_000 * USDT;
+
+        assertEq(
+            tranchePool.getSeniorTrancheDeployedValue(),
+            seniorBefore + (secondTotal * 70) / 100
+        );
+        assertEq(
+            tranchePool.getJuniorTrancheDeployedValue(),
+            juniorBefore + (secondTotal * 20) / 100
+        );
+        assertEq(
+            tranchePool.getEquityTrancheDeployedValue(),
+            equityBefore +
+                secondTotal -
+                (secondTotal * 70) /
+                100 -
+                (secondTotal * 20) /
+                100
+        );
+    }
+
     // changing the repayment and loss allocation models to take account of the allocation factor based on the info stored locally not the global allocation factors.
     // TODO: need exhaustive testing there
 
