@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {TranchePool} from "../src/TranchePool.sol";
+import {TranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 contract TestTranchePool is Test {
@@ -48,8 +48,8 @@ contract TestTranchePool is Test {
         tranchePool.updateWhitelist(juniorUser1, true);
         tranchePool.updateWhitelist(juniorUser2, true);
         tranchePool.updateWhitelist(juniorUser3, true);
-        tranchePool.updateEqutyTrancheWhiteList(equityUser1, true);
-        tranchePool.updateEqutyTrancheWhiteList(equityUser2, true);
+        tranchePool.updateEquityTrancheWhiteList(equityUser1, true);
+        tranchePool.updateEquityTrancheWhiteList(equityUser2, true);
 
         vm.stopPrank();
 

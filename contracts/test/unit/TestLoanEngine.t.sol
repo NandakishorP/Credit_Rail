@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {LoanEngine} from "../src/LoanEngine.sol";
+import {LoanEngine} from "../../src/LoanEngine.sol";
 import {Test} from "forge-std/Test.sol";
-import {TranchePool} from "../src/TranchePool.sol";
+import {TranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {CreditPolicy} from "../src/CreditPolicy.sol";
-import {MockLoanProofVerifier} from "./mocks/MockLoanProofVerifier.sol";
+import {CreditPolicy} from "../../src/CreditPolicy.sol";
+import {MockLoanProofVerifier} from "../mocks/MockLoanProofVerifier.sol";
 
 contract TestLoanEngine is Test {
     TranchePool tranchePool;

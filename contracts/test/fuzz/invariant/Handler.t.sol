@@ -1,0 +1,482 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.27;
+
+import {Test, console} from "forge-std/Test.sol";
+import {LoanEngine} from "../../../src/LoanEngine.sol";
+import {TranchePool} from "../../../src/TranchePool.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {CreditPolicy} from "../../../src/CreditPolicy.sol";
+import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
+
+contract Handler is Test {
+    LoanEngine loanEngine;
+    TranchePool tranchePool;
+    ERC20Mock usdt;
+    CreditPolicy creditPolicy;
+    address deployer = makeAddr("deployer");
+    uint256 public USDT = 1e18;
+    bool allowFullDeployment = false;
+    // 100m$ is the expected principal from lp's
+    uint256 public expectedPrincipal = 10_00_00_000 * USDT;
+    uint256 public minimumLoanPrincipal = 10_00_000 * USDT;
+    uint256 public maximumLoanPrincipal = 2_00_00_000 * USDT;
+    uint256 public minimumOriginationFeeBps = 50; // 0.5%
+    uint256 public minimumTermDays = 180;
+    uint256 public maximumTermDays = 480;
+    address[] public seniorUsers;
+    address[] public juniorUsers;
+    address[] public equityUsers;
+    uint256 public activePolicyVersion;
+    uint256 public defaultCounter;
+    uint256 public writeOffCounter;
+    uint256 public recoveryCounter;
+
+    uint256 public seniorTrancheIdleValue;
+    uint256 public seniorTrancheDeployedValue;
+
+    uint256 public juniorTrancheIdleValue;
+    uint256 public juniorTrancheDeployedValue;
+
+    uint256 public seniorTrancheTotalShares;
+    mapping(address => uint256) public seniorTrancheShares;
+    mapping(address => uint256) public seniorTrancheDeposits;
+    mapping(address => uint256) public seniorUserIndex;
+
+    uint256 public juniorTrancheTotalShares;
+    mapping(address => uint256) public juniorTrancheShares;
+    mapping(address => uint256) public juniorTrancheDeposits;
+    mapping(address => uint256) public juniorUserIndex;
+
+    address[] public loanBorrowers;
+
+    address public recevingEntity = makeAddr("recevingEntity");
+    address public feeManager = makeAddr("feeManager");
+
+    constructor(
+        LoanEngine _loanEngine,
+        TranchePool _tranchePool,
+        CreditPolicy _creditPolicy,
+        ERC20Mock _usdt
+    ) {
+        loanEngine = _loanEngine;
+        tranchePool = _tranchePool;
+        usdt = _usdt;
+        creditPolicy = _creditPolicy;
+
+        vm.startPrank(deployer);
+        loanEngine.setWhitelistedFeeManager(feeManager, true);
+        loanEngine.setWhitelistedOffRampingEntity(recevingEntity, true);
+        for (uint160 i = 1; i < 100; i++) {
+            seniorUsers.push(address(i));
+            if (i % 2 == 0) {
+                ERC20Mock(usdt).mint(address(i), 1_00_00_00000 * 1e18);
+                tranchePool.updateWhitelist(address(i), true);
+            } else if (i % 3 == 0) {
+                ERC20Mock(usdt).mint(address(i), 50_00_0000 * 1e18);
+                tranchePool.updateWhitelist(address(i), true);
+            } else {
+                ERC20Mock(usdt).mint(address(i), 10_00_00000 * 1e18);
+                tranchePool.updateWhitelist(address(i), true);
+            }
+        }
+        for (uint160 i = 1; i < 10; i++) {
+            juniorUsers.push(address(i));
+            if (i % 2 == 0) {
+                ERC20Mock(usdt).mint(address(i), 500_00_000 * 1e18);
+                tranchePool.updateWhitelist(address(i), true);
+            } else {
+                tranchePool.updateWhitelist(address(i), true);
+                ERC20Mock(usdt).mint(address(i), 10_00_0000 * 1e18);
+            }
+        }
+        for (uint160 i = 1; i < 5; i++) {
+            equityUsers.push(address(i));
+            ERC20Mock(usdt).mint(address(i), 50_00_0000 * 1e18);
+            tranchePool.updateEquityTrancheWhiteList(address(i), true);
+        }
+
+        for (uint160 i = 200; i < 220; i++) {
+            loanBorrowers.push(address(i));
+        }
+        vm.stopPrank();
+    }
+
+    function depositSeniorTranche(uint256 userIndex, uint256 amount) public {
+        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) {
+            return;
+        }
+        address user = seniorUsers[userIndex % seniorUsers.length];
+        amount = bound(
+            amount,
+            tranchePool.getSeniorTrancheMinimumDepositAmount(),
+            tranchePool.getSeniorTrancheMaxDepositCap()
+        );
+        if (
+            amount + seniorTrancheIdleValue + seniorTrancheDeployedValue >
+            tranchePool.getSeniorTrancheMaxDepositCap()
+        ) {
+            amount =
+                tranchePool.getSeniorTrancheMaxDepositCap() -
+                seniorTrancheIdleValue -
+                seniorTrancheDeployedValue;
+            if (amount < tranchePool.getSeniorTrancheMinimumDepositAmount()) {
+                return;
+            }
+        }
+        if (amount == 0) return;
+        vm.startPrank(user);
+        ERC20Mock(usdt).approve(address(tranchePool), amount);
+        tranchePool.depositSeniorTranche(amount);
+        seniorTrancheIdleValue += amount;
+        seniorTrancheDeposits[user] += amount;
+        seniorTrancheShares[user] += amount;
+        seniorTrancheTotalShares += amount;
+        seniorUserIndex[user] = tranchePool.getSeniorInterestIndex();
+        vm.stopPrank();
+    }
+
+    function depositJuniorTranche(uint256 userIndex, uint256 amount) public {
+        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) {
+            return;
+        }
+        address user = juniorUsers[userIndex % juniorUsers.length];
+        amount = bound(
+            amount,
+            tranchePool.getJuniorTrancheMinimumDepositAmount(),
+            tranchePool.getJuniorTrancheMaxDepositCap()
+        );
+        if (
+            amount + juniorTrancheIdleValue + juniorTrancheDeployedValue >
+            tranchePool.getJuniorTrancheMaxDepositCap()
+        ) {
+            amount =
+                tranchePool.getJuniorTrancheMaxDepositCap() -
+                juniorTrancheIdleValue -
+                juniorTrancheDeployedValue;
+            if (amount < tranchePool.getJuniorTrancheMinimumDepositAmount()) {
+                return;
+            }
+        }
+        if (amount == 0) return;
+        vm.startPrank(user);
+        ERC20Mock(usdt).approve(address(tranchePool), amount);
+        tranchePool.depositJuniorTranche(amount);
+        juniorTrancheIdleValue += amount;
+        juniorTrancheDeposits[user] += amount;
+        juniorTrancheShares[user] += amount;
+        juniorTrancheTotalShares += amount;
+        juniorUserIndex[user] = tranchePool.getJuniorInterestIndex();
+        vm.stopPrank();
+    }
+
+    function depositEquityTranche(uint256 userIndex, uint256 amount) public {
+        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) {
+            return;
+        }
+        address user = equityUsers[userIndex % equityUsers.length];
+        amount = bound(
+            amount,
+            tranchePool.getEquityTrancheMinimumDepositAmount(),
+            tranchePool.getEquityTrancheMaxDepositCap()
+        );
+        if (
+            amount +
+                tranchePool.getEquityTrancheIdleValue() +
+                tranchePool.getEquityTrancheDeployedValue() >
+            tranchePool.getEquityTrancheMaxDepositCap()
+        ) {
+            amount =
+                tranchePool.getEquityTrancheMaxDepositCap() -
+                tranchePool.getEquityTrancheIdleValue() -
+                tranchePool.getEquityTrancheDeployedValue();
+            if (amount < tranchePool.getEquityTrancheMinimumDepositAmount()) {
+                return;
+            }
+        }
+        if (amount == 0) return;
+        vm.startPrank(user);
+        ERC20Mock(usdt).approve(address(tranchePool), amount);
+        tranchePool.depositEquityTranche(amount);
+        vm.stopPrank();
+    }
+
+    function maybeCommitPool() public {
+        if (
+            tranchePool.getPoolState() == TranchePool.PoolState.OPEN &&
+            tranchePool.getTotalIdleValue() > 0
+        ) {
+            vm.prank(deployer);
+            tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        }
+    }
+
+    function createLoan(
+        uint256 principalIssued,
+        uint256 originationFeeBps,
+        uint256 termDays,
+        uint256 userIndex
+    ) public {
+        if (
+            tranchePool.getPoolState() != TranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED
+        ) {
+            return;
+        }
+        // 10% is reserved(no full deployment)
+        uint256 minPrincipal = minimumLoanPrincipal;
+
+        if (allowFullDeployment) {
+            if (tranchePool.getTotalIdleValue() < minPrincipal) {
+                minPrincipal = tranchePool.getTotalIdleValue();
+            }
+        } else {
+            if (tranchePool.getTotalIdleValue() < minPrincipal * 10) {
+                return;
+            }
+        }
+
+        principalIssued = bound(
+            principalIssued,
+            minimumLoanPrincipal,
+            _min(maximumLoanPrincipal, tranchePool.getTotalIdleValue())
+        );
+
+        originationFeeBps = bound(
+            originationFeeBps,
+            minimumOriginationFeeBps,
+            loanEngine.getMaxOriginationFeeBps()
+        );
+        termDays = bound(termDays, minimumTermDays, maximumTermDays);
+        if (!creditPolicy.isPolicyFrozen(activePolicyVersion)) {
+            return;
+        }
+
+        bytes32 borrowerCommitment = keccak256(
+            abi.encodePacked(
+                loanBorrowers[userIndex % loanBorrowers.length],
+                userIndex
+            )
+        );
+        vm.prank(deployer);
+        loanEngine.createLoan(
+            borrowerCommitment,
+            activePolicyVersion,
+            1,
+            principalIssued,
+            500,
+            originationFeeBps,
+            termDays,
+            "",
+            new bytes32[](0)
+        );
+    }
+
+    function activateLoan(uint256 loanId) public {
+        if (loanEngine.getNextLoanId() != 1) {
+            loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        }
+
+        if (
+            loanEngine.getLoanDetails(loanId).state !=
+            LoanEngine.LoanState.CREATED
+        ) {
+            return;
+        }
+
+        vm.prank(deployer);
+        loanEngine.activateLoan(loanId, recevingEntity, feeManager);
+    }
+
+    function repayLoan(
+        uint256 loanId,
+        uint256 principalAmount,
+        uint256 interestAmount
+    ) public {
+        if (loanEngine.getNextLoanId() == 1) {
+            return;
+        }
+        loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        LoanEngine.Loan memory loanDetails = loanEngine.getLoanDetails(loanId);
+        if (loanDetails.state != LoanEngine.LoanState.ACTIVE) {
+            return;
+        }
+        console.log("here");
+        principalAmount = bound(
+            principalAmount,
+            0,
+            loanDetails.principalOutstanding
+        );
+
+        interestAmount = bound(
+            interestAmount,
+            loanDetails.interestAccrued / 10,
+            _accrueInterest(loanId)
+        );
+        if (principalAmount == 0 && interestAmount == 0) {
+            return;
+        }
+        uint256 totalRepayAmount = principalAmount + interestAmount;
+        vm.startPrank(recevingEntity);
+        ERC20Mock(usdt).approve(address(loanEngine), totalRepayAmount);
+        loanEngine.repayLoan(
+            loanId,
+            principalAmount,
+            interestAmount,
+            recevingEntity
+        );
+        vm.stopPrank();
+    }
+
+    function maybeDeclareDefault(uint256 loanId, bytes32 reasonHash) public {
+        if (loanEngine.getNextLoanId() == 1) {
+            return;
+        }
+        defaultCounter++;
+
+        // 🔒 90% of the time → return
+        if (defaultCounter % 10 != 0) {
+            return;
+        }
+
+        loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+
+        if (loan.state != LoanEngine.LoanState.ACTIVE) {
+            return;
+        }
+
+        vm.prank(deployer);
+        loanEngine.declareDefault(loanId, reasonHash);
+    }
+
+    function maybeWriteOffLoan(uint256 loanId) public {
+        if (loanEngine.getNextLoanId() == 1) {
+            return;
+        }
+        writeOffCounter++;
+
+        // ~1 in 20 handler calls
+        if (writeOffCounter % 20 != 0) {
+            return;
+        }
+
+        loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+
+        if (
+            loanEngine.getLoanDetails(loanId).state !=
+            LoanEngine.LoanState.DEFAULTED
+        ) {
+            return;
+        }
+
+        vm.prank(deployer);
+        loanEngine.writeOffLoan(loanId);
+    }
+
+    function maybeRecoverLoan(
+        uint256 loanId,
+        uint256 amount,
+        uint256 agentIndex
+    ) public {
+        if (loanEngine.getNextLoanId() == 1) {
+            return;
+        }
+        recoveryCounter++;
+
+        // ~1 in 30 handler calls
+        if (recoveryCounter % 30 != 0) {
+            return;
+        }
+
+        loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != LoanEngine.LoanState.WRITTEN_OFF) {
+            return;
+        }
+
+        address recoveryAgent = seniorUsers[agentIndex % seniorUsers.length];
+
+        amount = bound(amount, 1, loan.principalIssued);
+
+        vm.startPrank(recoveryAgent);
+        ERC20Mock(usdt).mint(recoveryAgent, amount);
+        ERC20Mock(usdt).approve(address(loanEngine), amount);
+        vm.stopPrank();
+
+        vm.prank(deployer);
+        loanEngine.recoverLoan(loanId, amount, recoveryAgent);
+    }
+
+    // accounting functions for invariants
+
+    function totalExpectedSeniorDeposits() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < seniorUsers.length; i++) {
+            total += seniorTrancheDeposits[seniorUsers[i]];
+        }
+        return total;
+    }
+
+    function totalExpectedJuniorDeposits() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < juniorUsers.length; i++) {
+            total += juniorTrancheDeposits[juniorUsers[i]];
+        }
+        return total;
+    }
+
+    function totalExpectedSeniorShares() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < seniorUsers.length; i++) {
+            total += seniorTrancheShares[seniorUsers[i]];
+        }
+        return total;
+    }
+
+    function totalExpectedJuniorShares() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < juniorUsers.length; i++) {
+            total += juniorTrancheShares[juniorUsers[i]];
+        }
+        return total;
+    }
+
+    function getSeniorTrancheIdleValue() public view returns (uint256) {
+        return seniorTrancheIdleValue;
+    }
+
+    function getJuniorTrancheIdleValue() public view returns (uint256) {
+        return juniorTrancheIdleValue;
+    }
+
+    function getSeniorTrancheTotalShares() public view returns (uint256) {
+        return seniorTrancheTotalShares;
+    }
+
+    function getJuniorTrancheTotalShares() public view returns (uint256) {
+        return juniorTrancheTotalShares;
+    }
+
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
+    function _accrueInterest(uint256 loanId) internal view returns (uint256) {
+        // Implementation goes here
+        loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+
+        uint256 timeElapsed = block.timestamp - loan.lastAccrualTimestamp;
+        if (loan.principalOutstanding == 0) {
+            return 0;
+        }
+
+        uint256 interest = (loan.principalOutstanding *
+            loan.aprBps *
+            timeElapsed) / (365 days * 10_000);
+
+        return interest;
+    }
+}

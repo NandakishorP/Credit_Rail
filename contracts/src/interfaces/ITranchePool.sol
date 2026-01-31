@@ -50,7 +50,7 @@ interface ITranchePool {
     function depositSeniorTranche(uint256 amount) external;
 
     // updaters
-    function updateEqutyTrancheWhiteList(address user, bool status) external;
+    function updateEquityTrancheWhiteList(address user, bool status) external;
 
     function updateWhitelist(address user, bool status) external;
 

@@ -340,6 +340,10 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         );
     }
 
+    // there is a logic error here
+    //  the user should pay off the interest from the total amount that accured before repaying the principal
+    // because its diminishing interest rate, but its on the assumption that the repayment agent will handle it correctly
+
     function repayLoan(
         uint256 loanId,
         uint256 principalAmount,
@@ -522,5 +526,19 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         bool isWhitelisted
     ) external onlyOwner {
         whitelistedFeeManagers[manager] = isWhitelisted;
+    }
+
+    function getMaxOriginationFeeBps() external view returns (uint256) {
+        return s_maxOriginationFeeBps;
+    }
+
+    function getNextLoanId() external view returns (uint256) {
+        return s_nextLoanId;
+    }
+
+    function getLoanDetails(
+        uint256 loanId
+    ) external view returns (Loan memory) {
+        return s_loans[loanId];
     }
 }

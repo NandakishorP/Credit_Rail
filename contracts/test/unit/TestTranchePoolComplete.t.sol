@@ -2,10 +2,10 @@
 pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
-import {TranchePool} from "../src/TranchePool.sol";
+import {TranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {LoanEngine} from "../src/LoanEngine.sol";
+import {LoanEngine} from "../../src/LoanEngine.sol";
 
 contract TestTranchePoolComplete is Test {
     TranchePool tranchePool;
@@ -58,8 +58,8 @@ contract TestTranchePoolComplete is Test {
         tranchePool.updateWhitelist(juniorUser1, true);
         tranchePool.updateWhitelist(juniorUser2, true);
         tranchePool.updateWhitelist(juniorUser3, true);
-        tranchePool.updateEqutyTrancheWhiteList(equityUser1, true);
-        tranchePool.updateEqutyTrancheWhiteList(equityUser2, true);
+        tranchePool.updateEquityTrancheWhiteList(equityUser1, true);
+        tranchePool.updateEquityTrancheWhiteList(equityUser2, true);
 
         // Set loan engine
         tranchePool.setLoanEngine(loanEngine);
@@ -2784,7 +2784,7 @@ These catch off-by-one / rounding edge cases.
         address newUser = makeAddr("newUser");
 
         vm.prank(deployer);
-        tranchePool.updateEqutyTrancheWhiteList(newUser, true);
+        tranchePool.updateEquityTrancheWhiteList(newUser, true);
 
         assertTrue(tranchePool.whiteListedForEquityTranche(newUser));
     }

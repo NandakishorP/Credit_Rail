@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
-import {CreditPolicy} from "../src/CreditPolicy.sol";
+import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {Test} from "forge-std/Test.sol";
 
 contract TestCreditPolicy is Test {

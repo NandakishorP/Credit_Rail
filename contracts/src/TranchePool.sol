@@ -1053,7 +1053,7 @@ contract TranchePool is Ownable {
         whiteListedLps[user] = status;
     }
 
-    function updateEqutyTrancheWhiteList(
+    function updateEquityTrancheWhiteList(
         address user,
         bool status
     ) external onlyOwner {
@@ -1074,6 +1074,14 @@ contract TranchePool is Ownable {
         return s_seniorTrancheMaxCap;
     }
 
+    function getSeniorTrancheMinimumDepositAmount()
+        external
+        view
+        returns (uint256)
+    {
+        return s_minimumDepositAmountSeniorTranche;
+    }
+
     function getSeniorTrancheShares(
         address user
     ) external view returns (uint256) {
@@ -1092,12 +1100,28 @@ contract TranchePool is Ownable {
         return s_seniorTrancheDeployedValue;
     }
 
+    function getSeniorInterestIndex() external view returns (uint256) {
+        return seniorInterestIndex;
+    }
+
     function getSeniorUserIndex(address user) external view returns (uint256) {
         return seniorUserIndex[user];
     }
 
     function getJuniorTrancheMaxDepositCap() external view returns (uint256) {
         return s_juniorTrancheMaxCap;
+    }
+
+    function getJuniorInterestIndex() external view returns (uint256) {
+        return juniorInterestIndex;
+    }
+
+    function getJuniorTrancheMinimumDepositAmount()
+        external
+        view
+        returns (uint256)
+    {
+        return s_minimumDepositAmountJuniorTranche;
     }
 
     function getJuniorTrancheShares(
@@ -1136,6 +1160,14 @@ contract TranchePool is Ownable {
         return s_totalEquityShares;
     }
 
+    function getEquityTrancheMinimumDepositAmount()
+        external
+        view
+        returns (uint256)
+    {
+        return s_minimumDepositAmountEquityTranche;
+    }
+
     function getEquityTrancheIdleValue() external view returns (uint256) {
         return s_equityTrancheIdleValue;
     }
@@ -1157,6 +1189,13 @@ contract TranchePool is Ownable {
             s_seniorTrancheDeployedValue +
             s_juniorTrancheDeployedValue +
             s_equityTrancheDeployedValue;
+    }
+
+    function getTotalIdleValue() external view returns (uint256) {
+        return
+            s_seniorTrancheIdleValue +
+            s_juniorTrancheIdleValue +
+            s_equityTrancheIdleValue;
     }
 
     function getSeniorAllocationRatio() external view returns (uint256) {
