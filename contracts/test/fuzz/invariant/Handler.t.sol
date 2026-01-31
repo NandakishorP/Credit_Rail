@@ -15,7 +15,7 @@ contract Handler is Test {
     CreditPolicy creditPolicy;
     address deployer = makeAddr("deployer");
     uint256 public USDT = 1e18;
-    bool allowFullDeployment = false;
+    bool allowFullDeployment = true;
     // 100m$ is the expected principal from lp's
     uint256 public expectedPrincipal = 10_00_00_000 * USDT;
     uint256 public minimumLoanPrincipal = 10_00_000 * USDT;
@@ -37,6 +37,9 @@ contract Handler is Test {
     uint256 public juniorTrancheIdleValue;
     uint256 public juniorTrancheDeployedValue;
 
+    uint256 public equityTrancheIdleValue;
+    uint256 public equityTrancheDeployedValue;
+
     uint256 public seniorTrancheTotalShares;
     mapping(address => uint256) public seniorTrancheShares;
     mapping(address => uint256) public seniorTrancheDeposits;
@@ -51,6 +54,14 @@ contract Handler is Test {
 
     address public recevingEntity = makeAddr("recevingEntity");
     address public feeManager = makeAddr("feeManager");
+
+    uint256 public totalIdleValue;
+    uint256 public totalDeployedValue;
+    uint256 public totalDeposited;
+    uint256 public totalLoss;
+    uint256 public totalRecovered;
+
+    uint256 public outStandingPrincipal;
 
     constructor(
         LoanEngine _loanEngine,
@@ -72,26 +83,26 @@ contract Handler is Test {
                 ERC20Mock(usdt).mint(address(i), 1_00_00_00000 * 1e18);
                 tranchePool.updateWhitelist(address(i), true);
             } else if (i % 3 == 0) {
-                ERC20Mock(usdt).mint(address(i), 50_00_0000 * 1e18);
+                ERC20Mock(usdt).mint(address(i), 50_0000_0000 * 1e18);
                 tranchePool.updateWhitelist(address(i), true);
             } else {
-                ERC20Mock(usdt).mint(address(i), 10_00_00000 * 1e18);
+                ERC20Mock(usdt).mint(address(i), 10_000_0000000 * 1e18);
                 tranchePool.updateWhitelist(address(i), true);
             }
         }
         for (uint160 i = 1; i < 10; i++) {
             juniorUsers.push(address(i));
             if (i % 2 == 0) {
-                ERC20Mock(usdt).mint(address(i), 500_00_000 * 1e18);
+                ERC20Mock(usdt).mint(address(i), 500000_00_000 * 1e18);
                 tranchePool.updateWhitelist(address(i), true);
             } else {
                 tranchePool.updateWhitelist(address(i), true);
-                ERC20Mock(usdt).mint(address(i), 10_00_0000 * 1e18);
+                ERC20Mock(usdt).mint(address(i), 10_000000_000 * 1e18);
             }
         }
         for (uint160 i = 1; i < 5; i++) {
             equityUsers.push(address(i));
-            ERC20Mock(usdt).mint(address(i), 50_00_0000 * 1e18);
+            ERC20Mock(usdt).mint(address(i), 50_0000_0000 * 1e18);
             tranchePool.updateEquityTrancheWhiteList(address(i), true);
         }
 
@@ -131,6 +142,7 @@ contract Handler is Test {
         seniorTrancheDeposits[user] += amount;
         seniorTrancheShares[user] += amount;
         seniorTrancheTotalShares += amount;
+        totalIdleValue += amount;
         seniorUserIndex[user] = tranchePool.getSeniorInterestIndex();
         vm.stopPrank();
     }
@@ -165,6 +177,7 @@ contract Handler is Test {
         juniorTrancheDeposits[user] += amount;
         juniorTrancheShares[user] += amount;
         juniorTrancheTotalShares += amount;
+        totalIdleValue += amount;
         juniorUserIndex[user] = tranchePool.getJuniorInterestIndex();
         vm.stopPrank();
     }
@@ -197,6 +210,8 @@ contract Handler is Test {
         vm.startPrank(user);
         ERC20Mock(usdt).approve(address(tranchePool), amount);
         tranchePool.depositEquityTranche(amount);
+        equityTrancheIdleValue += amount;
+        totalIdleValue += amount;
         vm.stopPrank();
     }
 
@@ -207,6 +222,7 @@ contract Handler is Test {
         ) {
             vm.prank(deployer);
             tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+            totalDeposited = tranchePool.getTotalIdleValue();
         }
     }
 
@@ -285,6 +301,11 @@ contract Handler is Test {
 
         vm.prank(deployer);
         loanEngine.activateLoan(loanId, recevingEntity, feeManager);
+        totalDeployedValue += loanEngine.getLoanDetails(loanId).principalIssued;
+        totalIdleValue -= loanEngine.getLoanDetails(loanId).principalIssued;
+        outStandingPrincipal += loanEngine
+            .getLoanDetails(loanId)
+            .principalIssued;
     }
 
     function repayLoan(
@@ -315,6 +336,7 @@ contract Handler is Test {
         if (principalAmount == 0 && interestAmount == 0) {
             return;
         }
+
         uint256 totalRepayAmount = principalAmount + interestAmount;
         vm.startPrank(recevingEntity);
         ERC20Mock(usdt).approve(address(loanEngine), totalRepayAmount);
@@ -325,6 +347,9 @@ contract Handler is Test {
             recevingEntity
         );
         vm.stopPrank();
+        totalDeployedValue -= principalAmount;
+        totalIdleValue += principalAmount;
+        outStandingPrincipal -= principalAmount;
     }
 
     function maybeDeclareDefault(uint256 loanId, bytes32 reasonHash) public {
@@ -354,6 +379,7 @@ contract Handler is Test {
         if (loanEngine.getNextLoanId() == 1) {
             return;
         }
+
         writeOffCounter++;
 
         // ~1 in 20 handler calls
@@ -372,6 +398,13 @@ contract Handler is Test {
 
         vm.prank(deployer);
         loanEngine.writeOffLoan(loanId);
+        totalDeployedValue -= loanEngine
+            .getLoanDetails(loanId)
+            .principalOutstanding;
+        outStandingPrincipal -= loanEngine
+            .getLoanDetails(loanId)
+            .principalOutstanding;
+        totalLoss += loanEngine.getLoanDetails(loanId).principalOutstanding;
     }
 
     function maybeRecoverLoan(
@@ -407,6 +440,8 @@ contract Handler is Test {
 
         vm.prank(deployer);
         loanEngine.recoverLoan(loanId, amount, recoveryAgent);
+        totalIdleValue += amount;
+        totalRecovered += amount;
     }
 
     // accounting functions for invariants

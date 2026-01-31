@@ -159,6 +159,9 @@ contract TranchePool is Ownable {
     uint256 public s_equityTrancheMaxCap;
 
     uint256 public s_protocolRevenue;
+    uint256 public s_totalDeposited;
+    uint256 public s_totalLoss;
+    uint256 public s_totalRecovered;
 
     PoolState public poolState = PoolState.OPEN;
 
@@ -240,7 +243,7 @@ contract TranchePool is Ownable {
         s_totalSeniorShares += shares;
         s_seniorTrancheIdleValue += amount;
         seniorUserIndex[msg.sender] = seniorInterestIndex;
-
+        s_totalDeposited += amount;
         emit FundsDepositedToSeniorTranche(
             msg.sender,
             amount,
@@ -278,6 +281,7 @@ contract TranchePool is Ownable {
         s_totalJuniorShares += shares;
         s_juniorTrancheIdleValue += amount;
         juniorUserIndex[msg.sender] = juniorInterestIndex;
+        s_totalDeposited += amount;
 
         emit FundsDepositedToJuniorTranche(
             msg.sender,
@@ -315,6 +319,7 @@ contract TranchePool is Ownable {
         s_totalEquityShares += shares;
         s_equityTrancheIdleValue += amount;
         equityUserIndex[msg.sender] = equityInterestIndex;
+        s_totalDeposited += amount;
 
         emit FundsDepositedToEquityTranche(
             msg.sender,
@@ -533,6 +538,7 @@ contract TranchePool is Ownable {
     // share capacity
 
     function onLoss(uint256 loss) external onlyLoanEngine(msg.sender) {
+        s_totalLoss += loss;
         uint256 remaining = loss;
 
         // 1. Equity absorbs first
@@ -569,6 +575,7 @@ contract TranchePool is Ownable {
         if (amount == 0) {
             revert TranchePool__ZeroValueError();
         }
+        s_totalRecovered += amount;
         // treat as pure cash inflow
         uint256 seniorAmount = (amount * seniorAllocationRatio) / 100;
         uint256 juniorAmount = (amount * juniorAllocationRatio) / 100;
@@ -676,7 +683,7 @@ contract TranchePool is Ownable {
         s_seniorTrancheShares[msg.sender] -= sharesToBurn;
         s_totalSeniorShares -= sharesToBurn;
         s_seniorTrancheIdleValue -= amountToWithdraw;
-
+        s_totalDeposited -= amountToWithdraw;
         // Transfer tokens
         IERC20(s_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
 
@@ -723,6 +730,7 @@ contract TranchePool is Ownable {
         s_juniorTrancheShares[msg.sender] -= sharesToBurn;
         s_totalJuniorShares -= sharesToBurn;
         s_juniorTrancheIdleValue -= amountToWithdraw;
+        s_totalDeposited -= amountToWithdraw;
 
         IERC20(s_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
 
@@ -763,6 +771,7 @@ contract TranchePool is Ownable {
         s_equityTrancheShares[msg.sender] -= sharesToBurn;
         s_totalEquityShares -= sharesToBurn;
         s_equityTrancheIdleValue -= amountToWithdraw;
+        s_totalDeposited -= amountToWithdraw;
 
         IERC20(s_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
 
@@ -810,6 +819,7 @@ contract TranchePool is Ownable {
         s_seniorTrancheShares[msg.sender] -= sharesToBurn;
         s_totalSeniorShares -= sharesToBurn;
         s_seniorTrancheIdleValue -= amount;
+        s_totalDeposited -= amount;
 
         IERC20(s_stableCoin).safeTransfer(msg.sender, amount);
 
@@ -855,6 +865,7 @@ contract TranchePool is Ownable {
         s_juniorTrancheShares[msg.sender] -= sharesToBurn;
         s_totalJuniorShares -= sharesToBurn;
         s_juniorTrancheIdleValue -= amount;
+        s_totalDeposited -= amount;
 
         IERC20(s_stableCoin).safeTransfer(msg.sender, amount);
 
@@ -896,6 +907,7 @@ contract TranchePool is Ownable {
         s_equityTrancheShares[msg.sender] -= sharesToBurn;
         s_totalEquityShares -= sharesToBurn;
         s_equityTrancheIdleValue -= amount;
+        s_totalDeposited -= amount;
 
         IERC20(s_stableCoin).safeTransfer(msg.sender, amount);
 
@@ -1204,5 +1216,21 @@ contract TranchePool is Ownable {
 
     function getJuniorAllocationRatio() external view returns (uint256) {
         return s_capital_allocation_factor_junior;
+    }
+
+    function getTotalDeposited() external view returns (uint256) {
+        return s_totalDeposited;
+    }
+
+    function getTotalLoss() external view returns (uint256) {
+        return s_totalLoss;
+    }
+
+    function getTotalRecovered() external view returns (uint256) {
+        return s_totalRecovered;
+    }
+
+    function getProtocolRevenue() external view returns (uint256) {
+        return s_protocolRevenue;
     }
 }

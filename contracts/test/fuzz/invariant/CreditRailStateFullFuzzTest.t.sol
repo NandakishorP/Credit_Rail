@@ -11,6 +11,7 @@ import {Handler} from "./Handler.t.sol";
 import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 
+// we assume protocol revenue is zero as we have equity tranche
 contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     Handler public handler;
     ERC20Mock public usdt;
@@ -58,6 +59,38 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             FuzzSelector({addr: address(handler), selectors: selectors})
         );
         targetContract(address(handler));
+    }
+
+    function invariant__totalIdleAndDeployedValueMatchesAccounting()
+        public
+        view
+    {
+        assertEq(
+            tranchePool.getTotalIdleValue() +
+                tranchePool.getTotalDeployedValue(),
+            tranchePool.getTotalDeposited() +
+                tranchePool.getTotalLoss() -
+                tranchePool.getTotalRecovered(),
+            "Total idle and deployed value does not match handler accounting"
+        );
+    }
+
+    function invariant__poolAccountingMatchesTokenBalance() public view {
+        uint256 poolBalance = usdt.balanceOf(address(tranchePool));
+
+        uint256 internalAccounting = tranchePool.getTotalIdleValue() +
+            tranchePool.getTotalDeployedValue() +
+            tranchePool.getProtocolRevenue();
+
+        assertEq(poolBalance, internalAccounting);
+    }
+
+    function invariant__OutStandingPrincipalMatchesDeployed() public view {
+        assertEq(
+            handler.outStandingPrincipal(),
+            tranchePool.getTotalDeployedValue(),
+            "Outstanding principal does not match deployed minus recovered and loss"
+        );
     }
 
     function invariant_totalSeniorDepositsMatchesIdleSeniorValue() public view {
