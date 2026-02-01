@@ -51,6 +51,8 @@ contract TestLoanEngineComplete is Test {
         creditPolicy.updateConcentration(1, _createConcentrationLimits());
         creditPolicy.updateAttestation(1, _createAttestationRequirements());
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setMaxTiers(2);
+
         creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
         creditPolicy.setPolicyDocument(
             1,
@@ -75,7 +77,7 @@ contract TestLoanEngineComplete is Test {
         loanEngine.setWhitelistedOffRampingEntity(offRampEntity, true);
         loanEngine.setWhitelistedRepaymentAgent(repaymentAgent, true);
         loanEngine.setWhitelistedRecoveryAgent(recoveryAgent, true);
-
+        loanEngine.setWhitelistedFeeManager(feeManager, true);
         vm.stopPrank();
 
         // Fund users
@@ -534,7 +536,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__InvalidOffRampingEntity.selector,
+                LoanEngine.LoanEngine__InvalidRepaymentAgent.selector,
                 nonWhitelistedAgent
             )
         );
