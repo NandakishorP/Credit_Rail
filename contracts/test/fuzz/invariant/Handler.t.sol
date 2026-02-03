@@ -276,12 +276,14 @@ contract Handler is Test {
         vm.prank(deployer);
         loanEngine.createLoan(
             borrowerCommitment,
+            keccak256(abi.encode(borrowerCommitment, block.timestamp)), // nullifierHash
             activePolicyVersion,
             1,
             principalIssued,
             500,
             originationFeeBps,
             termDays,
+            bytes32(0), // industry
             "",
             new bytes32[](0)
         );

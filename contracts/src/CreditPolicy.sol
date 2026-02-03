@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
-import {console} from "forge-std/console.sol";
+
 
 /**
  * @title CreditPolicy
@@ -334,7 +334,6 @@ contract CreditPolicy is ICreditPolicy {
         if (tierId >= maxTiers) {
             revert CreditPolicy__InvalidTierCount(tierId);
         }
-        console.log("here");
         loanTiers[version][tierId] = tier;
         tierExists[version][tierId] = true;
         if (tierId >= totalTiers[version]) {
@@ -423,5 +422,12 @@ contract CreditPolicy is ICreditPolicy {
 
     function getMaxTiers() external view returns (uint8) {
         return maxTiers;
+    }
+
+    function isIndustryExcluded(
+        uint256 version,
+        bytes32 industry
+    ) external view returns (bool) {
+        return excludedIndustries[version][industry];
     }
 }

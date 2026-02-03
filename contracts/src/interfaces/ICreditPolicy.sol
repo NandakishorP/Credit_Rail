@@ -60,4 +60,9 @@ interface ICreditPolicy {
     function isPolicyActive(uint256 version) external view returns (bool);
 
     function isPolicyFrozen(uint256 version) external view returns (bool);
+
+    function isIndustryExcluded(
+        uint256 version,
+        bytes32 industry
+    ) external view returns (bool);
 }

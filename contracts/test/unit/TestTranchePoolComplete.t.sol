@@ -37,15 +37,15 @@ contract TestTranchePoolComplete is Test {
         vm.startPrank(deployer);
         tranchePool = new TranchePool(address(usdt));
 
-        // Set minimum deposits
-        tranchePool.setMinimumDepositAmountSeniorTranche(5_00_000 * USDT);
-        tranchePool.setMinimumDepositAmountJuniorTranche(10_00_000 * USDT);
-        tranchePool.setMinimumDepositAmountEquityTranche(50_00_000 * USDT);
-
         // Set max caps
         tranchePool.setMaxAllocationCapSeniorTranche(13_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapJuniorTranche(5_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapEquityTranche(3_00_00_000 * USDT);
+
+        // Set minimum deposits
+        tranchePool.setMinimumDepositAmountSeniorTranche(5_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountJuniorTranche(10_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountEquityTranche(50_00_000 * USDT);
 
         // Set allocation factors
         tranchePool.setTrancheCapitalAllocationFactorSenior(80);
@@ -2494,7 +2494,7 @@ These catch off-by-one / rounding edge cases.
         uint256 loss = equityDeployedBefore / 2;
 
         vm.prank(loanEngine);
-        tranchePool.onLoss(loss);
+        tranchePool.onLoss(loss, 0, 80, 15);
 
         assertEq(
             tranchePool.getEquityTrancheDeployedValue(),
@@ -2517,7 +2517,7 @@ These catch off-by-one / rounding edge cases.
         uint256 loss = equityDeployed + (juniorDeployedBefore / 2);
 
         vm.prank(loanEngine);
-        tranchePool.onLoss(loss);
+        tranchePool.onLoss(loss, 0, 80, 15);
 
         assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
         assertEq(
@@ -2543,7 +2543,7 @@ These catch off-by-one / rounding edge cases.
             (seniorDeployedBefore / 2);
 
         vm.prank(loanEngine);
-        tranchePool.onLoss(loss);
+        tranchePool.onLoss(loss, 0, 80, 15);
 
         assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
         assertEq(tranchePool.getJuniorTrancheDeployedValue(), 0);
@@ -2570,7 +2570,7 @@ These catch off-by-one / rounding edge cases.
                 1
             )
         );
-        tranchePool.onLoss(excessiveLoss);
+        tranchePool.onLoss(excessiveLoss, 0, 80, 15);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -2671,23 +2671,24 @@ These catch off-by-one / rounding edge cases.
 
     function test_SetPoolState_ToClosed_Success() public {
         _depositToAllTranches();
-        _allocateCapital();
-
-        uint256 seniorDeployed = tranchePool.getSeniorTrancheDeployedValue();
-        uint256 juniorDeployed = tranchePool.getJuniorTrancheDeployedValue();
-        uint256 equityDeployed = tranchePool.getEquityTrancheDeployedValue();
+        // Do NOT allocate capital. Closing is only allowed if deployed == 0.
 
         vm.prank(deployer);
         tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
 
-        // Deployed values should be moved to idle
-        assertEq(tranchePool.getSeniorTrancheDeployedValue(), 0);
-        assertEq(tranchePool.getJuniorTrancheDeployedValue(), 0);
-        assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
+        assertEq(
+            uint256(tranchePool.getPoolState()),
+            uint256(TranchePool.PoolState.CLOSED)
+        );
+    }
 
-        assertGt(tranchePool.getSeniorTrancheIdleValue(), seniorDeployed);
-        assertGt(tranchePool.getJuniorTrancheIdleValue(), juniorDeployed);
-        assertGt(tranchePool.getEquityTrancheIdleValue(), equityDeployed);
+    function test_SetPoolState_ToClosed_RevertIf_Deployed() public {
+        _depositToAllTranches();
+        _allocateCapital();
+
+        vm.prank(deployer);
+        vm.expectRevert(TranchePool.TranchePool__DeployedCapitalExists.selector);
+        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
     }
 
     function test_SetPoolState_RevertIf_Backwards() public {

@@ -103,12 +103,14 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier1"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -160,12 +162,14 @@ contract TestLoanEngineComplete is Test {
         );
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier2"),
             2,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -183,12 +187,14 @@ contract TestLoanEngineComplete is Test {
         );
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier3"),
             testPolicyVersion,
             99, // Invalid tier
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -206,12 +212,14 @@ contract TestLoanEngineComplete is Test {
         );
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier4"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             600, // 6% > max 5%
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -230,12 +238,14 @@ contract TestLoanEngineComplete is Test {
         );
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier5"),
             testPolicyVersion,
             testTierId,
             0, // Zero principal
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -246,12 +256,14 @@ contract TestLoanEngineComplete is Test {
         vm.expectRevert();
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier6"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -266,12 +278,14 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier7"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -338,12 +352,14 @@ contract TestLoanEngineComplete is Test {
         vm.startPrank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier8"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -365,12 +381,14 @@ contract TestLoanEngineComplete is Test {
         vm.startPrank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier9"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -496,16 +514,77 @@ contract TestLoanEngineComplete is Test {
         assertEq(uint256(state), uint256(LoanEngine.LoanState.ACTIVE)); // Still active
     }
 
+    function test_RepayLoan_Waterfall_IgnoresLabels() public {
+        _createAndActivateLoan();
+
+        // Advance time to accrue interest
+        vm.warp(block.timestamp + 90 days);
+
+        uint256 timeElapsed = 90 days;
+        uint256 expectedInterest = (testPrincipal * testAprBps * timeElapsed) /
+            (365 days * 10_000); // approx 17,753 if principal is 1M
+
+        uint256 repaymentAmount = 50_000 * USDT; // More than interest
+
+        deal(address(usdt), repaymentAgent, repaymentAmount);
+        vm.prank(repaymentAgent);
+        usdt.approve(address(loanEngine), repaymentAmount);
+
+        // INTENTIONALLY MISLABEL: Say it's all Principal, 0 Interest
+        // The waterfall should override this and pay interest first.
+        vm.prank(deployer);
+        loanEngine.repayLoan(
+            1,
+            repaymentAmount, // principalAmount labeled
+            0,               // interestAmount labeled
+            repaymentAgent
+        );
+
+        (
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint256 principalOutstanding, // 5
+            ,
+            ,
+            uint256 interestAccrued, // 8
+            uint256 interestPaid, // 9
+            ,
+            ,
+            ,
+            ,
+            , // 14
+            ,
+            ,
+
+        ) = loanEngine.s_loans(1);
+
+        // CHECK 1: Interest Accrued should be 0 (fully paid first)
+        assertEq(interestAccrued, 0, "Waterfall should pay interest first");
+
+        // CHECK 2: Interest Paid should track the amount paid
+        assertEq(interestPaid, expectedInterest, "Interest paid tracks correct amount");
+
+        // CHECK 3: Principal Outstanding should reduce by (Repayment - Interest)
+        // repaymentAmount (50k) - expectedInterest (~17k) = ~33k principal reduction
+        uint256 expectedPrincipalPaid = repaymentAmount - expectedInterest;
+        assertEq(principalOutstanding, testPrincipal - expectedPrincipalPaid, "Principal reduced by remainder");
+    }
+
     function test_RepayLoan_RevertIf_NotActive() public {
         vm.prank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier10"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -586,12 +665,14 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier11"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -881,12 +962,14 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier12"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -958,12 +1041,14 @@ contract TestLoanEngineComplete is Test {
 
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier13"),
             testPolicyVersion,
             testTierId,
             smallerPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );
@@ -1061,12 +1146,14 @@ contract TestLoanEngineComplete is Test {
         vm.startPrank(deployer);
         loanEngine.createLoan(
             testBorrowerCommitment,
+            keccak256("nullifier14"),
             testPolicyVersion,
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
+            bytes32(0),
             testProofData,
             testPublicInputs
         );

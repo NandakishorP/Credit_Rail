@@ -26,12 +26,12 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         vm.startPrank(deployer);
         usdt = new ERC20Mock();
         tranchePool = new TranchePool(address(usdt));
-        tranchePool.setMinimumDepositAmountSeniorTranche(10_00_000 * USDT);
-        tranchePool.setMinimumDepositAmountJuniorTranche(50_00_000 * USDT);
-        tranchePool.setMinimumDepositAmountEquityTranche(1_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapSeniorTranche(5_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapJuniorTranche(3_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapEquityTranche(2_00_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountSeniorTranche(10_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountJuniorTranche(50_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountEquityTranche(1_00_00_000 * USDT);
         creditPolicy = new CreditPolicy();
         MockLoanProofVerifier mockLoanProofVerifier = new MockLoanProofVerifier();
         loanEngine = new LoanEngine(
@@ -75,6 +75,8 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         );
     }
 
+    // what about accured interest?
+    // this invaraint holded because there was no forwwarding of time, so the interest didn't accumulate, this invariant is wrong
     function invariant__poolAccountingMatchesTokenBalance() public view {
         uint256 poolBalance = usdt.balanceOf(address(tranchePool));
 

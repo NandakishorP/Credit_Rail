@@ -41,7 +41,13 @@ interface ITranchePool {
         uint256 fees,
         address deployer,
         address feeManager
-    ) external;
+    )
+        external
+        returns (
+            uint256 seniorAmount,
+            uint256 juniorAmount,
+            uint256 equityAmount
+        );
 
     function depositEquityTranche(uint256 amount) external;
 
@@ -56,7 +62,12 @@ interface ITranchePool {
 
     // setters
 
-    function onLoss(uint256 loss) external;
+    function onLoss(
+        uint256 principalLoss,
+        uint256 interestAccrued,
+        uint256 seniorAllocationRatio,
+        uint256 juniorAllocationRatio
+    ) external;
 
     function setLoanEngine(address _loanEngine) external;
 
@@ -92,4 +103,6 @@ interface ITranchePool {
     function getSeniorAllocationRatio() external view returns (uint256);
 
     function getJuniorAllocationRatio() external view returns (uint256);
+
+    function getTotalIdleValue() external view returns (uint256);
 }

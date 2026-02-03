@@ -45,6 +45,8 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     error LoanEngine__InvalidFeeManagerEntity(address manager);
     error LoanEngine__InvalidRecoveryAgent(address agent);
     error LoanEngine__InvalidRepaymentAgent(address agent);
+    error LoanEngine__InsufficientPoolLiquidity();
+    error LoanEngine__ProofAlreadyUsed();
     modifier isWhiteListedOffRampingEntity(address entity) {
         _isWhiteListedOffRampingEntity(entity);
         _;
@@ -105,10 +107,11 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
     mapping(address whiteListedFeeManager => bool)
         public whitelistedFeeManagers;
+    mapping(bytes32 nullifierHash => bool) public s_nullifierHashes;
     uint256 public s_nextLoanId = 1;
     uint256 public s_maxOriginationFeeBps;
     address public s_stableCoinAddress;
-
+    uint256 public constant STANDARD_BPS = 100;
     enum LoanState {
         NONE,
         CREATED,
@@ -205,14 +208,19 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     // A notarization step that records a policy-compliant loan intent on-chain
     // TODO: public inputs needed to be verified against the contract state
     // will be implemented after the public inputs structure is finalized
+    // preconditions
+    // borrowerCommitment should match the publicinput commitment
+    // all the parameteres should match the public inputs
     function createLoan(
         bytes32 borrowerCommitment,
+        bytes32 nullifierHash,
         uint256 policyVersion,
         uint8 tierId,
         uint256 principalIssued,
         uint256 aprBps,
         uint256 originationFeeBps,
         uint256 termDays,
+        bytes32 industry,
         bytes calldata proofData,
         bytes32[] calldata publicInputs
     ) external onlyOwner {
@@ -224,8 +232,16 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__PolicyNotFrozen(policyVersion);
         }
 
+        if (creditPolicyContract.isIndustryExcluded(policyVersion, industry)) {
+            revert LoanEngine__PolicyNotFrozen(policyVersion);
+        }
+
         if (!creditPolicyContract.tierExistsInPolicy(policyVersion, tierId)) {
             revert LoanEngine__LoanTierIsNotInPolicy(policyVersion, tierId);
+        }
+
+        if (s_nullifierHashes[nullifierHash]) {
+            revert LoanEngine__ProofAlreadyUsed();
         }
 
         if (loanProofVerifier.verify(proofData, publicInputs) == false) {
@@ -239,6 +255,15 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__PoolNotDeployed();
         }
 
+        if (principalIssued == 0 || aprBps == 0 || termDays == 0) {
+            revert LoanEngine__InvalidLoanParameters(
+                s_nextLoanId,
+                principalIssued,
+                aprBps,
+                termDays
+            );
+        }
+
         if (originationFeeBps > s_maxOriginationFeeBps) {
             revert LoanEngine__MaxOriginationFeeExceeded(
                 s_nextLoanId,
@@ -247,13 +272,8 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             );
         }
 
-        if (principalIssued == 0 || aprBps == 0 || termDays == 0) {
-            revert LoanEngine__InvalidLoanParameters(
-                s_nextLoanId,
-                principalIssued,
-                aprBps,
-                termDays
-            );
+        if (principalIssued > tranchePool.getTotalIdleValue()) {
+            revert LoanEngine__InsufficientPoolLiquidity();
         }
 
         Loan memory newLoan = Loan({
@@ -316,8 +336,6 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         loan.startTimestamp = block.timestamp;
         loan.maturityTimestamp = block.timestamp + (loan.termDays * 1 days);
         loan.state = LoanState.ACTIVE;
-        loan.seniorAllocationRatio = tranchePool.getSeniorAllocationRatio();
-        loan.juniorAllocationRatio = tranchePool.getJuniorAllocationRatio();
 
         uint256 originationFee = (loan.principalIssued *
             loan.originationFeeBps) / 10000;
@@ -325,12 +343,22 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         s_originationFees[loanId] = originationFee;
 
         uint256 totalDisbursement = loan.principalIssued - originationFee;
-        tranchePool.allocateCapital(
-            totalDisbursement,
-            originationFee,
-            receivingEntity,
-            feeManager
-        );
+        (
+            uint256 seniorAmount,
+            uint256 juniorAmount,
+            uint256 equityAmount
+        ) = tranchePool.allocateCapital(
+                totalDisbursement,
+                originationFee,
+                receivingEntity,
+                feeManager
+            );
+        loan.seniorAllocationRatio =
+            (seniorAmount * STANDARD_BPS) /
+            (seniorAmount + juniorAmount + equityAmount);
+        loan.juniorAllocationRatio =
+            (juniorAmount * STANDARD_BPS) /
+            (seniorAmount + juniorAmount + equityAmount);
         emit LoanActivated(
             loan.loanId,
             loan.principalIssued,
@@ -361,39 +389,57 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__LoanIsNotActive(loanId);
         }
 
-        if (principalAmount == 0 && interestAmount == 0) {
+        uint256 totalPayment = principalAmount + interestAmount;
+        if (totalPayment == 0) {
             revert LoanEngine__InvalidRepayment();
         }
 
         _accrueInterest(loanId);
+
+        // 1. Transfer the full amount directly to the pool
+        // The contract acts as the settlement layer, enforcing the allocation
+        IERC20(s_stableCoinAddress).safeTransferFrom(
+            repaymentAgent,
+            address(tranchePool),
+            totalPayment
+        );
+
+        // 2. WATERFALL: Interest First
+        // We ignore the user's split and enforce that interest is paid before principal
         uint256 interestDue = loan.interestAccrued;
-        // any excess payment is simply ignored so it should be handled off-chain
-        uint256 interestPaid = interestAmount > interestDue
+        uint256 interestPaid = totalPayment > interestDue
             ? interestDue
-            : interestAmount;
+            : totalPayment;
+
+        // 3. WATERFALL: Principal Second
+        // Only the remainder after satisfying interest goes to principal
+        uint256 remainingForPrincipal = totalPayment - interestPaid;
+        uint256 principalDue = loan.principalOutstanding;
+
+        uint256 principalPaid = remainingForPrincipal > principalDue
+            ? principalDue
+            : remainingForPrincipal;
+
+        // 4. Apply Accounting
         loan.interestAccrued -= interestPaid;
         loan.interestPaid += interestPaid;
-        uint256 principalDue = loan.principalOutstanding;
-        uint256 principalPaid = principalAmount > principalDue
-            ? principalDue
-            : principalAmount;
         loan.principalOutstanding -= principalPaid;
+
         bool fullyRepaid = loan.principalOutstanding == 0 &&
             loan.interestAccrued == 0;
 
         if (fullyRepaid) {
             loan.state = LoanState.REPAID;
         }
+
+        // 5. Notify Pool
+        // Any excess payment (overpayment) is effectively donated to the pool's idle value
+        // or handled by the pool's internal logic as generic "Balance - Deployed"
         tranchePool.onRepayment(
             principalPaid,
             interestPaid,
             loan.seniorAllocationRatio,
             loan.juniorAllocationRatio
-        );
-        IERC20(s_stableCoinAddress).safeTransferFrom(
-            repaymentAgent,
-            address(tranchePool),
-            principalPaid + interestPaid
         );
 
         emit LoanRepaid(
@@ -428,6 +474,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__LoanIsNotDefaulted(loanId);
         }
         uint256 loss = loan.principalOutstanding;
+        uint256 interestAccrued = loan.interestAccrued;
         if (loss == 0) {
             revert LoanEngine__ZeroLossOnWriteOff(loanId);
         }
@@ -435,7 +482,12 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         loan.principalOutstanding = 0;
         loan.interestAccrued = 0;
         loan.state = LoanState.WRITTEN_OFF;
-        tranchePool.onLoss(loss);
+        tranchePool.onLoss(
+            loss,
+            interestAccrued,
+            loan.seniorAllocationRatio,
+            loan.juniorAllocationRatio
+        );
         emit LoanWrittenOff(loanId, block.timestamp);
     }
 

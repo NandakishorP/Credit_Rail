@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {console} from "forge-std/console.sol";
+
 
 contract TranchePool is Ownable {
     using SafeERC20 for IERC20;
@@ -29,7 +29,9 @@ contract TranchePool is Ownable {
     error TranchePool__PoolIsNotCommited();
     error TranchePool__PrincipalRepaymentExceeded();
     error TranchePool__ZeroAddressError();
-
+    error TranchePool__DeployedCapitalExists();
+    error TranchePool__InvalidMaxCapAmount();
+    error TranchePool__InvalidMinDepositAmount();
     // Events
 
     event PoolStateUpdated(PoolState newState);
@@ -213,12 +215,15 @@ contract TranchePool is Ownable {
         if (poolState != PoolState.OPEN) {
             revert TranchePool__PoolIsNotOpen();
         }
+        if (amount == 0) {
+            revert TranchePool__ZeroValueError();
+        }
         if (amount < s_minimumDepositAmountSeniorTranche) {
             revert TranchePool__LessThanDepositThreshold(amount);
         }
         // why there is a max cap exists?
         //
-        //  1. to prevent the liquidity from sitting idle.abi
+        //  1. to prevent the liquidity from sitting idle
         //
         if (amount + s_seniorTrancheIdleValue > s_seniorTrancheMaxCap) {
             revert TranchePool__MaxDepositCapExceeded(
@@ -339,7 +344,7 @@ contract TranchePool is Ownable {
         uint256 fees,
         address deployer,
         address feeManager
-    ) external onlyLoanEngine(msg.sender) {
+    ) external onlyLoanEngine(msg.sender) returns (uint256, uint256, uint256) {
         if (
             poolState != PoolState.COMMITED && poolState != PoolState.DEPLOYED
         ) {
@@ -435,6 +440,7 @@ contract TranchePool is Ownable {
             equityAmount,
             block.timestamp
         );
+        return (seniorAmount, juniorAmount, equityAmount);
     }
 
     function onInterestAccrued(
@@ -537,9 +543,26 @@ contract TranchePool is Ownable {
     // interest will be accured and the distribution is dependent on the
     // share capacity
 
-    function onLoss(uint256 loss) external onlyLoanEngine(msg.sender) {
-        s_totalLoss += loss;
-        uint256 remaining = loss;
+    function onLoss(
+        uint256 principalLoss,
+        uint256 interestAccrued,
+        uint256 seniorAllocationRatio,
+        uint256 juniorAllocationRatio
+    ) external onlyLoanEngine(msg.sender) {
+        
+        // 1. Cancel the Ghost Interest
+        if (interestAccrued > 0) {
+            uint256 seniorShare = (interestAccrued * seniorAllocationRatio) / 100;
+            uint256 juniorShare = (interestAccrued * juniorAllocationRatio) / 100;
+            
+            // We use _minimum to avoid underflow if there were rounding errors elsewhere, 
+            // though theoretically it should match.
+            seniorAccruedInterest -= _minimum(seniorAccruedInterest, seniorShare);
+            juniorAccruedInterest -= _minimum(juniorAccruedInterest, juniorShare);
+        }
+
+        s_totalLoss += principalLoss;
+        uint256 remaining = principalLoss;
 
         // 1. Equity absorbs first
         uint256 equityLoss = _minimum(s_equityTrancheDeployedValue, remaining);
@@ -567,6 +590,8 @@ contract TranchePool is Ownable {
         emit LossAllocated(seniorLoss, juniorLoss, equityLoss);
     }
 
+    // on recovery what happens is the protocol may recover more than he lost and it can cause appreciation of the share value when withdrawing, keeping the design simple because adding it to interest accured make no difference at the end of withdrawing.
+
     function onRecovery(
         uint256 amount,
         uint256 seniorAllocationRatio,
@@ -590,6 +615,7 @@ contract TranchePool is Ownable {
         emit RecoverAmountTransferredToTranchePool(amount, block.timestamp);
     }
 
+    // when the pool closes if the user withdraw the shares before claiming interest on those he will lose the interest for the withdrawn shares
     function claimSeniorInterest() external {
         uint256 userShares = s_seniorTrancheShares[msg.sender];
         if (userShares == 0) revert TranchePool__InsufficientShares();
@@ -956,18 +982,27 @@ contract TranchePool is Ownable {
     function setMinimumDepositAmountJuniorTranche(
         uint256 amount
     ) external onlyOwner {
+        if (amount > s_juniorTrancheMaxCap) {
+            revert TranchePool__InvalidMinDepositAmount();
+        }
         s_minimumDepositAmountJuniorTranche = amount;
     }
 
     function setMinimumDepositAmountSeniorTranche(
         uint256 amount
     ) external onlyOwner {
+        if (amount > s_seniorTrancheMaxCap) {
+            revert TranchePool__InvalidMinDepositAmount();
+        }
         s_minimumDepositAmountSeniorTranche = amount;
     }
 
     function setMinimumDepositAmountEquityTranche(
         uint256 amount
     ) external onlyOwner {
+        if (amount > s_equityTrancheMaxCap) {
+            revert TranchePool__InvalidMinDepositAmount();
+        }
         s_minimumDepositAmountEquityTranche = amount;
     }
 
@@ -1008,23 +1043,15 @@ contract TranchePool is Ownable {
             revert TranchePool__InvalidStateTransition(newState);
         }
 
-        poolState = newState;
-
-        if (poolState == PoolState.CLOSED) {
-            _closePool();
+        if (newState == PoolState.CLOSED) {
+            if (getTotalDeployedValue() > 0) {
+                revert TranchePool__DeployedCapitalExists();
+            }
         }
 
+        poolState = newState;
+
         emit PoolStateUpdated(newState);
-    }
-
-    function _closePool() private {
-        s_seniorTrancheIdleValue += s_seniorTrancheDeployedValue;
-        s_juniorTrancheIdleValue += s_juniorTrancheDeployedValue;
-        s_equityTrancheIdleValue += s_equityTrancheDeployedValue;
-
-        s_seniorTrancheDeployedValue = 0;
-        s_juniorTrancheDeployedValue = 0;
-        s_equityTrancheDeployedValue = 0;
     }
 
     function setLoanEngine(address _loanEngine) external onlyOwner {
@@ -1040,6 +1067,9 @@ contract TranchePool is Ownable {
         if (amount == 0) {
             revert TranchePool__ZeroValueError();
         }
+        if (amount < s_minimumDepositAmountSeniorTranche) {
+            revert TranchePool__InvalidMaxCapAmount();
+        }
         s_seniorTrancheMaxCap = amount;
     }
 
@@ -1049,6 +1079,9 @@ contract TranchePool is Ownable {
         if (amount == 0) {
             revert TranchePool__ZeroValueError();
         }
+        if (amount < s_minimumDepositAmountJuniorTranche) {
+            revert TranchePool__InvalidMaxCapAmount();
+        }
         s_juniorTrancheMaxCap = amount;
     }
 
@@ -1057,6 +1090,9 @@ contract TranchePool is Ownable {
     ) external onlyOwner {
         if (amount == 0) {
             revert TranchePool__ZeroValueError();
+        }
+        if (amount < s_minimumDepositAmountEquityTranche) {
+            revert TranchePool__InvalidMaxCapAmount();
         }
         s_equityTrancheMaxCap = amount;
     }
@@ -1196,7 +1232,7 @@ contract TranchePool is Ownable {
         return poolState;
     }
 
-    function getTotalDeployedValue() external view returns (uint256) {
+    function getTotalDeployedValue() public view returns (uint256) {
         return
             s_seniorTrancheDeployedValue +
             s_juniorTrancheDeployedValue +
