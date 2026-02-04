@@ -22,34 +22,48 @@ The handler models:
 The handler enforces only minimal preconditions required by the protocol (e.g., valid pool state, sufficient liquidity) and otherwise allows arbitrary sequencing of actions.
 
 This design ensures that invariants are tested against realistic and adversarial execution paths, rather than curated happy flows.
+    
+## Invariant 1 — Outstanding Principal Matches Deployed Capital
 
-## Invariant 1 — Global Value Conservation
-
-The ERC20 token balance held by the pool must match the protocol’s internal accounting for all protocol-mediated state transitions.
-
+The total outstanding principal recorded by the LoanEngine must always match the total deployed value tracked by the TranchePool.
 
 **Ensures:**
-- No value is created or destroyed
-- Fees, recoveries, and repayments are properly accounted for
-- There are no silent mint or burn paths
+- Loan creation and activation correctly move capital from idle to deployed.
+- Repayments reduce both the loan's outstanding principal and the pool's deployed value simultaneously.
+- Write-offs (losses) reduce both values in sync.
+- Recoveries only affect idle capital and do not resurrect deployed value.
+
+### State transition reasoning
+
+At any point in time, all principal capital must exist in exactly one of two states:
+1. Idle capital held by the TranchePool
+2. Deployed capital backing active loans
+
+When a loan is activated, principal is transferred from idle capital to deployed capital, and the LoanEngine records the same amount as outstanding principal.
+
+When a borrower repays principal, the outstanding principal is reduced and the same amount is returned to idle capital, reducing deployed value.
+
+When a loss is realized, both the loan’s outstanding principal and the pool’s deployed value are reduced by the same amount.
+
+Recoveries do not increase deployed capital or outstanding principal; they only increase idle capital.
+
+Therefore, outstanding principal in the LoanEngine must always equal the deployed value tracked by the TranchePool.
 
 **Bugs ruled out:**
-- Missing balance updates
-- Double-counted fees
-- Partial state updates during capital movement
-- Reentrancy-related accounting mismatches
+- "Ghost" principal remaining after repayment.
+- Deployed capital drift (pool thinking money is deployed when it's actually repaid).
+- Loss accounting mismatches where a writedown clears the loan but leaves the pool believing capital is still deployed.
 
 ```solidity
-function invariant__poolAccountingMatchesTokenBalance() public view {
-        uint256 poolBalance = usdt.balanceOf(address(tranchePool));
-
-        uint256 internalAccounting = tranchePool.getTotalIdleValue() +
-            tranchePool.getTotalDeployedValue() +
-            tranchePool.getProtocolRevenue();
-
-        assertEq(poolBalance, internalAccounting);
-    }
+function invariant__OutStandingPrincipalMatchesDeployed() public view {
+    assertEq(
+        handler.outStandingPrincipal(),
+        tranchePool.getTotalDeployedValue(),
+        "Outstanding principal does not match deployed minus recovered and loss"
+    );
+}
 ```
+
 
 ## Invariant 2 — Capital Location Correctness
 
