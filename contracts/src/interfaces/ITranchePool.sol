@@ -19,22 +19,16 @@ interface ITranchePool {
 
     function onInterestAccrued(
         uint256 interestAmount,
-        uint256 seniorAllocationFactor,
-        uint256 juniorAllocationFactor
+        uint256 seniorInterest,
+        uint256 juniorInterest
     ) external;
 
     function onRepayment(
-        uint256 principal,
-        uint256 interest,
-        uint256 seniorAllocationRatio,
-        uint256 juniorAllocationRatio
+        uint256 principalRepaid,
+        uint256 interestRepaid
     ) external;
 
-    function onRecovery(
-        uint256 amount,
-        uint256 seniorAllocationRatio,
-        uint256 juniorAllocationRatio
-    ) external;
+    function onRecovery(uint256 amount) external;
 
     function allocateCapital(
         uint256 totalDisbursement,
@@ -62,12 +56,7 @@ interface ITranchePool {
 
     // setters
 
-    function onLoss(
-        uint256 principalLoss,
-        uint256 interestAccrued,
-        uint256 seniorAllocationRatio,
-        uint256 juniorAllocationRatio
-    ) external;
+    function onLoss(uint256 principalLoss, uint256 interestAccrued) external;
 
     function setLoanEngine(address _loanEngine) external;
 

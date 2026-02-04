@@ -2405,13 +2405,13 @@ These catch off-by-one / rounding edge cases.
             .getEquityTrancheDeployedValue();
 
         vm.prank(loanEngine);
-        tranchePool.onRepayment(principalRepaid, 0, 80, 15);
+        tranchePool.onRepayment(principalRepaid, 0);
 
-        uint256 expectedSenior = (principalRepaid * 80) / 100;
-        uint256 expectedJunior = (principalRepaid * 15) / 100;
-        uint256 expectedEquity = principalRepaid -
-            expectedSenior -
-            expectedJunior;
+        // Waterfall: Senior first
+        // Since principalRepaid (5M) < Senior Deployed (~8M), Senior gets everything
+        uint256 expectedSenior = principalRepaid;
+        uint256 expectedJunior = 0;
+        uint256 expectedEquity = 0;
 
         assertEq(
             tranchePool.getSeniorTrancheDeployedValue(),
@@ -2435,7 +2435,7 @@ These catch off-by-one / rounding edge cases.
 
         // No accrued interest initially, so all goes to equity
         vm.prank(loanEngine);
-        tranchePool.onRepayment(0, interestRepaid, 80, 15);
+        tranchePool.onRepayment(0, interestRepaid);
 
         uint256 expectedEquityIndex = 1e18 +
             (interestRepaid * 1e18) /
@@ -2451,7 +2451,7 @@ These catch off-by-one / rounding edge cases.
         uint256 interestRepaid = 5_00_000 * USDT;
 
         vm.prank(loanEngine);
-        tranchePool.onRepayment(principalRepaid, interestRepaid, 80, 15);
+        tranchePool.onRepayment(principalRepaid, interestRepaid);
 
         // Verify principal returned
         assertGt(tranchePool.getSeniorTrancheIdleValue(), 0);
@@ -2465,7 +2465,7 @@ These catch off-by-one / rounding edge cases.
                 0
             )
         );
-        tranchePool.onRepayment(0, 0, 80, 15);
+        tranchePool.onRepayment(0, 0);
     }
 
     function test_OnRepayment_RevertIf_PrincipalExceedsDeployed() public {
@@ -2478,7 +2478,7 @@ These catch off-by-one / rounding edge cases.
         vm.expectRevert(
             TranchePool.TranchePool__PrincipalRepaymentExceeded.selector
         );
-        tranchePool.onRepayment(excessivePrincipal, 0, 80, 15);
+        tranchePool.onRepayment(excessivePrincipal, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -2494,7 +2494,7 @@ These catch off-by-one / rounding edge cases.
         uint256 loss = equityDeployedBefore / 2;
 
         vm.prank(loanEngine);
-        tranchePool.onLoss(loss, 0, 80, 15);
+        tranchePool.onLoss(loss, 0);
 
         assertEq(
             tranchePool.getEquityTrancheDeployedValue(),
@@ -2517,7 +2517,7 @@ These catch off-by-one / rounding edge cases.
         uint256 loss = equityDeployed + (juniorDeployedBefore / 2);
 
         vm.prank(loanEngine);
-        tranchePool.onLoss(loss, 0, 80, 15);
+        tranchePool.onLoss(loss, 0);
 
         assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
         assertEq(
@@ -2543,7 +2543,7 @@ These catch off-by-one / rounding edge cases.
             (seniorDeployedBefore / 2);
 
         vm.prank(loanEngine);
-        tranchePool.onLoss(loss, 0, 80, 15);
+        tranchePool.onLoss(loss, 0);
 
         assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
         assertEq(tranchePool.getJuniorTrancheDeployedValue(), 0);
@@ -2570,7 +2570,7 @@ These catch off-by-one / rounding edge cases.
                 1
             )
         );
-        tranchePool.onLoss(excessiveLoss, 0, 80, 15);
+        tranchePool.onLoss(excessiveLoss, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -2587,13 +2587,13 @@ These catch off-by-one / rounding edge cases.
         uint256 equityIdleBefore = tranchePool.getEquityTrancheIdleValue();
 
         vm.prank(loanEngine);
-        tranchePool.onRecovery(recoveryAmount, 80, 15);
+        tranchePool.onRecovery(recoveryAmount);
 
-        uint256 expectedSenior = (recoveryAmount * 80) / 100;
-        uint256 expectedJunior = (recoveryAmount * 15) / 100;
-        uint256 expectedEquity = recoveryAmount -
-            expectedSenior -
-            expectedJunior;
+        // Waterfall: Senior Shortfall -> Junior Shortfall -> Equity Shortfall -> Equity Upside
+        // No shortfall initiated in this test, so all goes to Equity Upside
+        uint256 expectedSenior = 0;
+        uint256 expectedJunior = 0;
+        uint256 expectedEquity = recoveryAmount;
 
         assertEq(
             tranchePool.getSeniorTrancheIdleValue(),

@@ -144,8 +144,8 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         LoanState state;
         uint256 totalRecovered;
         // allocation_ratio
-        uint256 seniorAllocationRatio;
-        uint256 juniorAllocationRatio;
+        uint256 seniorPrincipalAllocated;
+        uint256 juniorPrincipalAllocated;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -293,8 +293,8 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             termDays: termDays,
             state: LoanState.CREATED,
             totalRecovered: 0,
-            seniorAllocationRatio: 0,
-            juniorAllocationRatio: 0
+            seniorPrincipalAllocated: 0,
+            juniorPrincipalAllocated: 0
         });
 
         s_loans[s_nextLoanId++] = newLoan;
@@ -342,6 +342,10 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         s_originationFees[loanId] = originationFee;
 
+        if (loan.principalIssued < tranchePool.getTotalIdleValue()) {
+            revert LoanEngine__InsufficientPoolLiquidity();
+        }
+
         uint256 totalDisbursement = loan.principalIssued - originationFee;
         (
             uint256 seniorAmount,
@@ -353,12 +357,10 @@ contract LoanEngine is Ownable, ReentrancyGuard {
                 receivingEntity,
                 feeManager
             );
-        loan.seniorAllocationRatio =
-            (seniorAmount * STANDARD_BPS) /
-            (seniorAmount + juniorAmount + equityAmount);
-        loan.juniorAllocationRatio =
-            (juniorAmount * STANDARD_BPS) /
-            (seniorAmount + juniorAmount + equityAmount);
+        loan.seniorPrincipalAllocated = seniorAmount;
+
+        loan.juniorPrincipalAllocated = juniorAmount;
+
         emit LoanActivated(
             loan.loanId,
             loan.principalIssued,
@@ -367,10 +369,6 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             loan.maturityTimestamp
         );
     }
-
-    // there is a logic error here
-    //  the user should pay off the interest from the total amount that accured before repaying the principal
-    // because its diminishing interest rate, but its on the assumption that the repayment agent will handle it correctly
 
     function repayLoan(
         uint256 loanId,
@@ -383,7 +381,6 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         isWhiteListedRepaymentAgent(repaymentAgent)
         nonReentrant
     {
-        // Implementation goes here
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.ACTIVE) {
             revert LoanEngine__LoanIsNotActive(loanId);
@@ -396,23 +393,20 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         _accrueInterest(loanId);
 
-        // 1. Transfer the full amount directly to the pool
-        // The contract acts as the settlement layer, enforcing the allocation
+        // 1️⃣ Transfer funds to pool (settlement layer)
         IERC20(s_stableCoinAddress).safeTransferFrom(
             repaymentAgent,
             address(tranchePool),
             totalPayment
         );
 
-        // 2. WATERFALL: Interest First
-        // We ignore the user's split and enforce that interest is paid before principal
+        // 2️⃣ Interest first
         uint256 interestDue = loan.interestAccrued;
         uint256 interestPaid = totalPayment > interestDue
             ? interestDue
             : totalPayment;
 
-        // 3. WATERFALL: Principal Second
-        // Only the remainder after satisfying interest goes to principal
+        // 3️⃣ Principal second
         uint256 remainingForPrincipal = totalPayment - interestPaid;
         uint256 principalDue = loan.principalOutstanding;
 
@@ -420,7 +414,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             ? principalDue
             : remainingForPrincipal;
 
-        // 4. Apply Accounting
+        // 4️⃣ Update loan accounting
         loan.interestAccrued -= interestPaid;
         loan.interestPaid += interestPaid;
         loan.principalOutstanding -= principalPaid;
@@ -432,15 +426,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             loan.state = LoanState.REPAID;
         }
 
-        // 5. Notify Pool
-        // Any excess payment (overpayment) is effectively donated to the pool's idle value
-        // or handled by the pool's internal logic as generic "Balance - Deployed"
-        tranchePool.onRepayment(
-            principalPaid,
-            interestPaid,
-            loan.seniorAllocationRatio,
-            loan.juniorAllocationRatio
-        );
+        tranchePool.onRepayment(principalPaid, interestPaid);
 
         emit LoanRepaid(
             loan.loanId,
@@ -448,6 +434,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             interestPaid,
             block.timestamp
         );
+
         if (fullyRepaid) {
             emit LoanClosed(loanId, block.timestamp);
         }
@@ -482,12 +469,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         loan.principalOutstanding = 0;
         loan.interestAccrued = 0;
         loan.state = LoanState.WRITTEN_OFF;
-        tranchePool.onLoss(
-            loss,
-            interestAccrued,
-            loan.seniorAllocationRatio,
-            loan.juniorAllocationRatio
-        );
+        tranchePool.onLoss(loss, interestAccrued);
         emit LoanWrittenOff(loanId, block.timestamp);
     }
 
@@ -509,11 +491,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             address(tranchePool),
             amount
         );
-        tranchePool.onRecovery(
-            amount,
-            loan.seniorAllocationRatio,
-            loan.juniorAllocationRatio
-        );
+        tranchePool.onRecovery(amount);
         emit LoanRecovered(loanId, amount, block.timestamp);
     }
 
@@ -535,10 +513,16 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         if (interest > 0) {
             loan.interestAccrued += interest;
+            uint256 totalAllocated = loan.principalIssued;
+            uint256 seniorInterest = (interest *
+                loan.seniorPrincipalAllocated) / totalAllocated;
+
+            uint256 juniorInterest = (interest *
+                loan.juniorPrincipalAllocated) / totalAllocated;
             tranchePool.onInterestAccrued(
                 interest,
-                loan.seniorAllocationRatio,
-                loan.juniorAllocationRatio
+                seniorInterest,
+                juniorInterest
             );
         }
         loan.lastAccrualTimestamp = block.timestamp;

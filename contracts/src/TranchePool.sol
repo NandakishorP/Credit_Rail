@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-
 contract TranchePool is Ownable {
     using SafeERC20 for IERC20;
 
@@ -150,11 +149,9 @@ contract TranchePool is Ownable {
     uint256 public s_senior_apr;
     uint256 public s_target_junior_apr;
 
-    // why are we tracking the senior and junior interest but not the equity tranche,
-    // ans: because we don't have a specific target promise for the equity tranche,what ever is left goes to equity tranche
-    // but the senior and junior tranche have a specific target/promised apr so we need to track that specifically
     uint256 public seniorAccruedInterest;
     uint256 public juniorAccruedInterest;
+    uint256 public equityAccruedInterest;
 
     uint256 public s_seniorTrancheMaxCap;
     uint256 public s_juniorTrancheMaxCap;
@@ -166,6 +163,10 @@ contract TranchePool is Ownable {
     uint256 public s_totalRecovered;
 
     PoolState public poolState = PoolState.OPEN;
+
+    uint256 public seniorPrincipalShortfall;
+    uint256 public juniorPrincipalShortfall;
+    uint256 public equityPrincipalShortfall;
 
     modifier isWhiteListed(address user) {
         _isWhiteListed(user);
@@ -445,23 +446,21 @@ contract TranchePool is Ownable {
 
     function onInterestAccrued(
         uint256 interestAmount,
-        uint256 seniorAllocationFactor,
-        uint256 juniorAllocationFactor
+        uint256 seniorInterest,
+        uint256 juniorInterest
     ) external onlyLoanEngine(msg.sender) {
         if (interestAmount == 0) return;
 
-        uint256 seniorShare = (interestAmount * seniorAllocationFactor) / 100;
-        uint256 juniorShare = (interestAmount * juniorAllocationFactor) / 100;
-
-        seniorAccruedInterest += seniorShare;
-        juniorAccruedInterest += juniorShare;
+        seniorAccruedInterest += seniorInterest;
+        juniorAccruedInterest += juniorInterest;
+        equityAccruedInterest += (interestAmount -
+            seniorInterest -
+            juniorInterest);
     }
 
     function onRepayment(
         uint256 principalRepaid,
-        uint256 interestRepaid,
-        uint256 seniorAllocationRatio,
-        uint256 juniorAllocationRatio
+        uint256 interestRepaid
     ) external onlyLoanEngine(msg.sender) {
         if (principalRepaid == 0 && interestRepaid == 0) {
             revert TranchePool__InvalidTransferAmount(0);
@@ -473,68 +472,102 @@ contract TranchePool is Ownable {
 
         uint256 remainingInterest = interestRepaid;
 
-        // 1️⃣ Senior
-        uint256 seniorPaid = _minimum(remainingInterest, seniorAccruedInterest);
-        if (seniorPaid > 0 && s_totalSeniorShares > 0) {
+        // 1️⃣ Senior interest
+        if (
+            remainingInterest > 0 &&
+            seniorAccruedInterest > 0 &&
+            s_totalSeniorShares > 0
+        ) {
+            uint256 seniorPaid = _minimum(
+                remainingInterest,
+                seniorAccruedInterest
+            );
             seniorAccruedInterest -= seniorPaid;
             seniorInterestIndex += (seniorPaid * 1e18) / s_totalSeniorShares;
             remainingInterest -= seniorPaid;
         }
 
-        // 2️⃣ Junior
-        uint256 juniorPaid = _minimum(remainingInterest, juniorAccruedInterest);
-        if (juniorPaid > 0 && s_totalJuniorShares > 0) {
+        // 2️⃣ Junior interest
+        if (
+            remainingInterest > 0 &&
+            juniorAccruedInterest > 0 &&
+            s_totalJuniorShares > 0
+        ) {
+            uint256 juniorPaid = _minimum(
+                remainingInterest,
+                juniorAccruedInterest
+            );
             juniorAccruedInterest -= juniorPaid;
             juniorInterestIndex += (juniorPaid * 1e18) / s_totalJuniorShares;
             remainingInterest -= juniorPaid;
         }
 
-        // 3️⃣ Equity (kept as raw cash or separate index)
-        // what if there is no junior or equity and senior obligations are paid off?
-        // yet to answer
+        // 3️⃣ Equity / overflow interest
         if (remainingInterest > 0) {
-            if (s_totalEquityShares == 0 && s_totalJuniorShares > 0) {
-                juniorInterestIndex +=
-                    (remainingInterest * 1e18) /
-                    s_totalJuniorShares;
-            } else if (s_totalEquityShares > 0) {
+            if (s_totalEquityShares > 0) {
                 equityInterestIndex +=
                     (remainingInterest * 1e18) /
                     s_totalEquityShares;
+                equityAccruedInterest -= _minimum(
+                    equityAccruedInterest,
+                    remainingInterest
+                );
+            } else if (s_totalJuniorShares > 0) {
+                // no equity → junior gets excess
+                juniorInterestIndex +=
+                    (remainingInterest * 1e18) /
+                    s_totalJuniorShares;
             } else {
-                // all tranches are done, protocol takes the rest
+                // no LPs left → protocol revenue
                 s_protocolRevenue += remainingInterest;
             }
         }
 
         /*//////////////////////////////////////////////////////////////
-                        PRINCIPAL (BUFFERED)
+                        PRINCIPAL REDEMPTION
+            (REVERSE OF LOSS WATERFALL — NO RATIOS)
     //////////////////////////////////////////////////////////////*/
 
         if (principalRepaid > 0) {
-            uint256 seniorPrincipal = (principalRepaid *
-                seniorAllocationRatio) / 100;
-            uint256 juniorPrincipal = (principalRepaid *
-                juniorAllocationRatio) / 100;
-            uint256 equityPrincipal = principalRepaid -
-                seniorPrincipal -
-                juniorPrincipal;
+            uint256 remaining = principalRepaid;
 
-            if (
-                seniorPrincipal > s_seniorTrancheDeployedValue ||
-                juniorPrincipal > s_juniorTrancheDeployedValue ||
-                equityPrincipal > s_equityTrancheDeployedValue
-            ) {
-                revert TranchePool__PrincipalRepaymentExceeded();
+            // Senior first (restore safest capital)
+            if (remaining > 0 && s_seniorTrancheDeployedValue > 0) {
+                uint256 seniorPay = _minimum(
+                    remaining,
+                    s_seniorTrancheDeployedValue
+                );
+                s_seniorTrancheDeployedValue -= seniorPay;
+                s_seniorTrancheIdleValue += seniorPay;
+                remaining -= seniorPay;
             }
 
-            s_seniorTrancheDeployedValue -= seniorPrincipal;
-            s_juniorTrancheDeployedValue -= juniorPrincipal;
-            s_equityTrancheDeployedValue -= equityPrincipal;
+            // Junior next
+            if (remaining > 0 && s_juniorTrancheDeployedValue > 0) {
+                uint256 juniorPay = _minimum(
+                    remaining,
+                    s_juniorTrancheDeployedValue
+                );
+                s_juniorTrancheDeployedValue -= juniorPay;
+                s_juniorTrancheIdleValue += juniorPay;
+                remaining -= juniorPay;
+            }
 
-            s_seniorTrancheIdleValue += seniorPrincipal;
-            s_juniorTrancheIdleValue += juniorPrincipal;
-            s_equityTrancheIdleValue += equityPrincipal;
+            // Equity last
+            if (remaining > 0 && s_equityTrancheDeployedValue > 0) {
+                uint256 equityPay = _minimum(
+                    remaining,
+                    s_equityTrancheDeployedValue
+                );
+                s_equityTrancheDeployedValue -= equityPay;
+                s_equityTrancheIdleValue += equityPay;
+                remaining -= equityPay;
+            }
+
+            // Safety: should never happen unless LoanEngine lies
+            if (remaining > 0) {
+                revert TranchePool__PrincipalRepaymentExceeded();
+            }
         }
     }
 
@@ -545,43 +578,76 @@ contract TranchePool is Ownable {
 
     function onLoss(
         uint256 principalLoss,
-        uint256 interestAccrued,
-        uint256 seniorAllocationRatio,
-        uint256 juniorAllocationRatio
+        uint256 interestAccrued
     ) external onlyLoanEngine(msg.sender) {
-        
-        // 1. Cancel the Ghost Interest
-        if (interestAccrued > 0) {
-            uint256 seniorShare = (interestAccrued * seniorAllocationRatio) / 100;
-            uint256 juniorShare = (interestAccrued * juniorAllocationRatio) / 100;
-            
-            // We use _minimum to avoid underflow if there were rounding errors elsewhere, 
-            // though theoretically it should match.
-            seniorAccruedInterest -= _minimum(seniorAccruedInterest, seniorShare);
-            juniorAccruedInterest -= _minimum(juniorAccruedInterest, juniorShare);
+        if (principalLoss == 0 && interestAccrued == 0) {
+            revert TranchePool__ZeroValueError();
         }
+
+        /*//////////////////////////////////////////////////////////////
+                    1️⃣ CANCEL GHOST INTEREST
+        (SAME PRIORITY AS INTEREST PAYOUT)
+    //////////////////////////////////////////////////////////////*/
+
+        uint256 remainingInterest = interestAccrued;
+
+        // Cancel senior accrued interest first
+        if (remainingInterest > 0 && seniorAccruedInterest > 0) {
+            uint256 seniorCancel = _minimum(
+                remainingInterest,
+                seniorAccruedInterest
+            );
+            seniorAccruedInterest -= seniorCancel;
+            remainingInterest -= seniorCancel;
+        }
+
+        // Then junior
+        if (remainingInterest > 0 && juniorAccruedInterest > 0) {
+            uint256 juniorCancel = _minimum(
+                remainingInterest,
+                juniorAccruedInterest
+            );
+            juniorAccruedInterest -= juniorCancel;
+            remainingInterest -= juniorCancel;
+        }
+
+        // Any remaining interest is ignored (equity / protocol had no promise)
+
+        /*//////////////////////////////////////////////////////////////
+                    2️⃣ PRINCIPAL LOSS WATERFALL
+                Equity → Junior → Senior
+    //////////////////////////////////////////////////////////////*/
 
         s_totalLoss += principalLoss;
         uint256 remaining = principalLoss;
 
-        // 1. Equity absorbs first
-        uint256 equityLoss = _minimum(s_equityTrancheDeployedValue, remaining);
-        s_equityTrancheDeployedValue -= equityLoss;
-        remaining -= equityLoss;
+        uint256 equityLoss;
+        uint256 juniorLoss;
+        uint256 seniorLoss;
 
-        if (remaining == 0) return;
+        // Equity absorbs first
+        if (remaining > 0 && s_equityTrancheDeployedValue > 0) {
+            equityLoss = _minimum(remaining, s_equityTrancheDeployedValue);
+            s_equityTrancheDeployedValue -= equityLoss;
+            equityPrincipalShortfall += equityLoss;
+            remaining -= equityLoss;
+        }
 
-        // 2. Junior absorbs next
-        uint256 juniorLoss = _minimum(s_juniorTrancheDeployedValue, remaining);
-        s_juniorTrancheDeployedValue -= juniorLoss;
-        remaining -= juniorLoss;
+        // Junior next
+        if (remaining > 0 && s_juniorTrancheDeployedValue > 0) {
+            juniorLoss = _minimum(remaining, s_juniorTrancheDeployedValue);
+            s_juniorTrancheDeployedValue -= juniorLoss;
+            juniorPrincipalShortfall += juniorLoss;
+            remaining -= juniorLoss;
+        }
 
-        if (remaining == 0) return;
-
-        // 3. Senior absorbs last
-        uint256 seniorLoss = _minimum(s_seniorTrancheDeployedValue, remaining);
-        s_seniorTrancheDeployedValue -= seniorLoss;
-        remaining -= seniorLoss;
+        // Senior last
+        if (remaining > 0 && s_seniorTrancheDeployedValue > 0) {
+            seniorLoss = _minimum(remaining, s_seniorTrancheDeployedValue);
+            s_seniorTrancheDeployedValue -= seniorLoss;
+            seniorPrincipalShortfall += seniorLoss;
+            remaining -= seniorLoss;
+        }
 
         if (remaining > 0) {
             revert TranchePool__LossExceededCapital(remaining);
@@ -592,25 +658,42 @@ contract TranchePool is Ownable {
 
     // on recovery what happens is the protocol may recover more than he lost and it can cause appreciation of the share value when withdrawing, keeping the design simple because adding it to interest accured make no difference at the end of withdrawing.
 
-    function onRecovery(
-        uint256 amount,
-        uint256 seniorAllocationRatio,
-        uint256 juniorAllocationRatio
-    ) external onlyLoanEngine(msg.sender) {
+    function onRecovery(uint256 amount) external onlyLoanEngine(msg.sender) {
         if (amount == 0) {
             revert TranchePool__ZeroValueError();
         }
-        s_totalRecovered += amount;
-        // treat as pure cash inflow
-        uint256 seniorAmount = (amount * seniorAllocationRatio) / 100;
-        uint256 juniorAmount = (amount * juniorAllocationRatio) / 100;
-        // why this won't overflow, because the total allocation factor is 100 and
-        // at most possibility is equity gets zero allocation
-        uint256 equityAmount = amount - seniorAmount - juniorAmount;
 
-        s_seniorTrancheIdleValue += seniorAmount;
-        s_juniorTrancheIdleValue += juniorAmount;
-        s_equityTrancheIdleValue += equityAmount;
+        s_totalRecovered += amount;
+        uint256 remaining = amount;
+
+        // Senior first
+        if (remaining > 0 && seniorPrincipalShortfall > 0) {
+            uint256 seniorPay = _minimum(remaining, seniorPrincipalShortfall);
+            seniorPrincipalShortfall -= seniorPay;
+            s_seniorTrancheIdleValue += seniorPay;
+            remaining -= seniorPay;
+        }
+
+        // Junior next
+        if (remaining > 0 && juniorPrincipalShortfall > 0) {
+            uint256 juniorPay = _minimum(remaining, juniorPrincipalShortfall);
+            juniorPrincipalShortfall -= juniorPay;
+            s_juniorTrancheIdleValue += juniorPay;
+            remaining -= juniorPay;
+        }
+
+        // Equity last
+        if (remaining > 0 && equityPrincipalShortfall > 0) {
+            uint256 equityPay = _minimum(remaining, equityPrincipalShortfall);
+            equityPrincipalShortfall -= equityPay;
+            s_equityTrancheIdleValue += equityPay;
+            remaining -= equityPay;
+        }
+
+        // Any excess is true upside → equity
+        if (remaining > 0) {
+            s_equityTrancheIdleValue += remaining;
+        }
 
         emit RecoverAmountTransferredToTranchePool(amount, block.timestamp);
     }
