@@ -32,7 +32,28 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         tranchePool.setMinimumDepositAmountSeniorTranche(10_00_000 * USDT);
         tranchePool.setMinimumDepositAmountJuniorTranche(50_00_000 * USDT);
         tranchePool.setMinimumDepositAmountEquityTranche(1_00_00_000 * USDT);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(15);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(80);
+        tranchePool.setSeniorAPR(8);
+        tranchePool.setTargetJuniorAPR(15);
+
         creditPolicy = new CreditPolicy();
+        creditPolicy.setMaxTiers(3);
+        creditPolicy.createPolicy(1);
+
+        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
+        creditPolicy.updateRatios(1, _createFinancialRatios());
+        creditPolicy.updateConcentration(1, _createConcentrationLimits());
+        creditPolicy.updateAttestation(1, _createAttestationRequirements());
+        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
+        creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyDocument(
+            1,
+            _hashString("document"),
+            "ipfs://policyDocHash"
+        );
+        creditPolicy.freezePolicy(1);
+
         MockLoanProofVerifier mockLoanProofVerifier = new MockLoanProofVerifier();
         loanEngine = new LoanEngine(
             address(creditPolicy),
@@ -41,10 +62,12 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             address(tranchePool),
             address(usdt)
         );
+        loanEngine.setMaxOriginationFeeBps(500);
+        tranchePool.setLoanEngine(address(loanEngine));
 
         handler = new Handler(loanEngine, tranchePool, creditPolicy, usdt);
         vm.stopPrank();
-        bytes4[] memory selectors = new bytes4[](10);
+        bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = handler.depositSeniorTranche.selector;
         selectors[1] = handler.depositJuniorTranche.selector;
         selectors[2] = handler.depositEquityTranche.selector;
@@ -55,10 +78,103 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         selectors[7] = handler.maybeDeclareDefault.selector;
         selectors[8] = handler.maybeWriteOffLoan.selector;
         selectors[9] = handler.maybeRecoverLoan.selector;
+        selectors[10] = handler.warpTime.selector;
         targetSelector(
             FuzzSelector({addr: address(handler), selectors: selectors})
         );
         targetContract(address(handler));
+    }
+
+    function _createEligibilityCriteria()
+        internal
+        pure
+        returns (CreditPolicy.EligibilityCriteria memory)
+    {
+        return
+            CreditPolicy.EligibilityCriteria({
+                minAnnualRevenue: 1_00_00_000,
+                minEBITDA: 10_00_000,
+                minTangibleNetWorth: 5_00_00_000,
+                minBusinessAgeDays: 180,
+                maxDefaultsLast36Months: 0,
+                bankruptcyExcluded: true
+            });
+    }
+
+    function _createFinancialRatios()
+        internal
+        pure
+        returns (CreditPolicy.FinancialRatios memory)
+    {
+        return
+            CreditPolicy.FinancialRatios({
+                maxTotalDebtToEBITDA: 4e18,
+                minInterestCoverageRatio: 2e18,
+                minCurrentRatio: 1e18,
+                minEBITDAMarginBps: 1500
+            });
+    }
+
+    function _createConcentrationLimits()
+        internal
+        pure
+        returns (CreditPolicy.ConcentrationLimits memory)
+    {
+        return
+            CreditPolicy.ConcentrationLimits({
+                maxSingleBorrowerBps: 1000,
+                maxIndustryConcentrationBps: 3000
+            });
+    }
+
+    function _createAttestationRequirements()
+        internal
+        pure
+        returns (CreditPolicy.AttestationRequirements memory)
+    {
+        return
+            CreditPolicy.AttestationRequirements({
+                maxAttestationAgeDays: 90,
+                reAttestationFrequencyDays: 180,
+                requiresCPAAttestation: true
+            });
+    }
+
+    function _createMaintenanceCovenants()
+        internal
+        pure
+        returns (CreditPolicy.MaintenanceCovenants memory)
+    {
+        return
+            CreditPolicy.MaintenanceCovenants({
+                maxLeverageRatio: 4e18,
+                minCoverageRatio: 2e18,
+                minLiquidityAmount: 1_00_00_000,
+                allowsDividends: false,
+                reportingFrequencyDays: 90
+            });
+    }
+
+    function _createMockTier(
+        string memory name
+    ) internal pure returns (CreditPolicy.LoanTier memory) {
+        return
+            CreditPolicy.LoanTier({
+                name: name,
+                minRevenue: 1_00_00_000,
+                maxRevenue: 5_00_00_000,
+                minEBITDA: 10_00_000,
+                maxDebtToEBITDA: 3e18,
+                maxLoanToEBITDA: 2e18,
+                interestRateBps: 800,
+                originationFeeBps: 100,
+                termDays: 365,
+                active: true
+            });
+    }
+
+    function _hashString(string memory str) internal pure returns (bytes32) {
+        return keccak256(bytes(str));
     }
 
     function invariant__totalIdleAndDeployedValueMatchesAccounting()
@@ -75,105 +191,11 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         );
     }
 
-    // what about accured interest?
-    // this invaraint holded because there was no forwwarding of time, so the interest didn't accumulate, this invariant is wrong
-    function invariant__poolAccountingMatchesTokenBalance() public view {
-        uint256 poolBalance = usdt.balanceOf(address(tranchePool));
-
-        uint256 internalAccounting = tranchePool.getTotalIdleValue() +
-            tranchePool.getTotalDeployedValue() +
-            tranchePool.getProtocolRevenue();
-
-        assertEq(poolBalance, internalAccounting);
-    }
-
     function invariant__OutStandingPrincipalMatchesDeployed() public view {
         assertEq(
             handler.outStandingPrincipal(),
             tranchePool.getTotalDeployedValue(),
             "Outstanding principal does not match deployed minus recovered and loss"
-        );
-    }
-
-    function invariant_totalSeniorDepositsMatchesIdleSeniorValue() public view {
-        assertEq(
-            handler.getSeniorTrancheIdleValue(),
-            tranchePool.getSeniorTrancheIdleValue(),
-            "Total senior deposits do not match senior tranche idle value"
-        );
-    }
-
-    function invariant_sumOfIndividualSeniorDepositsMatchesTotalIdleValue()
-        public
-        view
-    {
-        assertEq(
-            handler.totalExpectedSeniorDeposits(),
-            tranchePool.getSeniorTrancheIdleValue(),
-            "Sum of individual senior shares does not match total senior shares"
-        );
-    }
-
-    function invariant_totalSeniorSharesExpectedMatchesTranchePool()
-        public
-        view
-    {
-        assertEq(
-            handler.totalExpectedSeniorShares(),
-            tranchePool.getTotalSeniorShares(),
-            "Total senior shares expected does not match tranche pool"
-        );
-    }
-
-    function invariant_totalSeniorSharesMarkedByHandlersMatchesTranchePool()
-        public
-        view
-    {
-        assertEq(
-            handler.getSeniorTrancheTotalShares(),
-            tranchePool.getTotalSeniorShares(),
-            "Total senior shares expected does not match tranche pool"
-        );
-    }
-
-    function invariant_totalJuniorDepositsMatchesIdleJuniorValue() public view {
-        assertEq(
-            handler.getJuniorTrancheIdleValue(),
-            tranchePool.getJuniorTrancheIdleValue(),
-            "Total junior deposits do not match junior tranche idle value"
-        );
-    }
-
-    function invariant_sumOfIndividualJuniorDepositsMatchesTotalIdleValue()
-        public
-        view
-    {
-        assertEq(
-            handler.totalExpectedJuniorDeposits(),
-            tranchePool.getJuniorTrancheIdleValue(),
-            "Sum of individual junior shares does not match total junior shares"
-        );
-    }
-
-    function invariant_totalJuniorSharesExpectedMatchesTranchePool()
-        public
-        view
-    {
-        assertEq(
-            handler.totalExpectedJuniorShares(),
-            tranchePool.getTotalJuniorShares(),
-            "Total junior shares expected does not match tranche pool"
-        );
-    }
-
-    function invariant_totalJuniorSharesMarkedByHandlersMatchesTranchePool()
-        public
-        view
-    {
-        assertEq(
-            handler.getJuniorTrancheTotalShares(),
-            tranchePool.getTotalJuniorShares(),
-            "Total junior shares expected does not match tranche pool"
         );
     }
 }

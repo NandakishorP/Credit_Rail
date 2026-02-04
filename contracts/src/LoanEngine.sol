@@ -298,6 +298,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         });
 
         s_loans[s_nextLoanId++] = newLoan;
+        s_nullifierHashes[nullifierHash] = true;
 
         emit LoanCreated(
             newLoan.loanId,
@@ -342,16 +343,13 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         s_originationFees[loanId] = originationFee;
 
-        if (loan.principalIssued < tranchePool.getTotalIdleValue()) {
+        if (loan.principalIssued > tranchePool.getTotalIdleValue()) {
             revert LoanEngine__InsufficientPoolLiquidity();
         }
 
         uint256 totalDisbursement = loan.principalIssued - originationFee;
-        (
-            uint256 seniorAmount,
-            uint256 juniorAmount,
-            uint256 equityAmount
-        ) = tranchePool.allocateCapital(
+        (uint256 seniorAmount, uint256 juniorAmount, ) = tranchePool
+            .allocateCapital(
                 totalDisbursement,
                 originationFee,
                 receivingEntity,

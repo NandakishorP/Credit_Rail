@@ -26,7 +26,7 @@ contract Handler is Test {
     address[] public seniorUsers;
     address[] public juniorUsers;
     address[] public equityUsers;
-    uint256 public activePolicyVersion;
+    uint256 public activePolicyVersion = 1;
     uint256 public defaultCounter;
     uint256 public writeOffCounter;
     uint256 public recoveryCounter;
@@ -77,6 +77,9 @@ contract Handler is Test {
         vm.startPrank(deployer);
         loanEngine.setWhitelistedFeeManager(feeManager, true);
         loanEngine.setWhitelistedOffRampingEntity(recevingEntity, true);
+        loanEngine.setWhitelistedRepaymentAgent(recevingEntity, true);
+        loanEngine.setWhitelistedRecoveryAgent(recevingEntity, true);
+
         for (uint160 i = 1; i < 100; i++) {
             seniorUsers.push(address(i));
             if (i % 2 == 0) {
@@ -109,6 +112,8 @@ contract Handler is Test {
         for (uint160 i = 200; i < 220; i++) {
             loanBorrowers.push(address(i));
         }
+        ERC20Mock(usdt).mint(address(recevingEntity), 50_0000_0000 * 1e18);
+
         vm.stopPrank();
     }
 
@@ -251,11 +256,19 @@ contract Handler is Test {
             }
         }
 
+        if (tranchePool.getTotalIdleValue() < minimumLoanPrincipal) {
+            return;
+        }
+
         principalIssued = bound(
             principalIssued,
             minimumLoanPrincipal,
             _min(maximumLoanPrincipal, tranchePool.getTotalIdleValue())
         );
+
+        if (principalIssued > tranchePool.getTotalIdleValue() / 10) {
+            principalIssued = tranchePool.getTotalIdleValue() / 10;
+        }
 
         originationFeeBps = bound(
             originationFeeBps,
@@ -273,6 +286,10 @@ contract Handler is Test {
                 userIndex
             )
         );
+
+        // Get nextLoanId BEFORE vm.prank to avoid consuming the prank
+        bytes memory proofData = abi.encodePacked(loanEngine.getNextLoanId());
+
         vm.prank(deployer);
         loanEngine.createLoan(
             borrowerCommitment,
@@ -284,7 +301,7 @@ contract Handler is Test {
             originationFeeBps,
             termDays,
             bytes32(0), // industry
-            "",
+            proofData,
             new bytes32[](0)
         );
     }
@@ -297,6 +314,13 @@ contract Handler is Test {
         if (
             loanEngine.getLoanDetails(loanId).state !=
             LoanEngine.LoanState.CREATED
+        ) {
+            return;
+        }
+
+        if (
+            loanEngine.getLoanDetails(loanId).principalIssued >
+            tranchePool.getTotalIdleValue()
         ) {
             return;
         }
@@ -330,28 +354,49 @@ contract Handler is Test {
             loanDetails.principalOutstanding
         );
 
+        uint256 pendingInterest = _accrueInterest(loanId);
+        uint256 totalInterestDue = loanDetails.interestAccrued + pendingInterest;
+
         interestAmount = bound(
             interestAmount,
-            loanDetails.interestAccrued / 10,
-            _accrueInterest(loanId)
+            0,
+            totalInterestDue
         );
+
         if (principalAmount == 0 && interestAmount == 0) {
             return;
         }
 
+        if(principalAmount > 0 && interestAmount == 0 && totalInterestDue>0){
+            return;
+        }
+
         uint256 totalRepayAmount = principalAmount + interestAmount;
-        vm.startPrank(recevingEntity);
+        uint256 interestAccrued = loanDetails.interestAccrued +
+            _accrueInterest(loanId);
+        uint256 actualInterestPaid = _min(totalRepayAmount, interestAccrued);
+        uint256 actualPrincipalPaid = _min(
+            totalRepayAmount - actualInterestPaid,
+            loanDetails.principalOutstanding
+        );
+
+        vm.prank(recevingEntity);
         ERC20Mock(usdt).approve(address(loanEngine), totalRepayAmount);
+        vm.prank(deployer);
         loanEngine.repayLoan(
             loanId,
             principalAmount,
             interestAmount,
             recevingEntity
         );
-        vm.stopPrank();
-        totalDeployedValue -= principalAmount;
-        totalIdleValue += principalAmount;
-        outStandingPrincipal -= principalAmount;
+        totalDeployedValue -= actualPrincipalPaid;
+        totalIdleValue += actualPrincipalPaid;
+        outStandingPrincipal -= actualPrincipalPaid;
+    }
+
+    function warpTime(uint256 daysToWarp) public {
+        daysToWarp = bound(daysToWarp, 1, 365);
+        vm.warp(block.timestamp + (daysToWarp * 1 days));
     }
 
     function maybeDeclareDefault(uint256 loanId, bytes32 reasonHash) public {
@@ -398,15 +443,16 @@ contract Handler is Test {
             return;
         }
 
+        // Read principal before writeoff as it zeroes it out
+        uint256 principalOutstanding = loanEngine
+            .getLoanDetails(loanId)
+            .principalOutstanding;
+
         vm.prank(deployer);
         loanEngine.writeOffLoan(loanId);
-        totalDeployedValue -= loanEngine
-            .getLoanDetails(loanId)
-            .principalOutstanding;
-        outStandingPrincipal -= loanEngine
-            .getLoanDetails(loanId)
-            .principalOutstanding;
-        totalLoss += loanEngine.getLoanDetails(loanId).principalOutstanding;
+        totalDeployedValue -= principalOutstanding;
+        outStandingPrincipal -= principalOutstanding;
+        totalLoss += principalOutstanding;
     }
 
     function maybeRecoverLoan(
