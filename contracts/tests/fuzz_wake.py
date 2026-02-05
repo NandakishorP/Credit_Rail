@@ -6,6 +6,7 @@ This test reimplements the logic from Handler.t.sol in native Python to work wit
 
 from wake.testing import *
 from wake.testing.fuzzing import *
+from typing import List, Mapping
 from pytypes.src.TranchePool import TranchePool
 from pytypes.src.LoanEngine import LoanEngine
 from pytypes.lib.openzeppelincontracts.contracts.mocks.token.ERC20Mock import ERC20Mock
@@ -45,6 +46,19 @@ class InvariantTest(FuzzTest):
     junior_tranche_deployed: uint256
     equity_tranche_idle: uint256
     equity_tranche_deployed: uint256
+
+    # Share tracking
+    senior_tranche_shares: Mapping[Address, uint256]
+    senior_tranche_total_shares: uint256
+    senior_tranche_deposits: Mapping[Address, uint256]
+    
+    junior_tranche_shares: Mapping[Address, uint256]
+    junior_tranche_total_shares: uint256
+    junior_tranche_deposits: Mapping[Address, uint256]
+
+    equity_tranche_shares: Mapping[Address, uint256]
+    equity_tranche_total_shares: uint256
+    equity_tranche_deposits: Mapping[Address, uint256]
 
     def pre_sequence(self) -> None:
         """Setup before each fuzzing sequence."""
@@ -169,6 +183,17 @@ class InvariantTest(FuzzTest):
         self.senior_tranche_deployed = 0
         self.junior_tranche_deployed = 0
         self.equity_tranche_deployed = 0
+        
+        self.senior_tranche_total_shares = 0
+        self.junior_tranche_total_shares = 0
+        self.equity_tranche_total_shares = 0
+
+        self.senior_tranche_shares = {}
+        self.junior_tranche_shares = {}
+        self.equity_tranche_shares = {}
+        self.senior_tranche_deposits = {}
+        self.junior_tranche_deposits = {}
+        self.equity_tranche_deposits = {}
 
         # Initialize users with tokens and whitelisting
         for i in range(3, 5):
@@ -176,18 +201,24 @@ class InvariantTest(FuzzTest):
             self.senior_users.append(user)
             self.usdt.mint(user, 10_000_000_000 * 10**18)
             self.tranche_pool.updateWhitelist(user, True)
+            self.senior_tranche_shares[user.address] = 0
+            self.senior_tranche_deposits[user.address] = 0
         
         for i in range(5, 7):
             user = default_chain.accounts[i]
             self.junior_users.append(user)
             self.usdt.mint(user, 10_000_000_000 * 10**18)
             self.tranche_pool.updateWhitelist(user, True)
+            self.junior_tranche_shares[user.address] = 0
+            self.junior_tranche_deposits[user.address] = 0
 
         for i in range(7, 9):
             user = default_chain.accounts[i]
             self.equity_users.append(user)
             self.usdt.mint(user, 500_000_000 * 10**18)
             self.tranche_pool.updateEquityTrancheWhiteList(user, True)
+            self.equity_tranche_shares[user.address] = 0
+            self.equity_tranche_deposits[user.address] = 0
             
         # Create random borrowers (they don't need to sign, just addresses)
         for i in range(50):
@@ -364,8 +395,13 @@ class InvariantTest(FuzzTest):
         loan_id = 1 + (loan_id % (next_id - 1))
         
         details = self.loan_engine.getLoanDetails(loan_id)
-        if details.state != 1: # CREATED (Enums: NONE=0, CREATED=1, ACTIVE=2, REPAID=3, DEFAULTED=4, WRITTEN_OFF=5)
+        if details.state != 1: # CREATED
             return
+
+        # Guard: Pool must be COMMITTED or DEPLOYED
+        pool_state = self.tranche_pool.getPoolState()
+        if pool_state != 1 and pool_state != 2: # COMMITED=1, DEPLOYED=2
+             return
             
         if details.principalIssued > self.tranche_pool.getTotalIdleValue():
             return
@@ -471,6 +507,204 @@ class InvariantTest(FuzzTest):
         days = 1 + (days % 365)
         default_chain.mine(lambda t: t + (days * 86400))
 
+    @flow()
+    def flow_withdraw_senior(self, user_idx: uint256, amount: uint256):
+        # Guard: Pool must be CLOSED
+        if self.tranche_pool.getPoolState() != 3: # CLOSED
+            return
+
+        user = self.senior_users[user_idx % len(self.senior_users)]
+        
+        try:
+            self.tranche_pool.claimSeniorInterest(from_=user)
+        except TransactionRevertedError:
+            pass 
+
+        available_shares = self.senior_tranche_shares[user.address]
+        if amount > available_shares: amount = available_shares
+        if amount == 0: return
+        
+        current_idle = self.senior_tranche_idle
+        current_shares = self.senior_tranche_total_shares
+        
+        if current_shares == 0: return
+        amount_to_withdraw = (amount * current_idle) // current_shares
+        
+        try:
+            self.tranche_pool.withdrawSeniorTranche(amount, from_=user)
+            
+            if self.senior_tranche_deposits[user.address] >= amount_to_withdraw:
+                self.senior_tranche_deposits[user.address] -= amount_to_withdraw
+            else:
+                 self.senior_tranche_deposits[user.address] = 0
+                 
+            self.senior_tranche_shares[user.address] -= amount
+            self.senior_tranche_total_shares -= amount
+            
+            self.senior_tranche_idle -= amount_to_withdraw
+            self.total_idle_value -= amount_to_withdraw
+            
+        except TransactionRevertedError:
+            pass
+
+    @flow()
+    def flow_withdraw_junior(self, user_idx: uint256, amount: uint256):
+        if self.tranche_pool.getPoolState() != 3: # CLOSED
+            return
+
+        user = self.junior_users[user_idx % len(self.junior_users)]
+        try:
+            self.tranche_pool.claimJuniorInterest(from_=user)
+        except TransactionRevertedError:
+            pass
+
+        available_shares = self.junior_tranche_shares[user.address]
+        if amount > available_shares: amount = available_shares
+        if amount == 0: return
+        
+        current_idle = self.junior_tranche_idle
+        current_shares = self.junior_tranche_total_shares
+        
+        if current_shares == 0: return
+        amount_to_withdraw = (amount * current_idle) // current_shares
+        
+        try:
+            self.tranche_pool.withdrawJuniorTranche(amount, from_=user)
+            
+            if self.junior_tranche_deposits[user.address] >= amount_to_withdraw:
+                self.junior_tranche_deposits[user.address] -= amount_to_withdraw
+            else:
+                 self.junior_tranche_deposits[user.address] = 0
+                 
+            self.junior_tranche_shares[user.address] -= amount
+            self.junior_tranche_total_shares -= amount
+            
+            self.junior_tranche_idle -= amount_to_withdraw
+            self.total_idle_value -= amount_to_withdraw
+            
+        except TransactionRevertedError:
+            pass
+
+    @flow()
+    def flow_withdraw_equity(self, user_idx: uint256, amount: uint256):
+        if self.tranche_pool.getPoolState() != 3: # CLOSED
+            return
+
+        user = self.equity_users[user_idx % len(self.equity_users)]
+        try:
+            self.tranche_pool.claimEquityInterest(from_=user)
+        except TransactionRevertedError:
+            pass
+
+        available_shares = self.equity_tranche_shares[user.address]
+        if amount > available_shares: amount = available_shares
+        if amount == 0: return
+        
+        current_idle = self.equity_tranche_idle
+        current_shares = self.equity_tranche_total_shares
+        
+        if current_shares == 0: return
+        amount_to_withdraw = (amount * current_idle) // current_shares
+        
+        try:
+            self.tranche_pool.withdrawEquityTranche(amount, from_=user)
+            
+            if self.equity_tranche_deposits[user.address] >= amount_to_withdraw:
+                self.equity_tranche_deposits[user.address] -= amount_to_withdraw
+            else:
+                 self.equity_tranche_deposits[user.address] = 0
+                 
+            self.equity_tranche_shares[user.address] -= amount
+            self.equity_tranche_total_shares -= amount
+            
+            self.equity_tranche_idle -= amount_to_withdraw
+            self.total_idle_value -= amount_to_withdraw
+            
+        except TransactionRevertedError:
+            pass
+
+    @flow()
+    def flow_close_pool(self):
+        # Guard: Deployed or Commited? Actually Handler says ONLY if deployed>0 or not deployed -> return
+        # Handler check: if(tranchePool.getTotalDeployedValue() > 0 || tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED) return;
+        # Meaning: Can only close if DeployedValue == 0 AND State == DEPLOYED.
+        
+        deployed_val = self.tranche_pool.getTotalDeployedValue()
+        state = self.tranche_pool.getPoolState()
+        
+        if deployed_val > 0 or state != 2: # DEPLOYED
+            return
+            
+        self.tranche_pool.setPoolState(3, from_=self.deployer) # CLOSED
+
+    @flow()
+    def flow_claim_senior_interest(self, user_idx: uint256):
+        # Guard: Pool must be CLOSED
+        if self.tranche_pool.getPoolState() != 3: # CLOSED
+            return
+            
+        user = self.senior_users[user_idx % len(self.senior_users)]
+        
+        # Handler checks shares > 0
+        if self.senior_tranche_shares[user.address] == 0:
+            return
+            
+        # Handler checks index delta
+        try:
+             curr_idx = self.tranche_pool.getSeniorInterestIndex()
+             user_idx_contract = self.tranche_pool.getSeniorUserIndex(user.address)
+             if curr_idx - user_idx_contract <= 0:
+                 return
+        except TransactionRevertedError:
+             return
+
+        try:
+            self.tranche_pool.claimSeniorInterest(from_=user)
+        except TransactionRevertedError:
+            pass
+
+    @flow()
+    def flow_claim_junior_interest(self, user_idx: uint256):
+        if self.tranche_pool.getPoolState() != 3: # CLOSED
+            return
+            
+        user = self.junior_users[user_idx % len(self.junior_users)]
+        
+        if self.junior_tranche_shares[user.address] == 0:
+            return
+            
+        try:
+             if self.tranche_pool.getJuniorInterestIndex() - self.tranche_pool.getJuniorUserIndex(user.address) <= 0:
+                 return
+        except TransactionRevertedError:
+             return
+
+        try:
+            self.tranche_pool.claimJuniorInterest(from_=user)
+        except TransactionRevertedError:
+            pass
+
+    @flow()
+    def flow_claim_equity_interest(self, user_idx: uint256):
+        if self.tranche_pool.getPoolState() != 3: # CLOSED
+            return
+            
+        user = self.equity_users[user_idx % len(self.equity_users)]
+        
+        if self.equity_tranche_shares[user.address] == 0:
+            return
+            
+        try:
+             if self.tranche_pool.getEquityInterestIndex() - self.tranche_pool.getEquityUserIndex(user.address) == 0:
+                 return
+        except TransactionRevertedError:
+             return
+
+        try:
+            self.tranche_pool.claimEquityInterest(from_=user)
+        except TransactionRevertedError:
+            pass
+
     @invariant(period=5)
     def invariant_accounting(self):
         pool_idle = self.tranche_pool.getTotalIdleValue()
@@ -493,4 +727,4 @@ class InvariantTest(FuzzTest):
 
 @default_chain.connect()
 def test_invariants():
-    InvariantTest().run(sequences_count=1000, flows_count=1000) # Targeted for ~15 min run
+    InvariantTest().run(sequences_count=2000, flows_count=500)

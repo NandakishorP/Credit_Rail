@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console} from "forge-std/Test.sol";
 import {LoanEngine} from "../../../src/LoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -49,6 +49,11 @@ contract Handler is Test {
     mapping(address => uint256) public juniorTrancheShares;
     mapping(address => uint256) public juniorTrancheDeposits;
     mapping(address => uint256) public juniorUserIndex;
+
+    uint256 public equityTrancheTotalShares;
+    mapping(address => uint256) public equityTrancheShares;
+    mapping(address => uint256) public equityTrancheDeposits;
+    mapping(address => uint256) public equityUserIndex;
 
     address[] public loanBorrowers;
 
@@ -215,8 +220,15 @@ contract Handler is Test {
         vm.startPrank(user);
         ERC20Mock(usdt).approve(address(tranchePool), amount);
         tranchePool.depositEquityTranche(amount);
+        
+        // Ghost State Updates
         equityTrancheIdleValue += amount;
+        equityTrancheDeposits[user] += amount;
+        equityTrancheShares[user] += amount;
+        equityTrancheTotalShares += amount;
         totalIdleValue += amount;
+        equityUserIndex[user] = tranchePool.getEquityInterestIndex();
+        
         vm.stopPrank();
     }
 
@@ -289,8 +301,13 @@ contract Handler is Test {
 
         // Get nextLoanId BEFORE vm.prank to avoid consuming the prank
         uint256 nextLoanId = loanEngine.getNextLoanId();
-        bytes memory proofData = abi.encodePacked(nextLoanId, userIndex, principalIssued, originationFeeBps, termDays);
-
+        bytes memory proofData = abi.encodePacked(
+            nextLoanId,
+            userIndex,
+            principalIssued,
+            originationFeeBps,
+            termDays
+        );
 
         vm.prank(deployer);
         loanEngine.createLoan(
@@ -316,6 +333,12 @@ contract Handler is Test {
         if (
             loanEngine.getLoanDetails(loanId).state !=
             LoanEngine.LoanState.CREATED
+        ) {
+            return;
+        }
+         if (
+            tranchePool.getPoolState() != TranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED
         ) {
             return;
         }
@@ -349,6 +372,7 @@ contract Handler is Test {
         if (loanDetails.state != LoanEngine.LoanState.ACTIVE) {
             return;
         }
+        console.log("here");
         principalAmount = bound(
             principalAmount,
             0,
@@ -356,19 +380,18 @@ contract Handler is Test {
         );
 
         uint256 pendingInterest = _accrueInterest(loanId);
-        uint256 totalInterestDue = loanDetails.interestAccrued + pendingInterest;
+        uint256 totalInterestDue = loanDetails.interestAccrued +
+            pendingInterest;
 
-        interestAmount = bound(
-            interestAmount,
-            0,
-            totalInterestDue
-        );
+        interestAmount = bound(interestAmount, 0, totalInterestDue);
 
         if (principalAmount == 0 && interestAmount == 0) {
             return;
         }
 
-        if(principalAmount > 0 && interestAmount == 0 && totalInterestDue>0){
+        if (
+            principalAmount > 0 && interestAmount == 0 && totalInterestDue > 0
+        ) {
             return;
         }
 
@@ -407,7 +430,9 @@ contract Handler is Test {
         defaultCounter++;
 
         // 🔒 90% of the time → return
-        
+        if (defaultCounter % 10 != 0) {
+            return;
+        }
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
@@ -429,7 +454,9 @@ contract Handler is Test {
         writeOffCounter++;
 
         // ~1 in 20 handler calls
-        
+        if (writeOffCounter % 20 != 0) {
+            return;
+        }
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
@@ -474,7 +501,7 @@ contract Handler is Test {
             return;
         }
 
-        address recoveryAgent = recevingEntity;
+        address recoveryAgent = seniorUsers[agentIndex % seniorUsers.length];
 
         amount = bound(amount, 1, loan.principalIssued);
 
@@ -490,6 +517,183 @@ contract Handler is Test {
     }
 
     // accounting functions for invariants
+
+    function mayClosePool() public {
+        if(tranchePool.getTotalDeployedValue() > 0 || tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED){
+            return;
+        }
+        vm.prank(deployer);
+        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
+    }
+
+    function claimSeniorTrancheInterest(uint256 userIndex) public {
+        userIndex = bound(userIndex, 0, seniorUsers.length - 1);
+        if (tranchePool.poolState() != TranchePool.PoolState.CLOSED) {
+            return;
+        }
+        address user = seniorUsers[userIndex];
+        if (tranchePool.getSeniorTrancheShares(user) == 0) {
+            return;
+        }
+        if (
+            tranchePool.getSeniorInterestIndex() -
+                tranchePool.getSeniorUserIndex(user) <=
+            0
+        ) {
+            return;
+        }
+        vm.prank(user);
+        tranchePool.claimSeniorInterest();
+    }
+
+    function claimJuniorTrancheInterest(uint256 userIndex) public {
+        userIndex = bound(userIndex, 0, juniorUsers.length - 1);
+        if (tranchePool.poolState() != TranchePool.PoolState.CLOSED) {
+            return;
+        }
+        address user = juniorUsers[userIndex];
+        if (tranchePool.getJuniorTrancheShares(user) == 0) {
+            return;
+        }
+        if (
+            tranchePool.getJuniorInterestIndex() -
+                tranchePool.getJuniorUserIndex(user) <=
+            0
+        ) {
+            return;
+        }
+        vm.prank(user);
+        tranchePool.claimJuniorInterest();
+    }
+
+    function claimEquityTrancheInterest(uint256 userIndex) public {
+        userIndex = bound(userIndex, 0, equityUsers.length - 1);
+        if (tranchePool.poolState() != TranchePool.PoolState.CLOSED) {
+            return;
+        }
+        address user = equityUsers[userIndex];
+        if (tranchePool.getEquityTrancheShares(user) == 0) {
+            return;
+        }
+        if (
+            tranchePool.getEquityInterestIndex() -
+                tranchePool.getEquityUserIndex(user) ==
+            0
+        ) {
+            return;
+        }
+        vm.prank(user);
+        tranchePool.claimEquityInterest();
+    }
+
+    function withdrawSeniorTranche(uint256 userIndex, uint256 amount) public {
+        if(tranchePool.getPoolState() != TranchePool.PoolState.CLOSED){
+            return;
+        }
+        userIndex = bound(userIndex, 0, seniorUsers.length - 1);
+        address user = seniorUsers[userIndex];
+        amount = bound(amount, 0, tranchePool.getSeniorTrancheShares(user));
+        
+        if (amount == 0) return;
+        
+        // Ensure interest is claimed before withdraw (as per new contract guard)
+        if (tranchePool.getSeniorInterestIndex() != tranchePool.getSeniorUserIndex(user)) {
+             claimSeniorTrancheInterest(userIndex);
+        }
+
+        // Calculate expected asset withdrawal based on HANDLER's view of state
+        // Replicating contract logic: (shares * idle) / totalShares
+        uint256 currentIdle = seniorTrancheIdleValue;
+        uint256 currentShares = seniorTrancheTotalShares;
+        
+        uint256 amountToWithdraw = (amount * currentIdle) / currentShares;
+
+        vm.prank(user);
+        tranchePool.withdrawSeniorTranche(amount);
+        
+        // Update Ghost State
+        if (seniorTrancheDeposits[user] >= amountToWithdraw) {
+            seniorTrancheDeposits[user] -= amountToWithdraw;
+        } else {
+            seniorTrancheDeposits[user] = 0;
+        }
+
+        seniorTrancheShares[user] -= amount;
+        seniorTrancheTotalShares -= amount;
+        
+        seniorTrancheIdleValue -= amountToWithdraw;
+        totalIdleValue -= amountToWithdraw;
+    }
+
+    function withdrawJuniorTranche(uint256 userIndex, uint256 amount) public {
+        if(tranchePool.getPoolState() != TranchePool.PoolState.CLOSED){
+            return;
+        }
+        userIndex = bound(userIndex, 0, juniorUsers.length - 1);
+        address user = juniorUsers[userIndex];
+        amount = bound(amount, 0, tranchePool.getJuniorTrancheShares(user));
+
+        if (amount == 0) return;
+
+        if (tranchePool.getJuniorInterestIndex() != tranchePool.getJuniorUserIndex(user)) {
+             claimJuniorTrancheInterest(userIndex);
+        }
+
+        uint256 currentIdle = juniorTrancheIdleValue;
+        uint256 currentShares = juniorTrancheTotalShares;
+        
+        uint256 amountToWithdraw = (amount * currentIdle) / currentShares;
+
+        vm.prank(user);
+        tranchePool.withdrawJuniorTranche(amount);
+        
+         if (juniorTrancheDeposits[user] >= amountToWithdraw) {
+            juniorTrancheDeposits[user] -= amountToWithdraw;
+        } else {
+             juniorTrancheDeposits[user] = 0;
+        }
+        
+        juniorTrancheShares[user] -= amount;
+        juniorTrancheTotalShares -= amount;
+        juniorTrancheIdleValue -= amountToWithdraw;
+        totalIdleValue -= amountToWithdraw;
+    }
+
+    function withdrawEquityTranche(uint256 userIndex, uint256 amount) public {
+        if(tranchePool.getPoolState() != TranchePool.PoolState.CLOSED){
+            return;
+        }
+        userIndex = bound(userIndex, 0, equityUsers.length - 1);
+        address user = equityUsers[userIndex];
+        amount = bound(amount, 0, tranchePool.getEquityTrancheShares(user));
+        if (amount == 0) return;
+
+         if (tranchePool.getEquityInterestIndex() != tranchePool.getEquityUserIndex(user)) {
+             claimEquityTrancheInterest(userIndex);
+        }
+
+        uint256 currentIdle = equityTrancheIdleValue;
+        uint256 currentShares = equityTrancheTotalShares;
+        
+        // Safety check to avoid div by zero if logic is flawed elsewhere
+        if (currentShares == 0) return;
+
+        uint256 amountToWithdraw = (amount * currentIdle) / currentShares;
+
+        vm.prank(user);
+        tranchePool.withdrawEquityTranche(amount);
+        
+        if (equityTrancheDeposits[user] >= amountToWithdraw) {
+            equityTrancheDeposits[user] -= amountToWithdraw;
+        } else {
+            equityTrancheDeposits[user] = 0;
+        }
+
+        equityTrancheShares[user] -= amount;
+        equityTrancheTotalShares -= amount;
+        equityTrancheIdleValue -= amountToWithdraw;
+        totalIdleValue -= amountToWithdraw;
+    }
 
     function totalExpectedSeniorDeposits() public view returns (uint256) {
         uint256 total;

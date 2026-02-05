@@ -31,6 +31,7 @@ contract TranchePool is Ownable {
     error TranchePool__DeployedCapitalExists();
     error TranchePool__InvalidMaxCapAmount();
     error TranchePool__InvalidMinDepositAmount();
+    error TranchePool__InterestNotClaimed();
     // Events
 
     event PoolStateUpdated(PoolState newState);
@@ -780,6 +781,10 @@ contract TranchePool is Ownable {
         uint256 amountToWithdraw = (sharesToBurn * s_seniorTrancheIdleValue) /
             s_totalSeniorShares;
 
+        if (seniorUserIndex[msg.sender] != seniorInterestIndex) {
+            revert TranchePool__InterestNotClaimed();
+        }
+
         if (amountToWithdraw == 0) {
             revert TranchePool__ZeroWithdrawal();
         }
@@ -818,6 +823,10 @@ contract TranchePool is Ownable {
 
         if (userShares == 0) {
             revert TranchePool__InsufficientShares();
+        }
+
+        if (juniorUserIndex[msg.sender] != juniorInterestIndex) {
+            revert TranchePool__InterestNotClaimed();
         }
 
         uint256 sharesToBurn = shares == 0 ? userShares : shares;
@@ -862,7 +871,9 @@ contract TranchePool is Ownable {
         if (userShares == 0) {
             revert TranchePool__InsufficientShares();
         }
-
+        if (equityUserIndex[msg.sender] != equityInterestIndex) {
+            revert TranchePool__InterestNotClaimed();
+        }
         uint256 sharesToBurn = shares == 0 ? userShares : shares;
         if (sharesToBurn > userShares) {
             revert TranchePool__InsufficientShares();
@@ -904,6 +915,9 @@ contract TranchePool is Ownable {
         }
         if (amount == 0) {
             revert TranchePool__ZeroWithdrawal();
+        }
+        if (seniorUserIndex[msg.sender] != seniorInterestIndex) {
+            revert TranchePool__InterestNotClaimed();
         }
 
         uint256 userBalance = getSeniorTrancheBalance(msg.sender);
@@ -954,6 +968,10 @@ contract TranchePool is Ownable {
             revert TranchePool__ZeroWithdrawal();
         }
 
+        if (juniorUserIndex[msg.sender] != juniorInterestIndex) {
+            revert TranchePool__InterestNotClaimed();
+        }
+
         uint256 userBalance = getJuniorTrancheBalance(msg.sender);
 
         if (amount > userBalance) {
@@ -994,6 +1012,10 @@ contract TranchePool is Ownable {
         }
         if (amount == 0) {
             revert TranchePool__ZeroWithdrawal();
+        }
+
+        if (equityUserIndex[msg.sender] != equityInterestIndex) {
+            revert TranchePool__InterestNotClaimed();
         }
 
         uint256 userBalance = getEquityTrancheBalance(msg.sender);
@@ -1305,6 +1327,10 @@ contract TranchePool is Ownable {
 
     function getEquityTrancheDeployedValue() external view returns (uint256) {
         return s_equityTrancheDeployedValue;
+    }
+
+    function getEquityInterestIndex() external view returns (uint256) {
+        return equityInterestIndex;
     }
 
     function getEquityUserIndex(address user) external view returns (uint256) {

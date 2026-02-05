@@ -67,7 +67,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
 
         handler = new Handler(loanEngine, tranchePool, creditPolicy, usdt);
         vm.stopPrank();
-        bytes4[] memory selectors = new bytes4[](11);
+        bytes4[] memory selectors = new bytes4[](18);
         selectors[0] = handler.depositSeniorTranche.selector;
         selectors[1] = handler.depositJuniorTranche.selector;
         selectors[2] = handler.depositEquityTranche.selector;
@@ -79,6 +79,13 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         selectors[8] = handler.maybeWriteOffLoan.selector;
         selectors[9] = handler.maybeRecoverLoan.selector;
         selectors[10] = handler.warpTime.selector;
+        selectors[11] = handler.mayClosePool.selector;
+        selectors[12] = handler.claimSeniorTrancheInterest.selector;
+        selectors[13] = handler.claimJuniorTrancheInterest.selector;
+        selectors[14] = handler.claimEquityTrancheInterest.selector;
+        selectors[15] = handler.withdrawSeniorTranche.selector;
+        selectors[16] = handler.withdrawJuniorTranche.selector;
+        selectors[17] = handler.withdrawEquityTranche.selector;
         targetSelector(
             FuzzSelector({addr: address(handler), selectors: selectors})
         );

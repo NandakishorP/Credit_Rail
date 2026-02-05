@@ -19,7 +19,7 @@ seqLen: 100
 shrinkLimit: 5000
 
 # 4. Source Interpretation
-# Tell Echidna to use Foundry's build system to resolve imports/remappings.
+# Tell Echidna to use Foundry's build system.
 cryticArgs: ['--compile-force-framework', 'foundry']
 
 # 5. Contract Configuration

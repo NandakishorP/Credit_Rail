@@ -80,4 +80,32 @@ contract EchidnaCreditRailTest is CreditRailStateFullFuzzTest {
     function warpTime(uint256 daysToWarp) public {
         handler.warpTime(daysToWarp);
     }
+
+    function mayClosePool() public {
+        handler.mayClosePool();
+    }
+
+    function claimSeniorTrancheInterest(uint256 userIndex) public {
+        handler.claimSeniorTrancheInterest(userIndex);
+    }
+
+    function claimJuniorTrancheInterest(uint256 userIndex) public {
+        handler.claimJuniorTrancheInterest(userIndex);
+    }
+
+    function claimEquityTrancheInterest(uint256 userIndex) public {
+        handler.claimEquityTrancheInterest(userIndex);
+    }
+
+    function withdrawSeniorTranche(uint256 userIndex, uint256 amount) public {
+        handler.withdrawSeniorTranche(userIndex, amount);
+    }
+
+    function withdrawJuniorTranche(uint256 userIndex, uint256 amount) public {
+        handler.withdrawJuniorTranche(userIndex, amount);
+    }
+
+    function withdrawEquityTranche(uint256 userIndex, uint256 amount) public {
+        handler.withdrawEquityTranche(userIndex, amount);
+    }
 }
