@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {LoanEngine} from "../../../src/LoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -288,12 +288,14 @@ contract Handler is Test {
         );
 
         // Get nextLoanId BEFORE vm.prank to avoid consuming the prank
-        bytes memory proofData = abi.encodePacked(loanEngine.getNextLoanId());
+        uint256 nextLoanId = loanEngine.getNextLoanId();
+        bytes memory proofData = abi.encodePacked(nextLoanId, userIndex, principalIssued, originationFeeBps, termDays);
+
 
         vm.prank(deployer);
         loanEngine.createLoan(
             borrowerCommitment,
-            keccak256(abi.encode(borrowerCommitment, block.timestamp)), // nullifierHash
+            keccak256(abi.encode(nextLoanId,userIndex,borrowerCommitment, block.timestamp)), // nullifierHash
             activePolicyVersion,
             1,
             principalIssued,
@@ -347,7 +349,6 @@ contract Handler is Test {
         if (loanDetails.state != LoanEngine.LoanState.ACTIVE) {
             return;
         }
-        console.log("here");
         principalAmount = bound(
             principalAmount,
             0,
@@ -406,9 +407,7 @@ contract Handler is Test {
         defaultCounter++;
 
         // 🔒 90% of the time → return
-        if (defaultCounter % 10 != 0) {
-            return;
-        }
+        
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
@@ -430,9 +429,7 @@ contract Handler is Test {
         writeOffCounter++;
 
         // ~1 in 20 handler calls
-        if (writeOffCounter % 20 != 0) {
-            return;
-        }
+        
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
@@ -477,7 +474,7 @@ contract Handler is Test {
             return;
         }
 
-        address recoveryAgent = seniorUsers[agentIndex % seniorUsers.length];
+        address recoveryAgent = recevingEntity;
 
         amount = bound(amount, 1, loan.principalIssued);
 

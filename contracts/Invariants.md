@@ -67,64 +67,52 @@ function invariant__OutStandingPrincipalMatchesDeployed() public view {
 
 ## Invariant 2 — Capital Location Correctness
 
-All capital must always be either idle or deployed.
+All principal capital must always be either idle or deployed.
 
-This invariant enforces:
-idle + deployed = deposited − loss + recovered
-**It guarantees that:**
-	•	Capital transitions (idle ↔ deployed) occur exactly once
-	•	Losses and recoveries are reflected in the correct location
-	•	The system remains consistent even under full capital deployment
+This invariant enforces the conservation of principal assets:
+`Idle + Deployed = Deposited - Loss + Recovered`
+
+**Ensures:**
+- Capital transitions (idle ↔ deployed) occur exactly once.
+- Losses decrease the total capital in the system.
+- Recoveries restore capital to the idle state.
+- The system remains consistent even under full capital deployment.
+
+### State transition reasoning
+
+The total capital in the system is defined as the net deposits (`Deposited` - `Loss` + `Recovered`). This capital must physically exist in one of two states:
+1. **Idle**: Held as liquid ERC20 tokens in the TranchePool.
+2. **Deployed**: Outstanding as principal in active loans.
+
+When capital is deposited, it increases `Deposited` and `Idle` equally.
+When a loan is activated, `Idle` decreases and `Deployed` increases by the same amount.
+When a loan is repaid, `Deployed` decreases and `Idle` increases.
+When a loss occurs (write-off), both `Deployed` and total capital (`Loss` increases) decrease.
+When recovery happens, `Recovered` increases (boosting total capital) and `Idle` increases.
+
+Thus, the sum of `Idle` + `Deployed` must always equal `Deposited` - `Loss` + `Recovered`.
 
 **Bugs ruled out:**
-	•	Capital disappearing during deployment
-	•	Deployed value not reduced on write-off
-	•	Recovery inflating deployed balances
+- Capital disappearing during deployment (leaky bucket).
+- Deployed value not reduced on write-off.
+- Recovery inflating deployed balances instead of idle.
+
 ```solidity
 function invariant__totalIdleAndDeployedValueMatchesAccounting()
-        public
-        view
-    {
-        assertEq(
-            tranchePool.getTotalIdleValue() +
-                tranchePool.getTotalDeployedValue(),
-            tranchePool.getTotalDeposited() +
-                tranchePool.getTotalLoss() -
-                tranchePool.getTotalRecovered(),
-            "Total idle and deployed value does not match handler accounting"
-        );
-    }
-```
-
-## Invariant 3 — Loan Ledger and Pool Ledger Consistency
-
-The sum of outstanding principal across all active loans must equal the pool’s total deployed capital.
-
-This invariant cross-checks:
-	•	LoanEngine’s internal loan ledger
-	•	TranchePool’s deployed capital accounting
-
-**It ensures that:**
-	•	Loan activation deploys capital exactly once
-	•	Repayments reduce both outstanding principal and deployed capital
-	•	Defaults and write-offs do not leave phantom deployed value
-
-**Bugs ruled out:**
-	•	Double deployment on activation
-	•	Partial repayment mismatches
-	•	Deployed capital drifting from loan state
-
-```solidity
-
-function invariant__OutStandingPrincipalMatchesDeployed() public view {
-        assertEq(
-            handler.outStandingPrincipal(),
+    public
+    view
+{
+    assertEq(
+        tranchePool.getTotalIdleValue() +
             tranchePool.getTotalDeployedValue(),
-            "Outstanding principal does not match deployed minus recovered and loss"
-        );
-    }
-
+        tranchePool.getTotalDeposited() -
+            tranchePool.getTotalLoss() +
+            tranchePool.getTotalRecovered(),
+        "Total idle and deployed value does not match handler accounting"
+    );
+}
 ```
+
 ## Invariant 4 — Exhaustion Safety
 
 All invariants must hold even when idle liquidity reaches zero.

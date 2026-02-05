@@ -184,8 +184,8 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         assertEq(
             tranchePool.getTotalIdleValue() +
                 tranchePool.getTotalDeployedValue(),
-            tranchePool.getTotalDeposited() +
-                tranchePool.getTotalLoss() -
+            tranchePool.getTotalDeposited() -
+                tranchePool.getTotalLoss() +
                 tranchePool.getTotalRecovered(),
             "Total idle and deployed value does not match handler accounting"
         );

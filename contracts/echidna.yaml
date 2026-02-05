@@ -1,0 +1,29 @@
+# Echidna Configuration for Credit Rail
+# Target contract: EchidnaCreditRailTest
+
+# 1. Testing Mode
+# We use 'assertion' mode because your tests use `assertEq` / `assert`.
+testMode: assertion
+
+# 2. Coverage Guidance
+# Echidna saves "interesting" inputs (those that increase coverage) here.
+# This allows it to "learn" the sequence: create -> activate -> default -> writeOff.
+corpusDir: "corpus"
+timeout: 600
+# 3. Fuzzing Parameters
+# 50,000 runs is a good balance for local testing.
+testLimit: 1000000000
+# Max sequence length. 100 is deep enough to perform multiple loan lifecycles.
+seqLen: 100
+# Effort to simplify failing test cases (makes debugging easier).
+shrinkLimit: 5000
+
+# 4. Source Interpretation
+# Tell Echidna to use Foundry's build system to resolve imports/remappings.
+cryticArgs: ['--compile-force-framework', 'foundry']
+
+# 5. Contract Configuration
+# Deployer address (arbitrary but consistent)
+deployer: "0x41414141"
+# Available senders for calls
+sender: ["0x10000", "0x20000", "0x30000"]

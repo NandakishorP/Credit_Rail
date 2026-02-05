@@ -1,0 +1,12 @@
+⇾ Compiling targets with crytic-compile
+⇾ Running command:
+/opt/homebrew/bin/crytic-compile . --export-format solc --foundry-out-dir=out
+⇾ Finished compiling targets in 3s
+⇾ Using cached Slither results found at slither_results.json
+⇾ Setting up test chain
+⇾ Finished setting up test chain
+⇾ Creating corpus...
+⇾ Fuzzing with 10 workers
+⇾ fuzz: elapsed: 0s, calls: 0 (0/sec), seq/s: 0, branches hit: 3, corpus: 0, failures: 0/0, gas/s: 0
+error Failed to start fuzzer
+‣ no assertion, property, optimization, or custom tests were found to fuzz

@@ -1,0 +1,17 @@
+# Wake Configuration for Credit Rail Fuzzing
+
+[compiler.solc]
+version = "0.8.27"
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/"
+]
+via_IR = true
+
+[compiler.solc.optimizer]
+enabled = true
+runs = 100
+
+[testing.fuzzing]
+sequences_count = 1000
+flows_count = 100
