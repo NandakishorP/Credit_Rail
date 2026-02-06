@@ -65,6 +65,7 @@ contract Handler is Test {
     uint256 public totalDeposited;
     uint256 public totalLoss;
     uint256 public totalRecovered;
+    uint256 public totalUnclaimedInterest;
 
     uint256 public outStandingPrincipal;
 
@@ -406,6 +407,7 @@ contract Handler is Test {
 
         vm.prank(recevingEntity);
         ERC20Mock(usdt).approve(address(loanEngine), totalRepayAmount);
+        totalUnclaimedInterest += actualInterestPaid;
         vm.prank(deployer);
         loanEngine.repayLoan(
             loanId,
@@ -542,6 +544,7 @@ contract Handler is Test {
         ) {
             return;
         }
+        totalUnclaimedInterest -= tranchePool.getSeniorTrancheShares(user) * (tranchePool.getSeniorInterestIndex() - tranchePool.getSeniorUserIndex(user)) / 1e18;
         vm.prank(user);
         tranchePool.claimSeniorInterest();
     }
@@ -562,6 +565,7 @@ contract Handler is Test {
         ) {
             return;
         }
+        totalUnclaimedInterest -= tranchePool.getJuniorTrancheShares(user) * (tranchePool.getJuniorInterestIndex() - tranchePool.getJuniorUserIndex(user)) / 1e18;
         vm.prank(user);
         tranchePool.claimJuniorInterest();
     }
@@ -582,6 +586,7 @@ contract Handler is Test {
         ) {
             return;
         }
+        totalUnclaimedInterest -= tranchePool.getEquityTrancheShares(user) * (tranchePool.getEquityInterestIndex() - tranchePool.getEquityUserIndex(user)) / 1e18;
         vm.prank(user);
         tranchePool.claimEquityInterest();
     }

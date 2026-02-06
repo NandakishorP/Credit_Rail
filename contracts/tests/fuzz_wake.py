@@ -238,6 +238,18 @@ class InvariantTest(FuzzTest):
             
         self.usdt.mint(self.receiving_entity, 500_000_000 * 10**18)
 
+        # Initialize unclaimed interest
+        self.total_unclaimed_interest = 0
+
+    def _calc_accrued_interest(self, loan_id: uint256) -> uint256:
+        loan = self.loan_engine.getLoanDetails(loan_id)
+        if loan.principalOutstanding == 0:
+            return 0
+        
+        time_elapsed = default_chain.blocks['latest'].timestamp - loan.lastAccrualTimestamp
+        interest = (loan.principalOutstanding * loan.aprBps * time_elapsed) // (365 * 86400 * 10000)
+        return interest
+
     @flow()
     def flow_deposit_senior(self, user_idx: uint256, amount: uint256):
         if self.tranche_pool.getPoolState() != 0: # OPEN
@@ -436,6 +448,11 @@ class InvariantTest(FuzzTest):
         total_repay = principal_amt + interest_amt
         if total_repay == 0: return
 
+        # Calculate actual interest paid for ghost variable tracking
+        pending_interest = self._calc_accrued_interest(loan_id)
+        total_interest_due = details_pre.interestAccrued + pending_interest
+        actual_interest_paid = min(total_repay, total_interest_due)
+
         self.usdt.approve(self.loan_engine, total_repay, from_=self.receiving_entity)
         try:
             self.loan_engine.repayLoan(loan_id, principal_amt, interest_amt, self.receiving_entity, from_=self.deployer)
@@ -451,6 +468,9 @@ class InvariantTest(FuzzTest):
         self.total_deployed_value -= principal_paid
         self.total_idle_value += principal_paid
         self.outstanding_principal -= principal_paid
+        
+        # Update ghost interest
+        self.total_unclaimed_interest += actual_interest_paid
 
     @flow()
     def flow_write_off(self, loan_id: uint256):
@@ -655,11 +675,16 @@ class InvariantTest(FuzzTest):
              user_idx_contract = self.tranche_pool.getSeniorUserIndex(user.address)
              if curr_idx - user_idx_contract <= 0:
                  return
+             
+             # Calculate expected claim amount for ghost tracking
+             claimable = (self.senior_tranche_shares[user.address] * (curr_idx - user_idx_contract)) // 10**18
+             
         except TransactionRevertedError:
              return
 
         try:
             self.tranche_pool.claimSeniorInterest(from_=user)
+            self.total_unclaimed_interest -= claimable
         except TransactionRevertedError:
             pass
 
@@ -674,13 +699,19 @@ class InvariantTest(FuzzTest):
             return
             
         try:
-             if self.tranche_pool.getJuniorInterestIndex() - self.tranche_pool.getJuniorUserIndex(user.address) <= 0:
+             curr_idx = self.tranche_pool.getJuniorInterestIndex()
+             user_idx_contract = self.tranche_pool.getJuniorUserIndex(user.address)
+             if curr_idx - user_idx_contract <= 0:
                  return
+
+             claimable = (self.junior_tranche_shares[user.address] * (curr_idx - user_idx_contract)) // 10**18
+
         except TransactionRevertedError:
              return
 
         try:
             self.tranche_pool.claimJuniorInterest(from_=user)
+            self.total_unclaimed_interest -= claimable
         except TransactionRevertedError:
             pass
 
@@ -695,13 +726,18 @@ class InvariantTest(FuzzTest):
             return
             
         try:
-             if self.tranche_pool.getEquityInterestIndex() - self.tranche_pool.getEquityUserIndex(user.address) == 0:
+             curr_idx = self.tranche_pool.getEquityInterestIndex()
+             user_idx_contract = self.tranche_pool.getEquityUserIndex(user.address)
+             if curr_idx - user_idx_contract <= 0:
                  return
+             
+             claimable = (self.equity_tranche_shares[user.address] * (curr_idx - user_idx_contract)) // 10**18
         except TransactionRevertedError:
              return
 
         try:
             self.tranche_pool.claimEquityInterest(from_=user)
+            self.total_unclaimed_interest -= claimable
         except TransactionRevertedError:
             pass
 
@@ -724,6 +760,22 @@ class InvariantTest(FuzzTest):
         # Check 2: Outstanding Principal
         assert self.outstanding_principal == pool_deployed, \
              f"Outstanding Principal mismatch: Ghost {self.outstanding_principal} != Pool {pool_deployed}"
+
+    @invariant(period=5)
+    def invariant_unclaimed_interest(self):
+        # tranchePool.getTotalUnclaimedInterest() + tranchePool.getTotalIdleValue() + tranchePool.getProtocolRevenue()
+        # == ERC20Mock(usdt).balanceOf(address(tranchePool))
+
+        unclaimed = self.tranche_pool.getTotalUnclaimedInterest()
+        idle = self.tranche_pool.getTotalIdleValue()
+        revenue = self.tranche_pool.getProtocolRevenue()
+        
+        actual_balance = self.usdt.balanceOf(self.tranche_pool)
+        
+        expected_balance = unclaimed + idle + revenue
+        
+        assert expected_balance == actual_balance, \
+             f"Balance mismatch: Expected {expected_balance} (unc:{unclaimed} + idle:{idle} + rev:{revenue}) != Act {actual_balance}"
 
 @default_chain.connect()
 def test_invariants():

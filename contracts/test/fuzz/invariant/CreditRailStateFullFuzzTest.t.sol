@@ -205,4 +205,49 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             "Outstanding principal does not match deployed minus recovered and loss"
         );
     }
+
+    function invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance() public view {
+        assertEq(
+            tranchePool.getTotalUnclaimedInterest() + tranchePool.getTotalIdleValue() + tranchePool.getProtocolRevenue()    ,
+            ERC20Mock(usdt).balanceOf(address(tranchePool)),
+            "Total unclaimed interest does not match deployed minus recovered and loss"
+        );
+    }
+
+    function invariant__totalDeployedValueMatchesSumOfIndividualTranches() public view {
+        assertEq(
+            tranchePool.getTotalDeployedValue(),
+            tranchePool.getSeniorTrancheDeployedValue() +
+                tranchePool.getJuniorTrancheDeployedValue() +
+                tranchePool.getEquityTrancheDeployedValue(),
+            "Total deployed value does not match sum of individual tranches"
+        );
+    }
+
+    /*
+        @notice System Level Invariant: Loan Principal Integrity
+        Iterates over all loans in the LoanEngine and sums up the outstanding principal.
+        This sum must strictly equal the Total Deployed Value in the TranchePool.
+        This ensures that:
+        1. Every deployed dollar is accounted for by a loan.
+        2. No "Ghost" capital exists in the deployed state.
+        3. Loan principal updates (repayment/write-off) always sync with the Pool.
+    */
+    function invariant__systemLevel_PrincipalIntegrity() public view {
+        uint256 totalOutstandingPrincipal = 0;
+        // nextLoanId is 1-indexed, loop from 1 to nextLoanId - 1
+        uint256 nextId = loanEngine.getNextLoanId();
+        for (uint256 i = 1; i < nextId; i++) {
+            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            // Only count active principal. Theoretically, REPAID/DEFAULTED could have 0, 
+            // but we sum whatever is in the principalOutstanding field to be safe.
+            totalOutstandingPrincipal += loan.principalOutstanding;
+        }
+
+        assertEq(
+            totalOutstandingPrincipal,
+            tranchePool.getTotalDeployedValue(),
+            "System Level Invariant Failed: Sum of Loan Principals != Pool Deployed Value"
+        );
+    }
 }

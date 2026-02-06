@@ -169,6 +169,8 @@ contract TranchePool is Ownable {
     uint256 public juniorPrincipalShortfall;
     uint256 public equityPrincipalShortfall;
 
+    uint256 public s_totalUnclaimedInterest;
+
     modifier isWhiteListed(address user) {
         _isWhiteListed(user);
         _;
@@ -472,6 +474,7 @@ contract TranchePool is Ownable {
     //////////////////////////////////////////////////////////////*/
 
         uint256 remainingInterest = interestRepaid;
+        s_totalUnclaimedInterest += interestRepaid;
 
         // 1️⃣ Senior interest
         if (
@@ -712,6 +715,7 @@ contract TranchePool is Ownable {
 
         // CHANGED: update user index BEFORE transfer
         seniorUserIndex[msg.sender] = seniorInterestIndex;
+        s_totalUnclaimedInterest -= claimable;
 
         IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
     }
@@ -728,6 +732,7 @@ contract TranchePool is Ownable {
 
         // CHANGED: update user index BEFORE transfer
         juniorUserIndex[msg.sender] = juniorInterestIndex;
+        s_totalUnclaimedInterest -= claimable;
 
         IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
     }
@@ -744,6 +749,8 @@ contract TranchePool is Ownable {
         if (indexDelta == 0) revert TranchePool__ZeroWithdrawal();
 
         uint256 claimable = (userShares * indexDelta) / 1e18;
+        s_totalUnclaimedInterest -= claimable;
+
 
         // CHANGED: update user index BEFORE transfer
         equityUserIndex[msg.sender] = equityInterestIndex;
@@ -1223,6 +1230,10 @@ contract TranchePool is Ownable {
 
     // getters
 
+    function getTotalUnclaimedInterest() external view returns (uint256) {
+        return s_totalUnclaimedInterest;
+    }
+
     function getSeniorTrancheMaxDepositCap() external view returns (uint256) {
         return s_seniorTrancheMaxCap;
     }
@@ -1378,4 +1389,6 @@ contract TranchePool is Ownable {
     function getProtocolRevenue() external view returns (uint256) {
         return s_protocolRevenue;
     }
+
+    
 }

@@ -23,7 +23,7 @@ The handler enforces only minimal preconditions required by the protocol (e.g., 
 
 This design ensures that invariants are tested against realistic and adversarial execution paths, rather than curated happy flows.
     
-## Invariant 1 — Outstanding Principal Matches Deployed Capital
+## Invariant 1 — Outstanding Principal Matches Deployed Capital (Ghost State)
 
 The total outstanding principal recorded by the LoanEngine must always match the total deployed value tracked by the TranchePool.
 
@@ -64,8 +64,7 @@ function invariant__OutStandingPrincipalMatchesDeployed() public view {
 }
 ```
 
-
-## Invariant 2 — Capital Location Correctness
+## Invariant 2 — Capital Location Correctness (Ghost vs Accounting)
 
 All principal capital must always be either idle or deployed.
 
@@ -113,7 +112,77 @@ function invariant__totalIdleAndDeployedValueMatchesAccounting()
 }
 ```
 
-## Invariant 4 — Exhaustion Safety
+## Invariant 3 — Protocol Solvency (System Level)
+
+**Backing Assets Match Obligations**
+
+Tokens actually held by the contract must strictly equal the sum of:
+1. Idle Capital (waiting to be deployed)
+2. Unclaimed Interest (owed to LPs)
+3. Protocol Revenue (owed to protocol)
+
+This is a **Hard Solvency Check**. If `TokenBalance < Obligations`, the protocol is insolvent.
+
+```solidity
+function invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance() public view {
+    assertEq(
+        tranchePool.getTotalUnclaimedInterest() + tranchePool.getTotalIdleValue() + tranchePool.getProtocolRevenue(),
+        ERC20Mock(usdt).balanceOf(address(tranchePool)),
+        "Total unclaimed interest does not match deployed minus recovered and loss"
+    );
+}
+```
+
+## Invariant 4 — Tranche Integrity (System Level)
+
+**The Whole Equals the Sum of Parts**
+
+The Total Deployed Value tracked by the pool must equal the sum of deployed capital allocated to Senior, Junior, and Equity tranches.
+
+`TotalDeployed == SeniorDeployed + JuniorDeployed + EquityDeployed`
+
+**Ensures:**
+- No capital is "lost" between the global counter and the individual tranche counters.
+- Waterfalls correctly update both global and tranche-specific state.
+
+```solidity
+function invariant__totalDeployedValueMatchesSumOfIndividualTranches() public view {
+    assertEq(
+        tranchePool.getTotalDeployedValue(),
+        tranchePool.getSeniorTrancheDeployedValue() +
+            tranchePool.getJuniorTrancheDeployedValue() +
+            tranchePool.getEquityTrancheDeployedValue(),
+        "Total deployed value does not match sum of individual tranches"
+    );
+}
+```
+
+## Invariant 5 — Loan Principal Integrity (System Level)
+
+**Loan Engine State Matches Pool State**
+
+The Total Deployed Value in the Tranche Pool must strictly equal the sum of `principalOutstanding` across all active loans in the Loan Engine.
+
+*Difference from Invariant 1*: This iterates over **actual contract storage** (all loans), whereas Invariant 1 compares against the Handler's "Ghost" tracking. This verifies that the Protocol itself is internally consistent, even if the Handler is wrong.
+
+```solidity
+function invariant__systemLevel_PrincipalIntegrity() public view {
+    uint256 totalOutstandingPrincipal = 0;
+    uint256 nextId = loanEngine.getNextLoanId();
+    for (uint256 i = 1; i < nextId; i++) {
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+        totalOutstandingPrincipal += loan.principalOutstanding;
+    }
+
+    assertEq(
+        totalOutstandingPrincipal,
+        tranchePool.getTotalDeployedValue(),
+        "System Level Invariant Failed: Sum of Loan Principals != Pool Deployed Value"
+    );
+}
+```
+
+## Invariant 6 — Exhaustion Safety
 
 All invariants must hold even when idle liquidity reaches zero.
 
