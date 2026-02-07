@@ -5,6 +5,7 @@ import {LoanEngine} from "../src/LoanEngine.sol";
 import {TranchePool} from "../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
+import {MockLoanProofVerifier} from "../test/mocks/MockLoanProofVerifier.sol";
 
 contract WakeHandler {
     LoanEngine public loanEngine;

@@ -1,0 +1,23 @@
+# Echidna Configuration for Standalone Tests
+# Target: EchidnaTest (no Foundry cheatcode dependencies)
+
+testMode: assertion
+corpusDir: "corpus_echidna"
+timeout: 600
+testLimit: 100000
+seqLen: 50
+shrinkLimit: 5000
+
+# Use Foundry's build system for compilation
+# Use Solc directly with remappings to bypass circular dependency
+cryticArgs:
+  - "--compile-force-framework"
+  - "solc"
+  - "--solc-remaps"
+  - "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/ erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/ forge-std/=lib/forge-std/src/ halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/ openzeppelin-contracts/=lib/openzeppelin-contracts/ src/interfaces/ICreditPolicy.sol:../CreditPolicy.sol=test/fuzz/echidna/patched_src/CreditPolicy.sol test/fuzz/echidna/EchidnaHandler.sol:../../../src/CreditPolicy.sol=test/fuzz/echidna/patched_src/CreditPolicy.sol"
+
+# The test contract directly deploys everything, so deployer doesn't matter
+deployer: "0x1000000000000000000000000000000000000001"
+
+# Echidna will call from these addresses
+sender: ["0x10000", "0x20000", "0x30000"]

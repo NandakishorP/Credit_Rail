@@ -432,7 +432,6 @@ contract Handler is Test {
         }
         defaultCounter++;
 
-        // 🔒 90% of the time → return
         if (defaultCounter % 10 != 0) {
             return;
         }

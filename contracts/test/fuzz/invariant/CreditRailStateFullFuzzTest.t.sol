@@ -22,7 +22,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     uint256 public USDT = 1e18;
     address public deployer = makeAddr("deployer");
 
-    constructor() {
+    function setUp() public {  // Change from constructor to setUp
         vm.startPrank(deployer);
         usdt = new ERC20Mock();
         tranchePool = new TranchePool(address(usdt));
@@ -67,6 +67,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
 
         handler = new Handler(loanEngine, tranchePool, creditPolicy, usdt);
         vm.stopPrank();
+        
         bytes4[] memory selectors = new bytes4[](18);
         selectors[0] = handler.depositSeniorTranche.selector;
         selectors[1] = handler.depositJuniorTranche.selector;
@@ -86,6 +87,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         selectors[15] = handler.withdrawSeniorTranche.selector;
         selectors[16] = handler.withdrawJuniorTranche.selector;
         selectors[17] = handler.withdrawEquityTranche.selector;
+        
         targetSelector(
             FuzzSelector({addr: address(handler), selectors: selectors})
         );
@@ -264,11 +266,17 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             tranchePool.getJuniorPrincipalShortfall() +
             tranchePool.getEquityPrincipalShortfall();
 
-        assertEq(
-            totalShortfall,
-            tranchePool.getTotalLoss() - tranchePool.getTotalRecovered(),
-            "Shortfall != Loss - Recovery (waterfall asymmetry)"
-        );
+        if (tranchePool.getTotalRecovered() >= tranchePool.getTotalLoss()) {
+            // If we recovered more than lost, the hole should be completely filled.
+            assertEq(totalShortfall, 0, "Shortfall must be 0 if fully recovered");
+        } else {
+            // If we haven't recovered everything, shortfall should exactly match the remaining hole.
+            assertEq(
+                totalShortfall, 
+                tranchePool.getTotalLoss() - tranchePool.getTotalRecovered(), 
+                "Shortfall mismatch"
+            );
+        }
     }
 
     function invariant__totalIdleValueIntegrity() public view {
