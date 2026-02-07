@@ -206,15 +206,23 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         );
     }
 
-    function invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance() public view {
+    function invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance()
+        public
+        view
+    {
         assertEq(
-            tranchePool.getTotalUnclaimedInterest() + tranchePool.getTotalIdleValue() + tranchePool.getProtocolRevenue()    ,
+            tranchePool.getTotalUnclaimedInterest() +
+                tranchePool.getTotalIdleValue() +
+                tranchePool.getProtocolRevenue(),
             ERC20Mock(usdt).balanceOf(address(tranchePool)),
             "Total unclaimed interest does not match deployed minus recovered and loss"
         );
     }
 
-    function invariant__totalDeployedValueMatchesSumOfIndividualTranches() public view {
+    function invariant__totalDeployedValueMatchesSumOfIndividualTranches()
+        public
+        view
+    {
         assertEq(
             tranchePool.getTotalDeployedValue(),
             tranchePool.getSeniorTrancheDeployedValue() +
@@ -239,7 +247,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         uint256 nextId = loanEngine.getNextLoanId();
         for (uint256 i = 1; i < nextId; i++) {
             LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
-            // Only count active principal. Theoretically, REPAID/DEFAULTED could have 0, 
+            // Only count active principal. Theoretically, REPAID/DEFAULTED could have 0,
             // but we sum whatever is in the principalOutstanding field to be safe.
             totalOutstandingPrincipal += loan.principalOutstanding;
         }
@@ -250,4 +258,107 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             "System Level Invariant Failed: Sum of Loan Principals != Pool Deployed Value"
         );
     }
+
+    function invariant__lossRecoveryWaterfallSymmetry() public view {
+        uint256 totalShortfall = tranchePool.getSeniorPrincipalShortfall() +
+            tranchePool.getJuniorPrincipalShortfall() +
+            tranchePool.getEquityPrincipalShortfall();
+
+        assertEq(
+            totalShortfall,
+            tranchePool.getTotalLoss() - tranchePool.getTotalRecovered(),
+            "Shortfall != Loss - Recovery (waterfall asymmetry)"
+        );
+    }
+
+    function invariant__totalIdleValueIntegrity() public view {
+        assertEq(
+            tranchePool.getSeniorTrancheIdleValue() +
+            tranchePool.getJuniorTrancheIdleValue() +
+            tranchePool.getEquityTrancheIdleValue(),
+            tranchePool.getTotalIdleValue(),
+            "Sum of tranche idle values != total idle value"
+        );
+    }
+
+    function invariant__seniorShareToIdleOpen() public view {
+        if (tranchePool.getPoolState() == TranchePool.PoolState.OPEN) {
+            assertEq(
+                tranchePool.getTotalSeniorShares(),
+                tranchePool.getSeniorTrancheIdleValue(),
+                "Senior: Shares != Idle in OPEN state"
+            );
+        }
+    }
+
+    function invariant__loanStateConsistency() public view {
+        uint256 nextId = loanEngine.getNextLoanId();
+        for (uint256 i = 1; i < nextId; i++) {
+            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            
+            // NONE and CREATED should have 0 principal outstanding
+            if (loan.state == LoanEngine.LoanState.NONE || 
+                loan.state == LoanEngine.LoanState.CREATED) {
+                assertEq(loan.principalOutstanding, 0,
+                    "NONE/CREATED loan has outstanding principal");
+            }
+            
+            // REPAID and WRITTEN_OFF must have 0 outstanding
+            if (loan.state == LoanEngine.LoanState.REPAID ||
+                loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
+                assertEq(loan.principalOutstanding, 0,
+                    "Terminal loan has outstanding principal");
+            }
+            
+            // ACTIVE loans must have principalOutstanding <= principalIssued
+            if (loan.state == LoanEngine.LoanState.ACTIVE) {
+                assertLe(loan.principalOutstanding, loan.principalIssued,
+                    "Active loan: outstanding > issued");
+            }
+        }
+    }
+
+    function invariant__interestIndexMonotonicity() public view {
+    // Indices initialize at 1e18 and can only increase
+        assertGe(tranchePool.getSeniorInterestIndex(), 1e18,
+            "Senior interest index below initial");
+        assertGe(tranchePool.getJuniorInterestIndex(), 1e18,
+            "Junior interest index below initial");
+        assertGe(tranchePool.getEquityInterestIndex(), 1e18,
+            "Equity interest index below initial");
+    }
+
+    function invariant__poolStateValidityDeployedCapital() public view {
+        TranchePool.PoolState state = tranchePool.getPoolState();
+        if (state == TranchePool.PoolState.OPEN || 
+            state == TranchePool.PoolState.CLOSED) {
+            assertEq(tranchePool.getTotalDeployedValue(), 0,
+                "OPEN/CLOSED pool has deployed capital");
+        }
+        
+        // Cannot close with active loans (deployed > 0)
+        if (state == TranchePool.PoolState.CLOSED) {
+            assertEq(tranchePool.getTotalDeployedValue(), 0,
+                "CLOSED pool still has deployed capital");
+        }
+    }
+
+    function invariant__loanInterestAccounting() public view {
+        uint256 nextId = loanEngine.getNextLoanId();
+        
+        for (uint256 i = 1; i < nextId; i++) {
+            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            if (loan.state == LoanEngine.LoanState.REPAID) {
+                assertEq(loan.interestAccrued, 0,
+                    "REPAID loan has remaining accrued interest");
+            }
+            if (loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
+                assertEq(loan.interestAccrued, 0,
+                    "WRITTEN_OFF loan has accrued interest");
+            }
+        }
+    }
+
+
+
 }

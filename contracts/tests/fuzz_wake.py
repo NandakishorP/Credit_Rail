@@ -275,6 +275,9 @@ class InvariantTest(FuzzTest):
         self.tranche_pool.depositSeniorTranche(amount, from_=user)
         
         self.senior_tranche_idle += amount
+        self.senior_tranche_deposits[user.address] += amount
+        self.senior_tranche_shares[user.address] += amount
+        self.senior_tranche_total_shares += amount
         self.total_idle_value += amount
 
     @flow()
@@ -298,6 +301,9 @@ class InvariantTest(FuzzTest):
         self.tranche_pool.depositJuniorTranche(amount, from_=user)
         
         self.junior_tranche_idle += amount
+        self.junior_tranche_deposits[user.address] += amount
+        self.junior_tranche_shares[user.address] += amount
+        self.junior_tranche_total_shares += amount
         self.total_idle_value += amount
 
     @flow()
@@ -321,6 +327,9 @@ class InvariantTest(FuzzTest):
         self.tranche_pool.depositEquityTranche(amount, from_=user)
         
         self.equity_tranche_idle += amount
+        self.equity_tranche_deposits[user.address] += amount
+        self.equity_tranche_shares[user.address] += amount
+        self.equity_tranche_total_shares += amount
         self.total_idle_value += amount
 
     @flow()
@@ -776,6 +785,45 @@ class InvariantTest(FuzzTest):
         
         assert expected_balance == actual_balance, \
              f"Balance mismatch: Expected {expected_balance} (unc:{unclaimed} + idle:{idle} + rev:{revenue}) != Act {actual_balance}"
+
+    @invariant(period=5)
+    def invariant_deployed_value_matches_tranches(self):
+        total_deployed = self.tranche_pool.getTotalDeployedValue()
+        senior_deployed = self.tranche_pool.getSeniorTrancheDeployedValue()
+        junior_deployed = self.tranche_pool.getJuniorTrancheDeployedValue()
+        equity_deployed = self.tranche_pool.getEquityTrancheDeployedValue()
+        
+        expected_total = senior_deployed + junior_deployed + equity_deployed
+        assert total_deployed == expected_total, \
+            f"Total deployed value mismatch: Total {total_deployed} != Sum {expected_total} (S:{senior_deployed} + J:{junior_deployed} + E:{equity_deployed})"
+
+    @invariant(period=5)
+    def invariant_system_level_principal_integrity(self):
+        total_outstanding_principal = 0
+        next_id = self.loan_engine.getNextLoanId()
+        
+        # Iterate from 1 to next_id - 1
+        for i in range(1, next_id):
+            loan = self.loan_engine.getLoanDetails(i)
+            total_outstanding_principal += loan.principalOutstanding
+            
+        pool_deployed = self.tranche_pool.getTotalDeployedValue()
+        
+        assert total_outstanding_principal == pool_deployed, \
+            f"System Level Principal Integrity Failed: Loan Sum {total_outstanding_principal} != Pool Deployed {pool_deployed}"
+
+    @invariant(period=5)
+    def invariant_loss_recovery_waterfall_symmetry(self):
+        total_shortfall = (
+            self.tranche_pool.getSeniorPrincipalShortfall() +
+            self.tranche_pool.getJuniorPrincipalShortfall() +
+            self.tranche_pool.getEquityPrincipalShortfall()
+        )
+        
+        loss_minus_recovery = self.tranche_pool.getTotalLoss() - self.tranche_pool.getTotalRecovered()
+        
+        assert total_shortfall == loss_minus_recovery, \
+            f"Waterfall Symmetry Failed: Shortfall {total_shortfall} != Loss {self.tranche_pool.getTotalLoss()} - Recovery {self.tranche_pool.getTotalRecovered()}"
 
 @default_chain.connect()
 def test_invariants():

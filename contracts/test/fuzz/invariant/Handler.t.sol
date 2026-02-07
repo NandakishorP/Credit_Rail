@@ -414,6 +414,7 @@ contract Handler is Test {
             principalAmount,
             interestAmount,
             recevingEntity
+
         );
         totalDeployedValue -= actualPrincipalPaid;
         totalIdleValue += actualPrincipalPaid;
@@ -455,10 +456,7 @@ contract Handler is Test {
 
         writeOffCounter++;
 
-        // ~1 in 20 handler calls
-        if (writeOffCounter % 20 != 0) {
-            return;
-        }
+        
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
@@ -491,10 +489,7 @@ contract Handler is Test {
         }
         recoveryCounter++;
 
-        // ~1 in 30 handler calls
-        if (recoveryCounter % 30 != 0) {
-            return;
-        }
+        
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
@@ -503,17 +498,14 @@ contract Handler is Test {
             return;
         }
 
-        address recoveryAgent = seniorUsers[agentIndex % seniorUsers.length];
 
         amount = bound(amount, 1, loan.principalIssued);
 
-        vm.startPrank(recoveryAgent);
-        ERC20Mock(usdt).mint(recoveryAgent, amount);
+        vm.prank(recevingEntity);
         ERC20Mock(usdt).approve(address(loanEngine), amount);
-        vm.stopPrank();
 
         vm.prank(deployer);
-        loanEngine.recoverLoan(loanId, amount, recoveryAgent);
+        loanEngine.recoverLoan(loanId, amount, recevingEntity);
         totalIdleValue += amount;
         totalRecovered += amount;
     }

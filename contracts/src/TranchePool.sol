@@ -751,7 +751,6 @@ contract TranchePool is Ownable {
         uint256 claimable = (userShares * indexDelta) / 1e18;
         s_totalUnclaimedInterest -= claimable;
 
-
         // CHANGED: update user index BEFORE transfer
         equityUserIndex[msg.sender] = equityInterestIndex;
 
@@ -1390,5 +1389,15 @@ contract TranchePool is Ownable {
         return s_protocolRevenue;
     }
 
-    
+    function getSeniorPrincipalShortfall() external view returns (uint256) {
+        return seniorPrincipalShortfall;
+    }
+
+    function getJuniorPrincipalShortfall() external view returns (uint256) {
+        return juniorPrincipalShortfall;
+    }
+
+    function getEquityPrincipalShortfall() external view returns (uint256) {
+        return equityPrincipalShortfall;
+    }
 }

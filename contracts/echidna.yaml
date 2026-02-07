@@ -9,7 +9,7 @@ testMode: assertion
 # Echidna saves "interesting" inputs (those that increase coverage) here.
 # This allows it to "learn" the sequence: create -> activate -> default -> writeOff.
 corpusDir: "corpus"
-timeout: 600
+timeout: 1200
 # 3. Fuzzing Parameters
 # 50,000 runs is a good balance for local testing.
 testLimit: 1000000000
