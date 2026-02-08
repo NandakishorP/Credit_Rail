@@ -9,20 +9,12 @@ import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
 
 /**
  * @title EchidnaHandler
- * @notice Echidna-compatible handler with proper bounds for permissioned DeFi
+ * @notice Echidna-compatible handler matching Foundry Handler.t.sol EXACTLY
  * @dev No Foundry cheatcodes - this contract is its own deployer/owner
- * 
- * Key bounds (matching Handler.t.sol):
- * - minimumLoanPrincipal: 1,000,000 USDT (1M)
- * - maximumLoanPrincipal: 20,000,000 USDT (20M)
- * - minimumOriginationFeeBps: 50 (0.5%)
- * - minimumTermDays: 180
- * - maximumTermDays: 480
- * - Deposits: use contract's min/max values
  */
 contract EchidnaHandler {
     // =========================================================================
-    // STATE
+    // STATE - Matching Foundry Handler
     // =========================================================================
     
     LoanEngine public loanEngine;
@@ -31,22 +23,34 @@ contract EchidnaHandler {
     CreditPolicy public creditPolicy;
     MockLoanProofVerifier public verifier;
     
-    // Constants (matching Handler.t.sol)
+    // Constants (matching Handler.t.sol EXACTLY)
     uint256 public constant USDT = 1e18;
-    uint256 public constant MINIMUM_LOAN_PRINCIPAL = 10_00_000 * USDT;  // 1M USDT
-    uint256 public constant MAXIMUM_LOAN_PRINCIPAL = 2_00_00_000 * USDT; // 20M USDT
-    uint256 public constant MINIMUM_ORIGINATION_FEE_BPS = 50;  // 0.5%
-    uint256 public constant MINIMUM_TERM_DAYS = 180;
-    uint256 public constant MAXIMUM_TERM_DAYS = 480;
+    uint256 public constant minimumLoanPrincipal = 10_00_000 * USDT;  // 1M USDT
+    uint256 public constant maximumLoanPrincipal = 2_00_00_000 * USDT; // 20M USDT
+    uint256 public constant minimumOriginationFeeBps = 50;  // 0.5%
+    uint256 public constant minimumTermDays = 180;
+    uint256 public constant maximumTermDays = 480;
     uint256 public constant MAX_ORIGINATION_FEE_BPS = 500;  // 5%
+    bool public constant allowFullDeployment = true;
     
-    // Initial funding to ensure minimums can be met
-    uint256 public constant INITIAL_SENIOR_DEPOSIT = 80_00_00_000 * USDT;  // 800M USDT
-    uint256 public constant INITIAL_JUNIOR_DEPOSIT = 50_00_00_000 * USDT;  // 500M USDT
-    uint256 public constant INITIAL_EQUITY_DEPOSIT = 100_00_00_000 * USDT; // 1B USDT
+    // Initial funding (large enough to meet minimums)
+    uint256 public constant INITIAL_SENIOR_DEPOSIT = 80_00_00_000 * USDT;
+    uint256 public constant INITIAL_JUNIOR_DEPOSIT = 50_00_00_000 * USDT;
+    uint256 public constant INITIAL_EQUITY_DEPOSIT = 100_00_00_000 * USDT;
     
-    // Ghost variables for invariants
+    // Ghost variables for invariants (matching Foundry)
     uint256 public outstandingPrincipal;
+    uint256 public totalIdleValue;
+    uint256 public totalDeployedValue;
+    uint256 public totalDeposited;
+    uint256 public totalLoss;
+    uint256 public totalRecovered;
+    uint256 public totalUnclaimedInterest;
+    
+    uint256 public activePolicyVersion = 1;
+    uint256 public defaultCounter;
+    uint256 public writeOffCounter;
+    uint256 public recoveryCounter;
     
     // =========================================================================
     // CONSTRUCTOR
@@ -59,6 +63,18 @@ contract EchidnaHandler {
         // Deploy TranchePool
         tranchePool = new TranchePool(address(usdt));
         
+        // Configure tranches (matching Foundry)
+        tranchePool.setMaxAllocationCapSeniorTranche(5_00_00_000 * USDT);
+        tranchePool.setMaxAllocationCapJuniorTranche(3_00_00_000 * USDT);
+        tranchePool.setMaxAllocationCapEquityTranche(2_00_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountSeniorTranche(10_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountJuniorTranche(50_00_000 * USDT);
+        tranchePool.setMinimumDepositAmountEquityTranche(1_00_00_000 * USDT);
+        tranchePool.setTrancheCapitalAllocationFactorJunior(15);
+        tranchePool.setTrancheCapitalAllocationFactorSenior(80);
+        tranchePool.setSeniorAPR(8);
+        tranchePool.setTargetJuniorAPR(15);
+        
         // Deploy MockLoanProofVerifier
         verifier = new MockLoanProofVerifier();
         
@@ -66,8 +82,7 @@ contract EchidnaHandler {
         creditPolicy = new CreditPolicy();
         _setupCreditPolicy();
         
-        // Deploy LoanEngine with correct constructor signature
-        // constructor(creditPolicy, verifier, maxOriginationFee, tranchePool, stablecoin)
+        // Deploy LoanEngine
         loanEngine = new LoanEngine(
             address(creditPolicy),
             address(verifier),
@@ -75,8 +90,7 @@ contract EchidnaHandler {
             address(tranchePool),
             address(usdt)
         );
-        
-        // Setup: This contract IS the owner, no vm.prank needed
+        loanEngine.setMaxOriginationFeeBps(500);
         tranchePool.setLoanEngine(address(loanEngine));
         
         // Whitelist this contract for all operations
@@ -87,12 +101,7 @@ contract EchidnaHandler {
         tranchePool.updateWhitelist(address(this), true);
         tranchePool.updateEquityTrancheWhiteList(address(this), true);
         
-        // Configure tranche caps (required before deposits)
-        tranchePool.setMaxAllocationCapSeniorTranche(INITIAL_SENIOR_DEPOSIT);
-        tranchePool.setMaxAllocationCapJuniorTranche(INITIAL_JUNIOR_DEPOSIT);
-        tranchePool.setMaxAllocationCapEquityTranche(INITIAL_EQUITY_DEPOSIT);
-        
-        // Mint USDT for operations (large amount for institutional scale)
+        // Mint USDT for operations
         usdt.mint(address(this), 500_00_00_000 * USDT);  // 5B USDT
         
         // Initial deposits to ensure pool has liquidity
@@ -100,93 +109,58 @@ contract EchidnaHandler {
     }
     
     function _setupCreditPolicy() internal {
-        // Create policy version 1
         creditPolicy.createPolicy(1);
+        creditPolicy.setMaxTiers(3);
         
-        // Set max tiers first
-        creditPolicy.setMaxTiers(10);
+        creditPolicy.updateEligibility(1, CreditPolicy.EligibilityCriteria({
+            minAnnualRevenue: 1_00_00_000,
+            minEBITDA: 10_00_000,
+            minTangibleNetWorth: 5_00_00_000,
+            minBusinessAgeDays: 180,
+            maxDefaultsLast36Months: 0,
+            bankruptcyExcluded: true
+        }));
         
-        // Update eligibility
-        creditPolicy.updateEligibility(
-            1,
-            CreditPolicy.EligibilityCriteria({
-                minAnnualRevenue: 1_00_00_000,
-                minEBITDA: 10_00_000,
-                minTangibleNetWorth: 5_00_00_000,
-                minBusinessAgeDays: 180,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            })
-        );
+        creditPolicy.updateRatios(1, CreditPolicy.FinancialRatios({
+            maxTotalDebtToEBITDA: 4e18,
+            minInterestCoverageRatio: 2e18,
+            minCurrentRatio: 1e18,
+            minEBITDAMarginBps: 1500
+        }));
         
-        // Update financial ratios
-        creditPolicy.updateRatios(
-            1,
-            CreditPolicy.FinancialRatios({
-                maxTotalDebtToEBITDA: 4e18,
-                minInterestCoverageRatio: 2e18,
-                minCurrentRatio: 1e18,
-                minEBITDAMarginBps: 1500
-            })
-        );
+        creditPolicy.updateConcentration(1, CreditPolicy.ConcentrationLimits({
+            maxSingleBorrowerBps: 1000,
+            maxIndustryConcentrationBps: 3000
+        }));
         
-        // Update concentration limits
-        creditPolicy.updateConcentration(
-            1,
-            CreditPolicy.ConcentrationLimits({
-                maxSingleBorrowerBps: 1000,
-                maxIndustryConcentrationBps: 3000
-            })
-        );
+        creditPolicy.updateAttestation(1, CreditPolicy.AttestationRequirements({
+            maxAttestationAgeDays: 90,
+            reAttestationFrequencyDays: 180,
+            requiresCPAAttestation: true
+        }));
         
-        // Update attestation requirements
-        creditPolicy.updateAttestation(
-            1,
-            CreditPolicy.AttestationRequirements({
-                maxAttestationAgeDays: 90,
-                reAttestationFrequencyDays: 180,
-                requiresCPAAttestation: true
-            })
-        );
+        creditPolicy.updateCovenants(1, CreditPolicy.MaintenanceCovenants({
+            maxLeverageRatio: 4e18,
+            minCoverageRatio: 2e18,
+            minLiquidityAmount: 1_00_00_000,
+            allowsDividends: false,
+            reportingFrequencyDays: 90
+        }));
         
-        // Update maintenance covenants
-        creditPolicy.updateCovenants(
-            1,
-            CreditPolicy.MaintenanceCovenants({
-                maxLeverageRatio: 4e18,
-                minCoverageRatio: 2e18,
-                minLiquidityAmount: 1_00_00_000,
-                allowsDividends: false,
-                reportingFrequencyDays: 90
-            })
-        );
+        creditPolicy.setLoanTier(1, 1, CreditPolicy.LoanTier({
+            name: "Tier 1",
+            minRevenue: 1_00_00_000,
+            maxRevenue: 5_00_00_000,
+            minEBITDA: 10_00_000,
+            maxDebtToEBITDA: 3e18,
+            maxLoanToEBITDA: 2e18,
+            interestRateBps: 800,
+            originationFeeBps: 100,
+            termDays: 365,
+            active: true
+        }));
         
-        // Set loan tier
-        creditPolicy.setLoanTier(
-            1,
-            1,  // tierId
-            CreditPolicy.LoanTier({
-                name: "Tier 1",
-                minRevenue: 1_00_00_000,
-                maxRevenue: 5_00_00_000,
-                minEBITDA: 10_00_000,
-                maxDebtToEBITDA: 3e18,
-                maxLoanToEBITDA: 2e18,
-                interestRateBps: 800,
-                originationFeeBps: 100,
-                termDays: 365,
-                active: true
-            })
-        );
-        
-        // Set policy document
-        creditPolicy.setPolicyDocument(
-            1,
-            keccak256("document"),
-            "ipfs://policyDocHash"
-        );
-        
-        // Freeze policy
+        creditPolicy.setPolicyDocument(1, keccak256("document"), "ipfs://policyDocHash");
         creditPolicy.freezePolicy(1);
     }
     
@@ -199,6 +173,7 @@ contract EchidnaHandler {
         
         usdt.approve(address(tranchePool), seniorDeposit);
         tranchePool.depositSeniorTranche(seniorDeposit);
+        totalIdleValue += seniorDeposit;
         
         // Junior tranche deposit
         uint256 juniorMin = tranchePool.getJuniorTrancheMinimumDepositAmount();
@@ -208,6 +183,7 @@ contract EchidnaHandler {
         
         usdt.approve(address(tranchePool), juniorDeposit);
         tranchePool.depositJuniorTranche(juniorDeposit);
+        totalIdleValue += juniorDeposit;
         
         // Equity tranche deposit
         uint256 equityMin = tranchePool.getEquityTrancheMinimumDepositAmount();
@@ -217,29 +193,11 @@ contract EchidnaHandler {
         
         usdt.approve(address(tranchePool), equityDeposit);
         tranchePool.depositEquityTranche(equityDeposit);
+        totalIdleValue += equityDeposit;
     }
     
     // =========================================================================
-    // BOUND HELPER (Echidna-compatible)
-    // =========================================================================
-    
-    function _bound(uint256 x, uint256 min, uint256 max) internal pure returns (uint256) {
-        if (min > max) return min;
-        if (x < min) return min;
-        if (x > max) return max;
-        return min + (x % (max - min + 1));
-    }
-    
-    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
-    }
-    
-    function _max(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a > b ? a : b;
-    }
-    
-    // =========================================================================
-    // DEPOSIT FUNCTIONS (with proper bounds)
+    // DEPOSIT FUNCTIONS - Matching Foundry Handler
     // =========================================================================
     
     function depositSeniorTranche(uint256 amount) public {
@@ -258,7 +216,9 @@ contract EchidnaHandler {
         if (amount < minDeposit) return;
         
         usdt.approve(address(tranchePool), amount);
-        try tranchePool.depositSeniorTranche(amount) {} catch {}
+        try tranchePool.depositSeniorTranche(amount) {
+            totalIdleValue += amount;
+        } catch {}
     }
     
     function depositJuniorTranche(uint256 amount) public {
@@ -277,7 +237,9 @@ contract EchidnaHandler {
         if (amount < minDeposit) return;
         
         usdt.approve(address(tranchePool), amount);
-        try tranchePool.depositJuniorTranche(amount) {} catch {}
+        try tranchePool.depositJuniorTranche(amount) {
+            totalIdleValue += amount;
+        } catch {}
     }
     
     function depositEquityTranche(uint256 amount) public {
@@ -296,18 +258,22 @@ contract EchidnaHandler {
         if (amount < minDeposit) return;
         
         usdt.approve(address(tranchePool), amount);
-        try tranchePool.depositEquityTranche(amount) {} catch {}
+        try tranchePool.depositEquityTranche(amount) {
+            totalIdleValue += amount;
+        } catch {}
     }
     
     // =========================================================================
-    // POOL STATE TRANSITIONS
+    // POOL STATE TRANSITIONS - Matching Foundry Handler
     // =========================================================================
     
     function commitPool() public {
         if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
         if (tranchePool.getTotalIdleValue() == 0) return;
         
-        try tranchePool.setPoolState(TranchePool.PoolState.COMMITED) {} catch {}
+        try tranchePool.setPoolState(TranchePool.PoolState.COMMITED) {
+            totalDeposited = tranchePool.getTotalIdleValue();
+        } catch {}
     }
     
     function closePool() public {
@@ -318,55 +284,60 @@ contract EchidnaHandler {
     }
     
     // =========================================================================
-    // LOAN LIFECYCLE (with proper bounds)
+    // LOAN LIFECYCLE - Matching Foundry Handler EXACTLY
     // =========================================================================
     
     function createLoan(uint256 principalIssued, uint256 originationFeeBps, uint256 termDays) public {
         TranchePool.PoolState state = tranchePool.getPoolState();
         if (state != TranchePool.PoolState.COMMITED && state != TranchePool.PoolState.DEPLOYED) return;
         
-        uint256 idleValue = tranchePool.getTotalIdleValue();
-        if (idleValue < MINIMUM_LOAN_PRINCIPAL) return;
+        // Matching Foundry handler logic EXACTLY
+        uint256 minPrincipal = minimumLoanPrincipal;
         
-        // Bound principal: 1M - min(20M, idle/10)
-        // Reserve 90% of pool - only deploy up to 10% per loan
-        uint256 maxForThisLoan = _min(MAXIMUM_LOAN_PRINCIPAL, idleValue / 10);
-        if (maxForThisLoan < MINIMUM_LOAN_PRINCIPAL) {
-            maxForThisLoan = _min(MINIMUM_LOAN_PRINCIPAL, idleValue);
+        if (allowFullDeployment) {
+            if (tranchePool.getTotalIdleValue() < minPrincipal) {
+                minPrincipal = tranchePool.getTotalIdleValue();
+            }
+        } else {
+            if (tranchePool.getTotalIdleValue() < minPrincipal * 10) {
+                return;
+            }
         }
         
-        principalIssued = _bound(principalIssued, MINIMUM_LOAN_PRINCIPAL, maxForThisLoan);
+        if (tranchePool.getTotalIdleValue() < minimumLoanPrincipal) return;
         
-        if (principalIssued > idleValue) return;
-        
-        // Bound origination fee
-        originationFeeBps = _bound(
-            originationFeeBps,
-            MINIMUM_ORIGINATION_FEE_BPS,
-            MAX_ORIGINATION_FEE_BPS
+        principalIssued = _bound(
+            principalIssued,
+            minimumLoanPrincipal,
+            _min(maximumLoanPrincipal, tranchePool.getTotalIdleValue())
         );
         
-        // Bound term days
-        termDays = _bound(termDays, MINIMUM_TERM_DAYS, MAXIMUM_TERM_DAYS);
+        if (principalIssued > tranchePool.getTotalIdleValue() / 10) {
+            principalIssued = tranchePool.getTotalIdleValue() / 10;
+        }
         
-        // Check policy is frozen
-        if (!creditPolicy.isPolicyFrozen(1)) return;
+        originationFeeBps = _bound(originationFeeBps, minimumOriginationFeeBps, MAX_ORIGINATION_FEE_BPS);
+        termDays = _bound(termDays, minimumTermDays, maximumTermDays);
+        
+        if (!creditPolicy.isPolicyFrozen(activePolicyVersion)) return;
         
         bytes32 borrowerCommitment = keccak256(abi.encodePacked(block.timestamp, principalIssued));
-        bytes32 nullifierHash = keccak256(abi.encodePacked(borrowerCommitment, termDays));
+        uint256 nextLoanId = loanEngine.getNextLoanId();
+        bytes32 nullifierHash = keccak256(abi.encode(nextLoanId, borrowerCommitment, block.timestamp));
+        bytes memory proofData = abi.encodePacked(nextLoanId, principalIssued, originationFeeBps, termDays);
         
         try loanEngine.createLoan(
             borrowerCommitment,
             nullifierHash,
-            1,  // policyVersion
-            1,  // tierId
+            activePolicyVersion,
+            1,
             principalIssued,
-            800,  // aprBps (8%)
+            500,
             originationFeeBps,
             termDays,
-            bytes32(0),  // industry
-            "",  // proofData
-            new bytes32[](0)  // publicInputs
+            bytes32(0),
+            proofData,
+            new bytes32[](0)
         ) {} catch {}
     }
     
@@ -383,6 +354,8 @@ contract EchidnaHandler {
         if (loan.principalIssued > tranchePool.getTotalIdleValue()) return;
         
         try loanEngine.activateLoan(loanId, address(this), address(this)) {
+            totalDeployedValue += loan.principalIssued;
+            totalIdleValue -= loan.principalIssued;
             outstandingPrincipal += loan.principalIssued;
         } catch {}
     }
@@ -394,27 +367,48 @@ contract EchidnaHandler {
         LoanEngine.Loan memory loanBefore = loanEngine.getLoanDetails(loanId);
         if (loanBefore.state != LoanEngine.LoanState.ACTIVE) return;
         
-        // Bound to realistic amounts
+        // DUST PAYMENT FIX: Minimum $10K payment
+        uint256 MIN_PAYMENT = 10_000 * USDT;
+        
         principalAmount = _bound(principalAmount, 0, loanBefore.principalOutstanding);
-        interestAmount = _bound(interestAmount, 0, loanBefore.interestAccrued);
+        
+        uint256 pendingInterest = _accrueInterest(loanId);
+        uint256 totalInterestDue = loanBefore.interestAccrued + pendingInterest;
+        
+        interestAmount = _bound(interestAmount, 0, totalInterestDue);
         
         uint256 total = principalAmount + interestAmount;
         if (total == 0) return;
         
+        // Block dust payments UNLESS it's a full repayment
+        uint256 fullAmount = loanBefore.principalOutstanding + loanBefore.interestAccrued + pendingInterest;
+        if (total < MIN_PAYMENT && total != fullAmount) {
+            return;  // NO DUST PAYMENTS!
+        }
+        
         // Interest before principal rule
-        if (principalAmount > 0 && interestAmount == 0 && loanBefore.interestAccrued > 0) return;
+        if (principalAmount > 0 && interestAmount == 0 && totalInterestDue > 0) return;
+        
+        // Calculate ACTUAL amounts (matching Foundry handler)
+        uint256 interestAccrued = loanBefore.interestAccrued + _accrueInterest(loanId);
+        uint256 actualInterestPaid = _min(total, interestAccrued);
+        uint256 actualPrincipalPaid = _min(total - actualInterestPaid, loanBefore.principalOutstanding);
         
         usdt.approve(address(loanEngine), total);
         try loanEngine.repayLoan(loanId, principalAmount, interestAmount, address(this)) {
-            // Track ACTUAL principal change (LoanEngine may swap interest/principal)
-            LoanEngine.Loan memory loanAfter = loanEngine.getLoanDetails(loanId);
-            uint256 actualPrincipalRepaid = loanBefore.principalOutstanding - loanAfter.principalOutstanding;
-            if (actualPrincipalRepaid > 0) outstandingPrincipal -= actualPrincipalRepaid;
+            totalDeployedValue -= actualPrincipalPaid;
+            totalIdleValue += actualPrincipalPaid;
+            outstandingPrincipal -= actualPrincipalPaid;
+            totalUnclaimedInterest += actualInterestPaid;
         } catch {}
     }
     
     function declareDefault(uint256 loanId) public {
         if (loanEngine.getNextLoanId() <= 1) return;
+        
+        defaultCounter++;
+        if (defaultCounter % 10 != 0) return;  // Only occasionally default
+        
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
         
         LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
@@ -425,6 +419,9 @@ contract EchidnaHandler {
     
     function writeOffLoan(uint256 loanId) public {
         if (loanEngine.getNextLoanId() <= 1) return;
+        
+        writeOffCounter++;
+        
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
         
         LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
@@ -433,22 +430,27 @@ contract EchidnaHandler {
         uint256 principal = loan.principalOutstanding;
         
         try loanEngine.writeOffLoan(loanId) {
+            totalDeployedValue -= principal;
             outstandingPrincipal -= principal;
+            totalLoss += principal;
         } catch {}
     }
     
     function recoverLoan(uint256 loanId, uint256 amount) public {
         if (loanEngine.getNextLoanId() <= 1) return;
+        
+        recoveryCounter++;
+        
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
         
         LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
         if (loan.state != LoanEngine.LoanState.WRITTEN_OFF) return;
         
-        // Recovery bounded to principal issued (realistic - no over-recovery)
+        // Recovery bounded to principal issued (no over-recovery)
         uint256 maxRecovery = loan.principalIssued - loan.totalRecovered;
         if (maxRecovery == 0) return;
         
-        // Minimum recovery: 1% of principal or 10K USDT, whichever is larger
+        // Minimum recovery: 1% of principal or 10K USDT
         uint256 minRecovery = _max(loan.principalIssued / 100, 10_000 * USDT);
         amount = _bound(amount, minRecovery, maxRecovery);
         
@@ -456,8 +458,38 @@ contract EchidnaHandler {
         if (amount == 0) return;
         
         usdt.approve(address(loanEngine), amount);
-        try loanEngine.recoverLoan(loanId, amount, address(this)) {} catch {}
+        try loanEngine.recoverLoan(loanId, amount, address(this)) {
+            totalIdleValue += amount;
+            totalRecovered += amount;
+        } catch {}
     }
     
+    // =========================================================================
+    // HELPER FUNCTIONS - Matching Foundry Handler
+    // =========================================================================
     
+    function _accrueInterest(uint256 loanId) internal view returns (uint256) {
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        
+        uint256 timeElapsed = block.timestamp - loan.lastAccrualTimestamp;
+        if (loan.principalOutstanding == 0) return 0;
+        
+        uint256 interest = (loan.principalOutstanding * loan.aprBps * timeElapsed) / (365 days * 10_000);
+        return interest;
+    }
+    
+    function _bound(uint256 x, uint256 min, uint256 max) internal pure returns (uint256) {
+        if (min > max) return min;
+        if (x < min) return min;
+        if (x > max) return max;
+        return min + (x % (max - min + 1));
+    }
+    
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+    
+    function _max(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a > b ? a : b;
+    }
 }

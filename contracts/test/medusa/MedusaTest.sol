@@ -7,17 +7,30 @@ import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {MockLoanProofVerifier} from "../mocks/MockLoanProofVerifier.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
-// Simple contract that Medusa will fuzz directly
 contract MedusaTest {
     LoanEngine public loanEngine;
     TranchePool public tranchePool;
     ERC20Mock public usdt;
     CreditPolicy public creditPolicy;
     
-    uint256 public USDT = 1e18;
+    uint256 public constant USDT = 1e18;
     address public deployer = address(0x999);
     address public recevingEntity = address(0x888);
     address public feeManager = address(0x777);
+    
+    // Configuration constants (matching Foundry handler)
+    bool public allowFullDeployment = true;
+    uint256 public minimumLoanPrincipal = 10_00_000 * USDT;
+    uint256 public maximumLoanPrincipal = 2_00_00_000 * USDT;
+    uint256 public minimumOriginationFeeBps = 50;
+    uint256 public minimumTermDays = 180;
+    uint256 public maximumTermDays = 480;
+    uint256 public activePolicyVersion = 1;
+    
+    // Counters
+    uint256 public defaultCounter;
+    uint256 public writeOffCounter;
+    uint256 public recoveryCounter;
     
     // Users
     address[] public seniorUsers;
@@ -25,19 +38,24 @@ contract MedusaTest {
     address[] public equityUsers;
     address[] public loanBorrowers;
     
-    // Ghost variables for tracking
+    // Ghost variables for tracking (matching Foundry handler)
     uint256 public totalIdleValue;
     uint256 public totalDeployedValue;
+    uint256 public totalDeposited;
     uint256 public totalLoss;
     uint256 public totalRecovered;
+    uint256 public totalUnclaimedInterest;
     uint256 public outStandingPrincipal;
     
+    // VM cheatcodes interface
+    Hevm internal constant vm = Hevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+    
     constructor() {
-        // Setup contracts
+        // Deploy contracts
         usdt = new ERC20Mock();
         tranchePool = new TranchePool(address(usdt));
         
-        // Configure tranches
+        // Configure tranches (matching Foundry)
         tranchePool.setMaxAllocationCapSeniorTranche(5_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapJuniorTranche(3_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapEquityTranche(2_00_00_000 * USDT);
@@ -80,46 +98,70 @@ contract MedusaTest {
         loanEngine.setWhitelistedRepaymentAgent(recevingEntity, true);
         loanEngine.setWhitelistedRecoveryAgent(recevingEntity, true);
         
-        // Create and fund users
-        for (uint160 i = 1; i <= 20; i++) {
-            address user = address(i);
-            seniorUsers.push(user);
-            usdt.mint(user, 1_00_00_00000 * USDT);
-            tranchePool.updateWhitelist(user, true);
+        // Create and fund users (matching Foundry - lots of users)
+        for (uint160 i = 1; i < 100; i++) {
+            seniorUsers.push(address(i));
+            if (i % 2 == 0) {
+                usdt.mint(address(i), 1_00_00_00000 * USDT);
+                tranchePool.updateWhitelist(address(i), true);
+            } else if (i % 3 == 0) {
+                usdt.mint(address(i), 50_0000_0000 * USDT);
+                tranchePool.updateWhitelist(address(i), true);
+            } else {
+                usdt.mint(address(i), 10_000_0000000 * USDT);
+                tranchePool.updateWhitelist(address(i), true);
+            }
         }
         
-        for (uint160 i = 21; i <= 30; i++) {
-            address user = address(i);
-            juniorUsers.push(user);
-            usdt.mint(user, 50_00_00_000 * USDT);
-            tranchePool.updateWhitelist(user, true);
+        for (uint160 i = 1; i < 10; i++) {
+            juniorUsers.push(address(i));
+            if (i % 2 == 0) {
+                usdt.mint(address(i), 500000_00_000 * USDT);
+                tranchePool.updateWhitelist(address(i), true);
+            } else {
+                usdt.mint(address(i), 10_000000_000 * USDT);
+                tranchePool.updateWhitelist(address(i), true);
+            }
         }
         
-        for (uint160 i = 31; i <= 35; i++) {
-            address user = address(i);
-            equityUsers.push(user);
-            usdt.mint(user, 50_00_00_000 * USDT);
-            tranchePool.updateEquityTrancheWhiteList(user, true);
+        for (uint160 i = 1; i < 5; i++) {
+            equityUsers.push(address(i));
+            usdt.mint(address(i), 50_0000_0000 * USDT);
+            tranchePool.updateEquityTrancheWhiteList(address(i), true);
         }
         
-        for (uint160 i = 100; i < 120; i++) {
+        for (uint160 i = 200; i < 220; i++) {
             loanBorrowers.push(address(i));
         }
         
-        usdt.mint(recevingEntity, 50_00_00_000 * USDT);
+        usdt.mint(recevingEntity, 50_0000_0000 * USDT);
     }
     
-    // FUZZ FUNCTIONS - Medusa will call these
+    // =========================================================================
+    // FUZZ FUNCTIONS - Matching Foundry Handler Logic
+    // =========================================================================
     
     function depositSenior(uint256 userSeed, uint256 amount) external {
         if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
         
         address user = seniorUsers[userSeed % seniorUsers.length];
-        amount = _bound(amount, 10_00_000 * USDT, 5_00_00_000 * USDT);
+        amount = _bound(
+            amount,
+            tranchePool.getSeniorTrancheMinimumDepositAmount(),
+            tranchePool.getSeniorTrancheMaxDepositCap()
+        );
         
-        if (amount > usdt.balanceOf(user)) return;
+        uint256 currentValue = tranchePool.getSeniorTrancheIdleValue() + 
+                               tranchePool.getSeniorTrancheDeployedValue();
         
-        // Deposit
+        if (currentValue >= tranchePool.getSeniorTrancheMaxDepositCap()) return;
+        
+        uint256 remaining = tranchePool.getSeniorTrancheMaxDepositCap() - currentValue;
+        amount = _min(amount, remaining);
+        
+        if (amount < tranchePool.getSeniorTrancheMinimumDepositAmount()) return;
+        if (amount == 0) return;
+        
         _impersonate(user);
         usdt.approve(address(tranchePool), amount);
         tranchePool.depositSeniorTranche(amount);
@@ -132,9 +174,22 @@ contract MedusaTest {
         if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
         
         address user = juniorUsers[userSeed % juniorUsers.length];
-        amount = _bound(amount, 50_00_000 * USDT, 3_00_00_000 * USDT);
+        amount = _bound(
+            amount,
+            tranchePool.getJuniorTrancheMinimumDepositAmount(),
+            tranchePool.getJuniorTrancheMaxDepositCap()
+        );
         
-        if (amount > usdt.balanceOf(user)) return;
+        uint256 currentValue = tranchePool.getJuniorTrancheIdleValue() + 
+                               tranchePool.getJuniorTrancheDeployedValue();
+        
+        if (currentValue >= tranchePool.getJuniorTrancheMaxDepositCap()) return;
+        
+        uint256 remaining = tranchePool.getJuniorTrancheMaxDepositCap() - currentValue;
+        amount = _min(amount, remaining);
+        
+        if (amount < tranchePool.getJuniorTrancheMinimumDepositAmount()) return;
+        if (amount == 0) return;
         
         _impersonate(user);
         usdt.approve(address(tranchePool), amount);
@@ -148,9 +203,22 @@ contract MedusaTest {
         if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
         
         address user = equityUsers[userSeed % equityUsers.length];
-        amount = _bound(amount, 1_00_00_000 * USDT, 2_00_00_000 * USDT);
+        amount = _bound(
+            amount,
+            tranchePool.getEquityTrancheMinimumDepositAmount(),
+            tranchePool.getEquityTrancheMaxDepositCap()
+        );
         
-        if (amount > usdt.balanceOf(user)) return;
+        uint256 currentValue = tranchePool.getEquityTrancheIdleValue() + 
+                               tranchePool.getEquityTrancheDeployedValue();
+        
+        if (currentValue >= tranchePool.getEquityTrancheMaxDepositCap()) return;
+        
+        uint256 remaining = tranchePool.getEquityTrancheMaxDepositCap() - currentValue;
+        amount = _min(amount, remaining);
+        
+        if (amount < tranchePool.getEquityTrancheMinimumDepositAmount()) return;
+        if (amount == 0) return;
         
         _impersonate(user);
         usdt.approve(address(tranchePool), amount);
@@ -164,95 +232,219 @@ contract MedusaTest {
         if (tranchePool.getPoolState() == TranchePool.PoolState.OPEN && 
             tranchePool.getTotalIdleValue() > 0) {
             tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+            totalDeposited = tranchePool.getTotalIdleValue();
         }
     }
     
-    function createAndActivateLoan(uint256 principalSeed, uint256 borrowerSeed) external {
+    function createLoan(
+        uint256 principalIssued,
+        uint256 originationFeeBps,
+        uint256 termDays,
+        uint256 userIndex
+    ) external {
         if (tranchePool.getPoolState() != TranchePool.PoolState.COMMITED &&
             tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED) return;
         
-        if (tranchePool.getTotalIdleValue() < 10_00_000 * USDT) return;
+        // Matching Foundry handler logic
+        uint256 minPrincipal = minimumLoanPrincipal;
         
-        uint256 principal = _bound(principalSeed, 10_00_000 * USDT, 
-            _min(2_00_00_000 * USDT, tranchePool.getTotalIdleValue()));
+        if (allowFullDeployment) {
+            if (tranchePool.getTotalIdleValue() < minPrincipal) {
+                minPrincipal = tranchePool.getTotalIdleValue();
+            }
+        } else {
+            if (tranchePool.getTotalIdleValue() < minPrincipal * 10) {
+                return;
+            }
+        }
         
-        address borrower = loanBorrowers[borrowerSeed % loanBorrowers.length];
-        bytes32 commitment = keccak256(abi.encodePacked(borrower, borrowerSeed));
+        if (tranchePool.getTotalIdleValue() < minimumLoanPrincipal) return;
         
-        uint256 loanId = loanEngine.getNextLoanId();
-        bytes32 nullifier = keccak256(abi.encode(loanId, borrowerSeed, commitment, block.timestamp));
-        bytes memory proof = abi.encodePacked(loanId, borrowerSeed, principal);
-        
-        // Create loan
-        loanEngine.createLoan(
-            commitment,
-            nullifier,
-            1, // policyVersion
-            1, // tierIndex
-            principal,
-            500, // interestRateBps
-            100, // originationFeeBps
-            365, // termDays
-            bytes32(0), // industry
-            proof,
-            new bytes32[](0)
+        principalIssued = _bound(
+            principalIssued,
+            minimumLoanPrincipal,
+            _min(maximumLoanPrincipal, tranchePool.getTotalIdleValue())
         );
         
-        // Activate immediately
-        loanEngine.activateLoan(loanId, recevingEntity, feeManager);
+        if (principalIssued > tranchePool.getTotalIdleValue() / 10) {
+            principalIssued = tranchePool.getTotalIdleValue() / 10;
+        }
         
-        totalDeployedValue += principal;
-        totalIdleValue -= principal;
-        outStandingPrincipal += principal;
+        originationFeeBps = _bound(
+            originationFeeBps,
+            minimumOriginationFeeBps,
+            loanEngine.getMaxOriginationFeeBps()
+        );
+        
+        termDays = _bound(termDays, minimumTermDays, maximumTermDays);
+        
+        if (!creditPolicy.isPolicyFrozen(activePolicyVersion)) return;
+        
+        bytes32 borrowerCommitment = keccak256(
+            abi.encodePacked(
+                loanBorrowers[userIndex % loanBorrowers.length],
+                userIndex
+            )
+        );
+        
+        uint256 nextLoanId = loanEngine.getNextLoanId();
+        bytes memory proofData = abi.encodePacked(
+            nextLoanId,
+            userIndex,
+            principalIssued,
+            originationFeeBps,
+            termDays
+        );
+        
+        loanEngine.createLoan(
+            borrowerCommitment,
+            keccak256(abi.encode(nextLoanId, userIndex, borrowerCommitment, block.timestamp)),
+            activePolicyVersion,
+            1,
+            principalIssued,
+            500,
+            originationFeeBps,
+            termDays,
+            bytes32(0),
+            proofData,
+            new bytes32[](0)
+        );
     }
     
-    function repayLoan(uint256 loanSeed, uint256 percentToRepay) external {
+    function activateLoan(uint256 loanId) external {
         if (loanEngine.getNextLoanId() == 1) return;
         
-        uint256 loanId = _bound(loanSeed, 1, loanEngine.getNextLoanId() - 1);
+        loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        
         LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != LoanEngine.LoanState.CREATED) return;
         
-        if (loan.state != LoanEngine.LoanState.ACTIVE) return;
-        if (loan.principalOutstanding == 0) return;
+        if (tranchePool.getPoolState() != TranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED) return;
         
-        percentToRepay = _bound(percentToRepay, 10, 100); // 10% to 100%
-        uint256 principalAmount = (loan.principalOutstanding * percentToRepay) / 100;
-        uint256 interestAmount = loan.interestAccrued;
+        if (loan.principalIssued > tranchePool.getTotalIdleValue()) return;
         
-        uint256 totalAmount = principalAmount + interestAmount;
+        loanEngine.activateLoan(loanId, recevingEntity, feeManager);
+        
+        totalDeployedValue += loan.principalIssued;
+        totalIdleValue -= loan.principalIssued;
+        outStandingPrincipal += loan.principalIssued;
+    }
+    
+    function repayLoan(uint256 loanId, uint256 principalAmount, uint256 interestAmount) external {
+        if (loanEngine.getNextLoanId() == 1) return;
+        
+        loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        
+        LoanEngine.Loan memory loanDetails = loanEngine.getLoanDetails(loanId);
+        if (loanDetails.state != LoanEngine.LoanState.ACTIVE) return;
+        
+        principalAmount = _bound(principalAmount, 0, loanDetails.principalOutstanding);
+        
+        uint256 pendingInterest = _accrueInterest(loanId);
+        uint256 totalInterestDue = loanDetails.interestAccrued + pendingInterest;
+        
+        interestAmount = _bound(interestAmount, 0, totalInterestDue);
+        
+        if (principalAmount == 0 && interestAmount == 0) return;
+        
+        // Interest before principal rule
+        if (principalAmount > 0 && interestAmount == 0 && totalInterestDue > 0) return;
+        
+        uint256 totalRepayAmount = principalAmount + interestAmount;
+        
+        // Calculate ACTUAL amounts that will be paid (matching Foundry)
+        uint256 interestAccrued = loanDetails.interestAccrued + _accrueInterest(loanId);
+        uint256 actualInterestPaid = _min(totalRepayAmount, interestAccrued);
+        uint256 actualPrincipalPaid = _min(
+            totalRepayAmount - actualInterestPaid,
+            loanDetails.principalOutstanding
+        );
         
         _impersonate(recevingEntity);
-        usdt.approve(address(loanEngine), totalAmount);
+        usdt.approve(address(loanEngine), totalRepayAmount);
         _stopImpersonate();
+        
+        totalUnclaimedInterest += actualInterestPaid;
         
         loanEngine.repayLoan(loanId, principalAmount, interestAmount, recevingEntity);
         
-        totalDeployedValue -= principalAmount;
-        totalIdleValue += principalAmount;
-        outStandingPrincipal -= principalAmount;
+        // Use ACTUAL principal paid (THIS IS THE FIX!)
+        totalDeployedValue -= actualPrincipalPaid;
+        totalIdleValue += actualPrincipalPaid;
+        outStandingPrincipal -= actualPrincipalPaid;
     }
     
-    function writeOffLoan(uint256 loanSeed) external {
+    function warpTime(uint256 daysToWarp) external {
+        daysToWarp = _bound(daysToWarp, 1, 365);
+        vm.warp(block.timestamp + (daysToWarp * 1 days));
+    }
+    
+    function maybeDeclareDefault(uint256 loanId, bytes32 reasonHash) external {
         if (loanEngine.getNextLoanId() == 1) return;
         
-        uint256 loanId = _bound(loanSeed, 1, loanEngine.getNextLoanId() - 1);
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        defaultCounter++;
+        if (defaultCounter % 10 != 0) return;
         
+        loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
         if (loan.state != LoanEngine.LoanState.ACTIVE) return;
         
-        // Declare default first
-        loanEngine.declareDefault(loanId, keccak256("default"));
-        
-        // Then write off
-        uint256 principal = loanEngine.getLoanDetails(loanId).principalOutstanding;
-        loanEngine.writeOffLoan(loanId);
-        
-        totalDeployedValue -= principal;
-        outStandingPrincipal -= principal;
-        totalLoss += principal;
+        loanEngine.declareDefault(loanId, reasonHash);
     }
     
-    // INVARIANTS - Medusa will check these
+    function maybeWriteOffLoan(uint256 loanId) external {
+        if (loanEngine.getNextLoanId() == 1) return;
+        
+        writeOffCounter++;
+        
+        loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        
+        if (loanEngine.getLoanDetails(loanId).state != LoanEngine.LoanState.DEFAULTED) return;
+        
+        // Read principal before writeoff
+        uint256 principalOutstanding = loanEngine.getLoanDetails(loanId).principalOutstanding;
+        
+        loanEngine.writeOffLoan(loanId);
+        
+        totalDeployedValue -= principalOutstanding;
+        outStandingPrincipal -= principalOutstanding;
+        totalLoss += principalOutstanding;
+    }
+    
+    function maybeRecoverLoan(uint256 loanId, uint256 amount, uint256 agentIndex) external {
+        if (loanEngine.getNextLoanId() == 1) return;
+        
+        recoveryCounter++;
+        
+        loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
+        
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != LoanEngine.LoanState.WRITTEN_OFF) return;
+        
+        amount = _bound(amount, 1, loan.principalIssued);
+        
+        _impersonate(recevingEntity);
+        usdt.approve(address(loanEngine), amount);
+        _stopImpersonate();
+        
+        loanEngine.recoverLoan(loanId, amount, recevingEntity);
+        
+        totalIdleValue += amount;
+        totalRecovered += amount;
+    }
+    
+    function mayClosePool() external {
+        if (tranchePool.getTotalDeployedValue() > 0 || 
+            tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED) return;
+        
+        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
+    }
+    
+    // =========================================================================
+    // INVARIANTS - Matching Foundry Invariants
+    // =========================================================================
     
     function invariant_totalValueBalance() external view returns (bool) {
         return (tranchePool.getTotalIdleValue() + tranchePool.getTotalDeployedValue()) ==
@@ -274,8 +466,111 @@ contract MedusaTest {
         
         return totalPrincipal == tranchePool.getTotalDeployedValue();
     }
+
+    function invariant_tokenBalance() external view returns (bool) {
+        return (tranchePool.getTotalUnclaimedInterest() + 
+                tranchePool.getTotalIdleValue() + 
+                tranchePool.getProtocolRevenue()) == 
+                usdt.balanceOf(address(tranchePool));
+    }
+
+    function invariant_trancheSum() external view returns (bool) {
+        return tranchePool.getTotalDeployedValue() == 
+               (tranchePool.getSeniorTrancheDeployedValue() + 
+                tranchePool.getJuniorTrancheDeployedValue() + 
+                tranchePool.getEquityTrancheDeployedValue());
+    }
+
+    function invariant_waterfallSymmetry() external view returns (bool) {
+        uint256 totalShortfall = tranchePool.getSeniorPrincipalShortfall() +
+            tranchePool.getJuniorPrincipalShortfall() +
+            tranchePool.getEquityPrincipalShortfall();
+
+        if (tranchePool.getTotalRecovered() >= tranchePool.getTotalLoss()) {
+            return totalShortfall == 0;
+        } else {
+            return totalShortfall == (tranchePool.getTotalLoss() - tranchePool.getTotalRecovered());
+        }
+    }
+
+    function invariant_idleIntegrity() external view returns (bool) {
+        return (tranchePool.getSeniorTrancheIdleValue() +
+                tranchePool.getJuniorTrancheIdleValue() +
+                tranchePool.getEquityTrancheIdleValue()) == 
+                tranchePool.getTotalIdleValue();
+    }
+
+    function invariant_seniorShareOpen() external view returns (bool) {
+        if (tranchePool.getPoolState() == TranchePool.PoolState.OPEN) {
+            return tranchePool.getTotalSeniorShares() == tranchePool.getSeniorTrancheIdleValue();
+        }
+        return true;
+    }
+
+    function invariant_loanState() external view returns (bool) {
+        uint256 nextId = loanEngine.getNextLoanId();
+        for (uint256 i = 1; i < nextId; i++) {
+            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            
+            if (loan.state == LoanEngine.LoanState.NONE || 
+                loan.state == LoanEngine.LoanState.CREATED) {
+                if (loan.principalOutstanding != 0) return false;
+            }
+            
+            if (loan.state == LoanEngine.LoanState.REPAID ||
+                loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
+                if (loan.principalOutstanding != 0) return false;
+            }
+            
+            if (loan.state == LoanEngine.LoanState.ACTIVE) {
+                if (loan.principalOutstanding > loan.principalIssued) return false;
+            }
+        }
+        return true;
+    }
+
+    function invariant_interestMonotonicity() external view returns (bool) {
+        return tranchePool.getSeniorInterestIndex() >= 1e18 &&
+               tranchePool.getJuniorInterestIndex() >= 1e18 &&
+               tranchePool.getEquityInterestIndex() >= 1e18;
+    }
+
+    function invariant_poolState() external view returns (bool) {
+        TranchePool.PoolState state = tranchePool.getPoolState();
+        if (state == TranchePool.PoolState.OPEN || 
+            state == TranchePool.PoolState.CLOSED) {
+            if (tranchePool.getTotalDeployedValue() != 0) return false;
+        }
+        return true;
+    }
+
+    function invariant_interestAccounting() external view returns (bool) {
+        uint256 nextId = loanEngine.getNextLoanId();
+        for (uint256 i = 1; i < nextId; i++) {
+            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            if (loan.state == LoanEngine.LoanState.REPAID) {
+                if (loan.interestAccrued != 0) return false;
+            }
+            if (loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
+                if (loan.interestAccrued != 0) return false;
+            }
+        }
+        return true;
+    }
     
+    // =========================================================================
     // HELPER FUNCTIONS
+    // =========================================================================
+    
+    function _accrueInterest(uint256 loanId) internal view returns (uint256) {
+        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        
+        uint256 timeElapsed = block.timestamp - loan.lastAccrualTimestamp;
+        if (loan.principalOutstanding == 0) return 0;
+        
+        uint256 interest = (loan.principalOutstanding * loan.aprBps * timeElapsed) / (365 days * 10_000);
+        return interest;
+    }
     
     function _createEligibilityCriteria() internal pure returns (CreditPolicy.EligibilityCriteria memory) {
         return CreditPolicy.EligibilityCriteria({
@@ -338,24 +633,29 @@ contract MedusaTest {
     }
     
     function _bound(uint256 x, uint256 min, uint256 max) internal pure returns (uint256) {
+        if (min > max) return min;
         if (x < min) return min;
         if (x > max) return max;
-        return x;
+        return min + (x % (max - min + 1));
     }
     
     function _min(uint256 a, uint256 b) internal pure returns (uint256) {
         return a < b ? a : b;
     }
     
-    // Mock vm.prank functionality
-    address private currentCaller;
-    
+    // Medusa impersonate pattern
     function _impersonate(address who) internal {
-        currentCaller = who;
-        // In real Medusa, you'd use assembly or actual prank
+        vm.startPrank(who);
     }
     
     function _stopImpersonate() internal {
-        currentCaller = address(0);
+        vm.stopPrank();
     }
+}
+
+// Hevm interface for cheatcodes
+interface Hevm {
+    function startPrank(address) external;
+    function stopPrank() external;
+    function warp(uint256) external;
 }
