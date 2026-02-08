@@ -1,3 +1,8 @@
 
 # Ignore wake build artifacts
 contracts/.wake/
+
+# Fuzzer corpus and coverage reports
+contracts/corpus/
+contracts/corpus_echidna/
+contracts/medusa-corpus/
