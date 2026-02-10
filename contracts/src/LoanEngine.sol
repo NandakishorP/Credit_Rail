@@ -248,6 +248,12 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__InvalidProof();
         }
 
+        // Verify that the proof was generated using the correct policy version hash
+        // publicInputs[0] must correspond to the policy_version_hash from the circuit
+        if (publicInputs[0] != creditPolicyContract.policyScopeHash(policyVersion)) {
+             revert LoanEngine__InvalidProof();
+        }
+
         if (
             tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED &&
             tranchePool.getPoolState() != TranchePool.PoolState.COMMITED

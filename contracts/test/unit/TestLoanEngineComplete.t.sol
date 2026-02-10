@@ -54,11 +54,20 @@ contract TestLoanEngineComplete is Test {
         creditPolicy.setMaxTiers(2);
 
         creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
+        creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
         creditPolicy.setPolicyDocument(
             1,
             _hashString("document"),
             "ipfs://policyDocHash"
         );
+        // Set policy scope hash to match what we will use in public inputs
+        bytes32 scopeHash = keccak256("policyScope1");
+        creditPolicy.setPolicyScopeHash(1, scopeHash);
+        
+        // Initialize public inputs with the matching hash
+        testPublicInputs = new bytes32[](1);
+        testPublicInputs[0] = scopeHash;
+
         creditPolicy.freezePolicy(1);
 
         // Setup loan engine

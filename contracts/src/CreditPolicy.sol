@@ -157,6 +157,9 @@ contract CreditPolicy is ICreditPolicy {
     mapping(uint256 => bytes32) public policyDocumentHash;
     mapping(uint256 => string) public policyDocumentURI;
 
+    // Computational hash of policy parameters (must match circuit)
+    mapping(uint256 => bytes32) public policyScopeHash;
+
     mapping(uint256 => bool) public eligibilitySet;
     mapping(uint256 => bool) public ratiosSet;
     mapping(uint256 => bool) public concentrationSet;
@@ -193,6 +196,11 @@ contract CreditPolicy is ICreditPolicy {
         uint256 version,
         bytes32 hash,
         string uri,
+        uint256 timestamp
+    );
+    event PolicyScopeHashSet(
+        uint256 version,
+        bytes32 hash,
         uint256 timestamp
     );
     event PolicyDeactivated(uint256 version, uint256 timestamp);
@@ -242,6 +250,9 @@ contract CreditPolicy is ICreditPolicy {
             revert CreditPolicy__IncompletePolicy(version);
         }
         if (policyDocumentHash[version] == bytes32(0)) {
+            revert CreditPolicy__IncompletePolicy(version);
+        }
+        if (policyScopeHash[version] == bytes32(0)) {
             revert CreditPolicy__IncompletePolicy(version);
         }
 
@@ -384,6 +395,16 @@ contract CreditPolicy is ICreditPolicy {
         lastUpdated[version] = block.timestamp;
 
         emit PolicyDocumentSet(version, hash, uri, block.timestamp);
+    }
+
+    function setPolicyScopeHash(
+        uint256 version,
+        bytes32 hash
+    ) external onlyAdmin policyExists(version) policyEditable(version) {
+        policyScopeHash[version] = hash;
+        lastUpdated[version] = block.timestamp;
+
+        emit PolicyScopeHashSet(version, hash, block.timestamp);
     }
 
     function changePolicyAdmin(address newAdmin) external onlyAdmin {
