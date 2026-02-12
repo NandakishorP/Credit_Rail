@@ -31,7 +31,7 @@ def run_debug():
     
     # Create Loan
     loan_amount = Decimal("10000")
-    allocation = allocate_capital(system, loan_amount)
+    allocation = allocate_capital(system, loan_amount, 0)
     
     loan = LoanState(
         loan_id=1,

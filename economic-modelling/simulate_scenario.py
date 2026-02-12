@@ -117,13 +117,16 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
     sim_time = 0
     SECONDS_IN_YEAR = 365 * 24 * 3600
 
+    # Deploy all loans at T=0
     for i in range(n_loans):
-        sim_time += SECONDS_IN_YEAR
+        loan_amount = Decimal(str(random.randint(2000, 8000)))  # Smaller loans to fit 100 in 1M capital
         
-        # print(f"Loan {i}: Liquidity before: S={system.senior.idle} J={system.junior.idle} E={system.equity.idle}")
-        
-        loan_amount = Decimal(str(random.randint(5000, 20000)))
-        allocation = allocate_capital(system, loan_amount)
+        # Check if we have enough liquidity
+        total_idle = system.senior.idle + system.junior.idle + system.equity.idle
+        if loan_amount > total_idle:
+            continue  # Skip this loan if insufficient liquidity
+            
+        allocation = allocate_capital(system, loan_amount, sim_time)
 
         loan = LoanState(
             loan_id=i,
@@ -139,67 +142,24 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
             written_off=False,
             apr=Decimal("0.12"),
             term_days=365,
-            start_timestamp=sim_time - SECONDS_IN_YEAR,
-            last_accrual_timestamp=sim_time - SECONDS_IN_YEAR
+            start_timestamp=sim_time,
+            last_accrual_timestamp=sim_time
         )
 
         system.loans.append(loan)
 
-        # ---- DEFAULT OR REPAY ----
+    # Fast-forward to maturity (1 year)
+    sim_time = SECONDS_IN_YEAR
 
+    # Process all loan outcomes at maturity
+    for loan in system.loans:
         if random.random() < default_rate:
-
             loan.defaulted = True
             loan.active = False
             
-            # Need to accrue targets for the time this capital was deployed (even if 0 effectively in this sim step, 
-            # but structurally we should update system time).
-            # allocate_capital doesn't take time. 
-            # We assume allocation happened at start of year, default/repay at end.
-            
-            # Since simulation is coarse (instant), we actually want to say: 
-            # "This loan existed for 1 year".
-            # If it defaults, it might default at end of year?
-            # If so, targets SHOULD accrue.
-            # But we are passing 0 interest loss.
-            
-            # Let's say defaults happen *before* interest payment.
-            # So capital was deployed for 0 time? 
-            # Or capital was deployed for 1 year, but pays 0?
-            # If deployed for 1 year, Senior EXPECTS 5%.
-            # If 0 paid, Senior Shortfall increases.
-            # But `apply_loss` logic is strictly Principal + Interest Reversal.
-            # It doesn't track "Missed Opportunity".
-            
-            # Critical: We must ensure system.last_tranche_accrual_timestamp matches sim_time
-            # so next loan starts from correct time.
-            # We can force an accrual (even if 0 delta) or just let next loan handle it?
-            # If we don't call _accrue, system.last_tranche stays at T-1.
-            # Next loan Repay at T+1.
-            # Delta will be 2 years!
-            # That's wrong.
-            
-            # So we MUST update system time even on default.
-            # We can call a dummy function or just set it?
-            # Or use the private _accrue_tranche_targets from flows if imported?
-            # Or just rely on the fact that we can call repay_loan with 0?
-            # No, repay_loan errors if 0 payment? 
-            # repay_loan handles 0 payment?
-            # Let's invoke _accrue_tranche_targets via a helper or import it.
-            # Or simpler: access `system.last_tranche_accrual_timestamp = sim_time` manually implies 
-            # "Time passed but no target accrual" (which is wrong if capital WAS deployed).
-            
-            # Correct approach:
-            # We must import _accrue_tranche_targets or expose it. 
-            # OR we can assume `flows` has `on_interest_accrued` which calls it.
-            # calling on_interest_accrued(..., 0, sim_time) works!
-            
-            from model.flows import on_interest_accrued
-            on_interest_accrued(system, Decimal("0"), sim_time, 0)
-
             loss = loan.principal_outstanding
             # Immediate loss recognition
-            apply_loss(system, loss, Decimal("0"))
+            apply_loss(system, loss, Decimal("0"), sim_time)
             
             total_principal_loss += loss 
             total_recovery += loss * Decimal(str(recovery_rate))
@@ -213,7 +173,7 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
     # -------------------------------------------------
 
     if total_recovery > 0:
-        on_recovery(system, total_recovery)
+        on_recovery(system, total_recovery, sim_time)
 
     # -------------------------------------------------
 
@@ -227,6 +187,9 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
 
     print("Total Initial:", initial_total)
     print("Total Final:", total_value(system))
+    print(f"Senior Breakdown: Idle={system.senior.idle} Deployed={system.senior.deployed} Unclaimed={system.senior_unclaimed_interest}")
+    print(f"Junior Breakdown: Idle={system.junior.idle} Deployed={system.junior.deployed} Unclaimed={system.junior_unclaimed_interest}")
+    print(f"Equity Breakdown: Idle={system.equity.idle} Deployed={system.equity.deployed} Unclaimed={system.equity_unclaimed_interest}")
 
     senior_return = (final_s - initial_s) / initial_s
     junior_return = (final_j - initial_j) / initial_j

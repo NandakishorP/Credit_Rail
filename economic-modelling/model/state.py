@@ -73,7 +73,7 @@ class SystemState:
 
     loans: List[LoanState] = field(default_factory=list)
     
-    last_tranche_accrual_timestamp: int = 0
+    last_tranche_accrual_timestamp: int = -1
 
 
 def total_value(system: "SystemState") -> Decimal:

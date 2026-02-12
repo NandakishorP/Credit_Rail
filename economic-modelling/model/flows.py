@@ -3,11 +3,13 @@ from .time import accrue_loan_interest
 from decimal import Decimal
 from .state import total_value, assert_conservation
 
-def allocate_capital(system: SystemState, amount: Decimal, origination_fee: Decimal = Decimal("0.0")):
+def allocate_capital(system: SystemState, amount: Decimal, current_timestamp: int, origination_fee: Decimal = Decimal("0.0")):
     """
     Allocates capital from tranches to fund a loan, following the 80/20 rule 
     with detailed absorption logic from TranchePool.sol.
     """
+    _accrue_tranche_targets(system, current_timestamp)
+    
     before = total_value(system)
     total_disbursement = amount - origination_fee
     total_amount = amount 
@@ -69,11 +71,12 @@ def allocate_capital(system: SystemState, amount: Decimal, origination_fee: Deci
 
 def _accrue_tranche_targets(system: SystemState, current_timestamp: int):
     # Calculate time elapsed since last tranche accrual
-    if system.last_tranche_accrual_timestamp == 0:
+    if system.last_tranche_accrual_timestamp == -1:
         system.last_tranche_accrual_timestamp = current_timestamp
         return
 
     time_elapsed = current_timestamp - system.last_tranche_accrual_timestamp
+    
     if time_elapsed == 0:
         return
 
@@ -133,6 +136,8 @@ def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_ti
     3. Apply Interest Waterfall.
     4. Apply Principal Waterfall.
     """
+    _accrue_tranche_targets(system, current_timestamp)
+
     before = total_value(system)
     new_interest = accrue_loan_interest(loan, current_timestamp)
     if new_interest > Decimal("0"):
@@ -179,6 +184,7 @@ def apply_interest_waterfall(system: SystemState, interest_paid: Decimal):
     if remaining > Decimal("0") and system.senior_accrued_interest > Decimal("0"):
         senior_pay = min(remaining, system.senior_accrued_interest)
         system.senior_accrued_interest -= senior_pay
+        system.senior_target_interest -= min(system.senior_target_interest, senior_pay)
         system.senior_unclaimed_interest += senior_pay
         remaining -= senior_pay
         
@@ -186,6 +192,7 @@ def apply_interest_waterfall(system: SystemState, interest_paid: Decimal):
     if remaining > Decimal("0") and system.junior_accrued_interest > Decimal("0"):
         junior_pay = min(remaining, system.junior_accrued_interest)
         system.junior_accrued_interest -= junior_pay
+        system.junior_target_interest -= min(system.junior_target_interest, junior_pay)
         system.junior_unclaimed_interest += junior_pay
         remaining -= junior_pay
         
@@ -227,12 +234,14 @@ def apply_principal_repayment(system: SystemState, principal_paid: Decimal):
         system.equity.idle += equity_pay
         remaining -= equity_pay
 
-def apply_loss(system: SystemState, principal_loss: Decimal, interest_accrued_loss: Decimal):
+def apply_loss(system: SystemState, principal_loss: Decimal, interest_accrued_loss: Decimal, current_timestamp: int):
     """
     Handles default/write-off.
     1. Cancel ghost interest (Senior -> Junior).
     2. Principal loss absorption (Equity -> Junior -> Senior).
     """
+    _accrue_tranche_targets(system, current_timestamp)
+    
     before = total_value(system)
     # 1. Cancel Ghost Interest
     remaining_interest = interest_accrued_loss
@@ -279,11 +288,13 @@ def apply_loss(system: SystemState, principal_loss: Decimal, interest_accrued_lo
     if remaining > Decimal("1e-9"):
         raise ValueError(f"Loss exceeded capital: {remaining}")
 
-def on_recovery(system: SystemState, amount: Decimal):
+def on_recovery(system: SystemState, amount: Decimal, current_timestamp: int):
     """
     Reverse of loss waterfall.
     Senior -> Junior -> Equity
     """
+    _accrue_tranche_targets(system, current_timestamp)
+    
     before = total_value(system)
     system.total_recovered += amount
     remaining = amount

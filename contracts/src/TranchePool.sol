@@ -523,6 +523,7 @@ contract TranchePool is Ownable {
                 seniorAccruedInterest
             );
             seniorAccruedInterest -= seniorPaid;
+            seniorTargetInterest -= _minimum(seniorTargetInterest, seniorPaid);
             seniorInterestIndex += (seniorPaid * 1e18) / s_totalSeniorShares;
             remainingInterest -= seniorPaid;
         }
@@ -538,6 +539,7 @@ contract TranchePool is Ownable {
                 juniorAccruedInterest
             );
             juniorAccruedInterest -= juniorPaid;
+            juniorTargetInterest -= _minimum(juniorTargetInterest, juniorPaid);
             juniorInterestIndex += (juniorPaid * 1e18) / s_totalJuniorShares;
             remainingInterest -= juniorPaid;
         }
