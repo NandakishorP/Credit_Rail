@@ -147,8 +147,9 @@ contract TranchePool is Ownable {
     uint256 public s_capital_allocation_factor_senior;
     uint256 public s_capital_allocation_factor_junior;
 
-    uint256 public s_senior_apr;
-    uint256 public s_target_junior_apr;
+    uint256 public s_senior_apr_bps;
+    uint256 public s_target_junior_apr_bps;
+    uint256 public lastTrancheAccrualTimestamp;
 
     uint256 public seniorAccruedInterest;
     uint256 public juniorAccruedInterest;
@@ -209,6 +210,7 @@ contract TranchePool is Ownable {
         seniorInterestIndex = 1e18;
         juniorInterestIndex = 1e18;
         equityInterestIndex = 1e18;
+        lastTrancheAccrualTimestamp = block.timestamp;
     }
 
     function depositSeniorTranche(
@@ -448,17 +450,63 @@ contract TranchePool is Ownable {
     }
 
     function onInterestAccrued(
-        uint256 interestAmount,
-        uint256 seniorInterest,
-        uint256 juniorInterest
+        uint256 interestAmount
     ) external onlyLoanEngine(msg.sender) {
         if (interestAmount == 0) return;
 
-        seniorAccruedInterest += seniorInterest;
-        juniorAccruedInterest += juniorInterest;
-        equityAccruedInterest += (interestAmount -
-            seniorInterest -
-            juniorInterest);
+        uint256 currentTimestamp = block.timestamp;
+
+        uint256 timeElapsed = currentTimestamp - lastTrancheAccrualTimestamp;
+        if (timeElapsed == 0) {
+            // No time passed → treat as residual equity
+            equityAccruedInterest += interestAmount;
+            return;
+        }
+
+        uint256 remainingInterest = interestAmount;
+
+        if (s_seniorTrancheDeployedValue > 0 && s_senior_apr_bps > 0) {
+            uint256 seniorDue = (
+                s_seniorTrancheDeployedValue *
+                s_senior_apr_bps *
+                timeElapsed
+            ) / (365 days * 10_000);
+
+            uint256 seniorPaid = remainingInterest < seniorDue
+                ? remainingInterest
+                : seniorDue;
+
+            if (seniorPaid > 0) {
+                seniorAccruedInterest += seniorPaid;
+                remainingInterest -= seniorPaid;
+            }
+        }
+
+        if (
+            remainingInterest > 0 &&
+            s_juniorTrancheDeployedValue > 0 &&
+            s_target_junior_apr_bps > 0
+        ) {
+            uint256 juniorDue = (
+                s_juniorTrancheDeployedValue *
+                s_target_junior_apr_bps *
+                timeElapsed
+            ) / (365 days * 10_000);
+
+            uint256 juniorPaid = remainingInterest < juniorDue
+                ? remainingInterest
+                : juniorDue;
+
+            if (juniorPaid > 0) {
+                juniorAccruedInterest += juniorPaid;
+                remainingInterest -= juniorPaid;
+            }
+        }
+        if (remainingInterest > 0) {
+            equityAccruedInterest += remainingInterest;
+        }
+
+        lastTrancheAccrualTimestamp = currentTimestamp;
     }
 
     function onRepayment(
@@ -1135,18 +1183,18 @@ contract TranchePool is Ownable {
         emit CapitalAllocationFactorUpdatedJunior(factor);
     }
 
-    function setSeniorAPR(uint256 apr) external onlyOwner {
-        if (apr == 0) {
+    function setSeniorAPR(uint256 aprbps) external onlyOwner {
+        if (aprbps == 0) {
             revert TranchePool__ZeroAPRError();
         }
-        s_senior_apr = apr;
+        s_senior_apr_bps = aprbps;
     }
 
-    function setTargetJuniorAPR(uint256 apr) external onlyOwner {
-        if (apr == 0) {
+    function setTargetJuniorAPR(uint256 aprbps) external onlyOwner {
+        if (aprbps == 0) {
             revert TranchePool__ZeroAPRError();
         }
-        s_target_junior_apr = apr;
+        s_target_junior_apr_bps = aprbps;
     }
 
     function setPoolState(PoolState newState) external onlyOwner {

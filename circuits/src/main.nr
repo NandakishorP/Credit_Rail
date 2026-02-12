@@ -183,24 +183,25 @@ fn main(
             policy_min_tangible_net_worth as Field,
             policy_min_business_age_days as Field,
             policy_max_defaults_36_months as Field,
-            policy_bankruptcy_excluded as Field, // Added
+            policy_bankruptcy_excluded as Field,
             policy_max_debt_to_ebitda as Field,
             policy_min_interest_coverage as Field,
             policy_min_current_ratio as Field,
             policy_min_ebitda_margin_bps as Field,
-            policy_max_attestation_age_days as Field, // Added
+            policy_max_attestation_age_days as Field,
             // Tier constraints
-            tier_min_revenue as Field, // Added
-            tier_max_revenue as Field, // Added
-            tier_min_ebitda as Field, // Added
-            tier_max_debt_to_ebitda as Field, // Added
-            tier_max_loan_to_ebitda as Field, // Added
+            tier_id as Field, // Bind Tier ID to policy hash
+            tier_min_revenue as Field,
+            tier_max_revenue as Field,
+            tier_min_ebitda as Field,
+            tier_max_debt_to_ebitda as Field,
+            tier_max_loan_to_ebitda as Field,
             tier_interest_rate_bps as Field,
             tier_origination_fee_bps as Field,
             tier_term_days as Field,
-            tier_active as Field, // Added
+            tier_active as Field,
         ],
-        20,
+        21,
     );
     assert(computed_policy_hash == policy_version_hash, "Policy hash mismatch");
 

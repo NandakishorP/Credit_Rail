@@ -85,6 +85,10 @@ contract Handler is Test {
         loanEngine.setWhitelistedOffRampingEntity(recevingEntity, true);
         loanEngine.setWhitelistedRepaymentAgent(recevingEntity, true);
         loanEngine.setWhitelistedRecoveryAgent(recevingEntity, true);
+        loanEngine.setUnderwriterAuthorization(bytes32(uint256(1)), bytes32(uint256(2)), true);
+
+        tranchePool.setSeniorAPR(500);
+        tranchePool.setTargetJuniorAPR(1000);
 
         for (uint160 i = 1; i < 100; i++) {
             seniorUsers.push(address(i));
@@ -310,6 +314,20 @@ contract Handler is Test {
             termDays
         );
 
+        // Prepare public inputs
+        bytes32[] memory publicInputs = new bytes32[](11);
+        publicInputs[0] = creditPolicy.policyScopeHash(activePolicyVersion);
+        publicInputs[1] = borrowerCommitment;
+        publicInputs[2] = bytes32(uint256(1)); // underwriterKeyX
+        publicInputs[3] = bytes32(uint256(2)); // underwriterKeyY
+        publicInputs[4] = bytes32(uint256(1)); // tierId (tier 1)
+        publicInputs[5] = bytes32(principalIssued);
+        publicInputs[6] = bytes32(uint256(500)); // aprBps (500)
+        publicInputs[7] = bytes32(originationFeeBps);
+        publicInputs[8] = bytes32(termDays);
+        publicInputs[9] = bytes32(0); // industry
+        publicInputs[10] = bytes32(block.timestamp); // proofTimestamp
+
         vm.prank(deployer);
         loanEngine.createLoan(
             borrowerCommitment,
@@ -322,7 +340,7 @@ contract Handler is Test {
             termDays,
             bytes32(0), // industry
             proofData,
-            new bytes32[](0)
+            publicInputs
         );
     }
 
@@ -358,6 +376,12 @@ contract Handler is Test {
         outStandingPrincipal += loanEngine
             .getLoanDetails(loanId)
             .principalIssued;
+
+        // Sync ghost variables with contract state to prevent underflow
+        seniorTrancheIdleValue = tranchePool.getSeniorTrancheIdleValue();
+        juniorTrancheIdleValue = tranchePool.getJuniorTrancheIdleValue();
+        equityTrancheIdleValue = tranchePool.getEquityTrancheIdleValue();
+        totalIdleValue = tranchePool.getTotalIdleValue();
     }
 
     function repayLoan(
@@ -416,9 +440,9 @@ contract Handler is Test {
             recevingEntity
 
         );
-        totalDeployedValue -= actualPrincipalPaid;
-        totalIdleValue += actualPrincipalPaid;
+
         outStandingPrincipal -= actualPrincipalPaid;
+
     }
 
     function warpTime(uint256 daysToWarp) public {
@@ -475,6 +499,13 @@ contract Handler is Test {
         loanEngine.writeOffLoan(loanId);
         totalDeployedValue -= principalOutstanding;
         outStandingPrincipal -= principalOutstanding;
+        
+        // Sync idle values just in case writeoff affects them (though it shouldn't affect idle directly, best to be safe)
+        totalIdleValue = tranchePool.getTotalIdleValue();
+        seniorTrancheIdleValue = tranchePool.getSeniorTrancheIdleValue();
+        juniorTrancheIdleValue = tranchePool.getJuniorTrancheIdleValue();
+        equityTrancheIdleValue = tranchePool.getEquityTrancheIdleValue();
+
         totalLoss += principalOutstanding;
     }
 

@@ -1,4 +1,6 @@
-DAYS_IN_YEAR = 365
+from decimal import Decimal
+
+DAYS_IN_YEAR = Decimal("365")
 
 def accrue_loan_interest(loan, current_timestamp):
     """
@@ -6,15 +8,15 @@ def accrue_loan_interest(loan, current_timestamp):
     Returns the amount of interest accrued.
     """
     if not loan.active:
-        return 0.0
+        return Decimal("0.0")
     
     # Calculate time elapsed in days
     # Using 365 days year convention as per contracts (1 year = 365 days = 31536000 seconds)
-    time_elapsed_seconds = current_timestamp - loan.last_accrual_timestamp
+    time_elapsed_seconds = Decimal(current_timestamp - loan.last_accrual_timestamp)
     if time_elapsed_seconds <= 0:
-        return 0.0
+        return Decimal("0.0")
         
-    days_elapsed = time_elapsed_seconds / (24 * 3600)
+    days_elapsed = time_elapsed_seconds / (Decimal("24") * Decimal("3600"))
     
     # Interest Formula: Principal * APR * (Days / 365)
     # APR is in decimal (e.g., 0.10 for 10%), NOT bps here unless we convert.

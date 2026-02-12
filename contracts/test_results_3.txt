@@ -1,0 +1,570 @@
+Compiling 3 files with Solc 0.8.27
+Solc 0.8.27 finished in 9.89s
+Compiler run successful with warnings:
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+ --> test/mocks/MockLoanProofVerifier.sol:6:9:
+  |
+6 |         bytes calldata proof,
+  |         ^^^^^^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+ --> test/mocks/MockLoanProofVerifier.sol:7:9:
+  |
+7 |         bytes32[] calldata publicInputs
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (5667): Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> test/fuzz/invariant/Handler.t.sol:515:9:
+    |
+515 |         uint256 agentIndex
+    |         ^^^^^^^^^^^^^^^^^^
+
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__OutStandingPrincipalMatchesDeployed" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__totalDeployedValueMatchesSumOfIndividualTranches" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__interestIndexMonotonicity" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__lossRecoveryWaterfallSymmetry" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__totalIdleValueIntegrity" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__loanStateConsistency" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__seniorShareToIdleOpen" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__loanInterestAccounting" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__poolStateValidityDeployedCapital" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__systemLevel_PrincipalIntegrity" file was ignored because test contract bytecode has changed.
+Warning: Failure from "/Users/admin/Desktop/credit_rail/contracts/cache/invariant/failures/CreditRailStateFullFuzzTest/invariant__totalIdleAndDeployedValueMatchesAccounting" file was ignored because test contract bytecode has changed.
+
+Ran 12 tests for test/fuzz/invariant/CreditRailStateFullFuzzTest.t.sol:CreditRailStateFullFuzzTest
+[PASS] invariant__OutStandingPrincipalMatchesDeployed() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__interestIndexMonotonicity() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__loanInterestAccounting() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__loanStateConsistency() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__lossRecoveryWaterfallSymmetry() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__poolStateValidityDeployedCapital() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__seniorShareToIdleOpen() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__systemLevel_PrincipalIntegrity() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__totalDeployedValueMatchesSumOfIndividualTranches() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__totalIdleAndDeployedValueMatchesAccounting() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[PASS] invariant__totalIdleValueIntegrity() (runs: 20000, calls: 2560000, reverts: 0)
+
+╭----------+----------------------------+--------+---------+----------╮
+| Contract | Selector                   | Calls  | Reverts | Discards |
++=====================================================================+
+| Handler  | activateLoan               | 141965 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 142057 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 142364 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 142203 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | createLoan                 | 142506 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositEquityTranche       | 141619 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositJuniorTranche       | 142019 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | depositSeniorTranche       | 141386 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | mayClosePool               | 142642 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeCommitPool            | 142580 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeDeclareDefault        | 142056 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeRecoverLoan           | 142652 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 142637 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | repayLoan                  | 141716 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | warpTime                   | 142115 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawEquityTranche      | 142867 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 141737 | 0       | 0        |
+|----------+----------------------------+--------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 142879 | 0       | 0        |
+╰----------+----------------------------+--------+---------+----------╯
+
+[FAIL: Total unclaimed interest does not match deployed minus recovered and loss: 42704229947620823120662196 != 42533736796935891613812824]
+	[Sequence] (original: 87, shrunk: 9)
+		sender=0x000000000000000000000000000000000000372A addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=depositSeniorTranche(uint256,uint256) args=[4000, 16522 [1.652e4]]
+		sender=0x00000000000000000000000000000000000017Dd addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=maybeCommitPool() args=[]
+		sender=0x000000000000000000000000000000000000541e addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=createLoan(uint256,uint256,uint256,uint256) args=[4585197867492823793028337393613476969606522748481176057320532 [4.585e60], 2614985715949770291284923661444769083538586460063719608316775 [2.614e60], 123472284952680890983816933752 [1.234e29], 74613770 [7.461e7]]
+		sender=0x000000000000000000000000000000001F5a2228 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=createLoan(uint256,uint256,uint256,uint256) args=[12006 [1.2e4], 2153104810 [2.153e9], 18614 [1.861e4], 21828 [2.182e4]]
+		sender=0xA1DBE24798fe524c5Db8577455E516f72E938d70 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=activateLoan(uint256) args=[52508550147438434606860679155037218052370693985243021713268207357319650500786 [5.25e76]]
+		sender=0x0000000000000000000000000000000000001994 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=activateLoan(uint256) args=[12841 [1.284e4]]
+		sender=0x00000000000000000000000000000000000018b7 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=warpTime(uint256) args=[23249 [2.324e4]]
+		sender=0xd743Fe2a72624c4E60f2408c3D9a683e31Bd9858 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=repayLoan(uint256,uint256,uint256) args=[66426834703648493708905571598962 [6.642e31], 3354709780042064952292254965129440 [3.354e33], 247998332256771018712293368215401060120492714742 [2.479e47]]
+		sender=0x000000000000000000000000000000000000119d addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=repayLoan(uint256,uint256,uint256) args=[5286067575126865024066393339223317965845389718054661589 [5.286e54], 172615239384410906066087727332992703427 [1.726e38], 8835199870643894378963310258252754495919256199836517 [8.835e51]]
+ invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance() (runs: 42, calls: 5376, reverts: 0)
+
+╭----------+----------------------------+-------+---------+----------╮
+| Contract | Selector                   | Calls | Reverts | Discards |
++====================================================================+
+| Handler  | activateLoan               | 313   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | claimEquityTrancheInterest | 287   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | claimJuniorTrancheInterest | 307   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | claimSeniorTrancheInterest | 314   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | createLoan                 | 313   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | depositEquityTranche       | 289   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | depositJuniorTranche       | 294   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | depositSeniorTranche       | 303   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | mayClosePool               | 307   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | maybeCommitPool            | 287   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | maybeDeclareDefault        | 327   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | maybeRecoverLoan           | 311   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | maybeWriteOffLoan          | 285   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | repayLoan                  | 317   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | warpTime                   | 291   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | withdrawEquityTranche      | 304   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | withdrawJuniorTranche      | 302   | 0       | 0        |
+|----------+----------------------------+-------+---------+----------|
+| Handler  | withdrawSeniorTranche      | 312   | 0       | 0        |
+╰----------+----------------------------+-------+---------+----------╯
+
+Suite result: FAILED. 11 passed; 1 failed; 0 skipped; finished in 360.14s (3436.58s CPU time)
+
+Ran 1 test suite in 360.15s (360.14s CPU time): 11 tests passed, 1 failed, 0 skipped (12 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/fuzz/invariant/CreditRailStateFullFuzzTest.t.sol:CreditRailStateFullFuzzTest
+[FAIL: Total unclaimed interest does not match deployed minus recovered and loss: 42704229947620823120662196 != 42533736796935891613812824]
+	[Sequence] (original: 87, shrunk: 9)
+		sender=0x000000000000000000000000000000000000372A addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=depositSeniorTranche(uint256,uint256) args=[4000, 16522 [1.652e4]]
+		sender=0x00000000000000000000000000000000000017Dd addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=maybeCommitPool() args=[]
+		sender=0x000000000000000000000000000000000000541e addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=createLoan(uint256,uint256,uint256,uint256) args=[4585197867492823793028337393613476969606522748481176057320532 [4.585e60], 2614985715949770291284923661444769083538586460063719608316775 [2.614e60], 123472284952680890983816933752 [1.234e29], 74613770 [7.461e7]]
+		sender=0x000000000000000000000000000000001F5a2228 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=createLoan(uint256,uint256,uint256,uint256) args=[12006 [1.2e4], 2153104810 [2.153e9], 18614 [1.861e4], 21828 [2.182e4]]
+		sender=0xA1DBE24798fe524c5Db8577455E516f72E938d70 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=activateLoan(uint256) args=[52508550147438434606860679155037218052370693985243021713268207357319650500786 [5.25e76]]
+		sender=0x0000000000000000000000000000000000001994 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=activateLoan(uint256) args=[12841 [1.284e4]]
+		sender=0x00000000000000000000000000000000000018b7 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=warpTime(uint256) args=[23249 [2.324e4]]
+		sender=0xd743Fe2a72624c4E60f2408c3D9a683e31Bd9858 addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=repayLoan(uint256,uint256,uint256) args=[66426834703648493708905571598962 [6.642e31], 3354709780042064952292254965129440 [3.354e33], 247998332256771018712293368215401060120492714742 [2.479e47]]
+		sender=0x000000000000000000000000000000000000119d addr=[test/fuzz/invariant/Handler.t.sol:Handler]0xa5906e11c3b7F5B832bcBf389295D44e7695b4A6 calldata=repayLoan(uint256,uint256,uint256) args=[5286067575126865024066393339223317965845389718054661589 [5.286e54], 172615239384410906066087727332992703427 [1.726e38], 8835199870643894378963310258252754495919256199836517 [8.835e51]]
+ invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance() (runs: 42, calls: 5376, reverts: 0)
+
+Encountered a total of 1 failing tests, 11 tests succeeded

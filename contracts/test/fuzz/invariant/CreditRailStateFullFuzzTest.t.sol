@@ -34,8 +34,8 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         tranchePool.setMinimumDepositAmountEquityTranche(1_00_00_000 * USDT);
         tranchePool.setTrancheCapitalAllocationFactorJunior(15);
         tranchePool.setTrancheCapitalAllocationFactorSenior(80);
-        tranchePool.setSeniorAPR(8);
-        tranchePool.setTargetJuniorAPR(15);
+        tranchePool.setSeniorAPR(800);
+        tranchePool.setTargetJuniorAPR(1500);
 
         creditPolicy = new CreditPolicy();
         creditPolicy.setMaxTiers(3);
@@ -52,6 +52,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
+        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         creditPolicy.freezePolicy(1);
 
         MockLoanProofVerifier mockLoanProofVerifier = new MockLoanProofVerifier();
@@ -214,8 +215,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     {
         assertEq(
             tranchePool.getTotalUnclaimedInterest() +
-                tranchePool.getTotalIdleValue() +
-                tranchePool.getProtocolRevenue(),
+                tranchePool.getTotalIdleValue(),
             ERC20Mock(usdt).balanceOf(address(tranchePool)),
             "Total unclaimed interest does not match deployed minus recovered and loss"
         );
@@ -366,7 +366,5 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             }
         }
     }
-
-
 
 }

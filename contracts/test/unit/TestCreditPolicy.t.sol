@@ -44,6 +44,7 @@ contract TestCreditPolicy is Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
+        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
         _freezePolicy(version);
     }
@@ -294,6 +295,7 @@ contract TestCreditPolicy is Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
+        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.expectEmit(true, false, false, true);
         emit CreditPolicy.PolicyFrozen(1, block.timestamp);
         creditPolicy.freezePolicy(1);
@@ -351,6 +353,7 @@ contract TestCreditPolicy is Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
+        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
         _freezePolicy(1);
         assertEq(creditPolicy.policyFrozen(1), true);
@@ -367,6 +370,7 @@ contract TestCreditPolicy is Test {
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
         creditPolicy.setLoanTier(1, 0, _createMockTier("Tier"));
         creditPolicy.setPolicyDocument(1, _hashString("doc"), "uri");
+        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
 
         uint256 t1 = creditPolicy.lastUpdated(1);
@@ -564,6 +568,7 @@ contract TestCreditPolicy is Test {
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
         creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
         // Note: NOT setting document hash
+        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
 
         vm.expectRevert(
             abi.encodeWithSignature(
@@ -1372,6 +1377,7 @@ contract TestCreditPolicy is Test {
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
         creditPolicy.setLoanTier(1, 0, _createMockTier("T1"));
         creditPolicy.setPolicyDocument(1, _hashString("doc"), "uri");
+        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
 
         // Freeze

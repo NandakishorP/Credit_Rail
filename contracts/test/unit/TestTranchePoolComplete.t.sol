@@ -50,6 +50,9 @@ contract TestTranchePoolComplete is Test {
         // Set allocation factors
         tranchePool.setTrancheCapitalAllocationFactorSenior(80);
         tranchePool.setTrancheCapitalAllocationFactorJunior(15);
+        
+        tranchePool.setSeniorAPR(500);
+        tranchePool.setTargetJuniorAPR(1000);
 
         // Whitelist users
         tranchePool.updateWhitelist(seniorUser1, true);
@@ -2735,7 +2738,7 @@ These catch off-by-one / rounding edge cases.
         vm.prank(deployer);
         tranchePool.setSeniorAPR(500);
 
-        assertEq(tranchePool.s_senior_apr(), 500);
+        assertEq(tranchePool.s_senior_apr_bps(), 500);
     }
 
     function test_SetSeniorAPR_RevertIf_Zero() public {
@@ -2748,7 +2751,7 @@ These catch off-by-one / rounding edge cases.
         vm.prank(deployer);
         tranchePool.setTargetJuniorAPR(1000);
 
-        assertEq(tranchePool.s_target_junior_apr(), 1000);
+        assertEq(tranchePool.s_target_junior_apr_bps(), 1000);
     }
 
     function test_SetTargetJuniorAPR_RevertIf_Zero() public {
@@ -2876,5 +2879,36 @@ These catch off-by-one / rounding edge cases.
         );
     }
 
-    // extra pending tests
+    function test_OnInterestAccrued_DistributesCorrectly() public {
+        _depositToAllTranches();
+        _allocateCapital();
+
+        // Simulate 1 year passing
+        uint256 timeElapsed = 365 days;
+        vm.warp(block.timestamp + timeElapsed);
+
+        uint256 seniorDeployed = tranchePool.getSeniorTrancheDeployedValue();
+        uint256 juniorDeployed = tranchePool.getJuniorTrancheDeployedValue();
+
+        // Calculate expected interest
+        // Senior: 5% of deployed
+        uint256 expectedSeniorInterest = (seniorDeployed * 500) / 10000;
+        // Junior: 10% of deployed
+        uint256 expectedJuniorInterest = (juniorDeployed * 1000) / 10000;
+        
+        // Total interest to distribute (make it sufficient to cover both + some equity)
+        uint256 totalInterest = expectedSeniorInterest + expectedJuniorInterest + 10_000 * USDT;
+
+        uint256 seniorInterestBefore = tranchePool.seniorAccruedInterest();
+        uint256 juniorInterestBefore = tranchePool.juniorAccruedInterest();
+        uint256 equityInterestBefore = tranchePool.equityAccruedInterest();
+
+        vm.prank(loanEngine);
+        tranchePool.onInterestAccrued(totalInterest);
+
+        assertEq(tranchePool.seniorAccruedInterest(), seniorInterestBefore + expectedSeniorInterest, "Senior interest incorrect");
+        assertEq(tranchePool.juniorAccruedInterest(), juniorInterestBefore + expectedJuniorInterest, "Junior interest incorrect");
+        assertEq(tranchePool.equityAccruedInterest(), equityInterestBefore + 10_000 * USDT, "Equity interest incorrect");
+    }
 }
+
