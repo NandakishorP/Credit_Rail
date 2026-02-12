@@ -172,6 +172,9 @@ contract TranchePool is Ownable {
 
     uint256 public s_totalUnclaimedInterest;
 
+    uint256 public seniorTargetInterest;
+    uint256 public juniorTargetInterest;
+
     modifier isWhiteListed(address user) {
         _isWhiteListed(user);
         _;
@@ -449,64 +452,41 @@ contract TranchePool is Ownable {
         return (seniorAmount, juniorAmount, equityAmount);
     }
 
-    function onInterestAccrued(
-        uint256 interestAmount
-    ) external onlyLoanEngine(msg.sender) {
+    function onInterestAccrued(uint256 interestAmount) external onlyLoanEngine(msg.sender) {
         if (interestAmount == 0) return;
 
-        uint256 currentTimestamp = block.timestamp;
+        _accrueTrancheTargets();
 
-        uint256 timeElapsed = currentTimestamp - lastTrancheAccrualTimestamp;
-        if (timeElapsed == 0) {
-            // No time passed → treat as residual equity
-            equityAccruedInterest += interestAmount;
-            return;
+        uint256 remaining = interestAmount;
+
+        // Senior gets up to what is owed
+        uint256 seniorOwed =
+            seniorTargetInterest - seniorAccruedInterest;
+
+        uint256 seniorPaid =
+            remaining < seniorOwed ? remaining : seniorOwed;
+
+        if (seniorPaid > 0) {
+            seniorAccruedInterest += seniorPaid;
+            remaining -= seniorPaid;
         }
 
-        uint256 remainingInterest = interestAmount;
+        // Junior next
+        uint256 juniorOwed =
+            juniorTargetInterest - juniorAccruedInterest;
 
-        if (s_seniorTrancheDeployedValue > 0 && s_senior_apr_bps > 0) {
-            uint256 seniorDue = (
-                s_seniorTrancheDeployedValue *
-                s_senior_apr_bps *
-                timeElapsed
-            ) / (365 days * 10_000);
+        uint256 juniorPaid =
+            remaining < juniorOwed ? remaining : juniorOwed;
 
-            uint256 seniorPaid = remainingInterest < seniorDue
-                ? remainingInterest
-                : seniorDue;
-
-            if (seniorPaid > 0) {
-                seniorAccruedInterest += seniorPaid;
-                remainingInterest -= seniorPaid;
-            }
+        if (juniorPaid > 0) {
+            juniorAccruedInterest += juniorPaid;
+            remaining -= juniorPaid;
         }
 
-        if (
-            remainingInterest > 0 &&
-            s_juniorTrancheDeployedValue > 0 &&
-            s_target_junior_apr_bps > 0
-        ) {
-            uint256 juniorDue = (
-                s_juniorTrancheDeployedValue *
-                s_target_junior_apr_bps *
-                timeElapsed
-            ) / (365 days * 10_000);
-
-            uint256 juniorPaid = remainingInterest < juniorDue
-                ? remainingInterest
-                : juniorDue;
-
-            if (juniorPaid > 0) {
-                juniorAccruedInterest += juniorPaid;
-                remainingInterest -= juniorPaid;
-            }
+        // Residual
+        if (remaining > 0) {
+            equityAccruedInterest += remaining;
         }
-        if (remainingInterest > 0) {
-            equityAccruedInterest += remainingInterest;
-        }
-
-        lastTrancheAccrualTimestamp = currentTimestamp;
     }
 
     function onRepayment(
@@ -1102,6 +1082,33 @@ contract TranchePool is Ownable {
             sharesToBurn,
             block.timestamp
         );
+    }
+
+    // INTERNAL FUNCTIONS
+
+    function _accrueTrancheTargets() internal {
+        uint256 currentTimestamp = block.timestamp;
+        uint256 timeElapsed = currentTimestamp - lastTrancheAccrualTimestamp;
+
+        if (timeElapsed == 0) return;
+
+        if (s_seniorTrancheDeployedValue > 0) {
+            seniorTargetInterest +=
+                (s_seniorTrancheDeployedValue *
+                s_senior_apr_bps *
+                timeElapsed)
+                / (365 days * 10_000);
+        }
+
+        if (s_juniorTrancheDeployedValue > 0) {
+            juniorTargetInterest +=
+                (s_juniorTrancheDeployedValue *
+                s_target_junior_apr_bps *
+                timeElapsed)
+                / (365 days * 10_000);
+        }
+
+        lastTrancheAccrualTimestamp = currentTimestamp;
     }
 
     /**

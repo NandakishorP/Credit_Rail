@@ -6,6 +6,7 @@ from decimal import Decimal
 class TrancheState:
     idle: Decimal
     deployed: Decimal
+    apr_bps: Decimal
 
 @dataclass
 class LoanState:

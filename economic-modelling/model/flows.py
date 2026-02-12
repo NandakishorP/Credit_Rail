@@ -67,20 +67,41 @@ def allocate_capital(system: SystemState, amount: Decimal, origination_fee: Deci
         "equity_allocated": equity_amt
     }
 
-def on_interest_accrued(system: SystemState, interest_amount: Decimal, senior_principal: Decimal, junior_principal: Decimal, total_principal: Decimal):
+def on_interest_accrued(system: SystemState, interest_amount: Decimal, current_timestamp: int, last_accrual_timestamp: int):
     """
     Splits accrued interest into tranche buckets based on principal allocation.
     """
-    if interest_amount <= Decimal("0") or total_principal <= Decimal("0"):
+    if interest_amount <= Decimal("0"):
+        return
+    timeElapsed = current_timestamp - last_accrual_timestamp
+    if(timeElapsed == 0):
+        system.equity_accrued_interest += interest_amount
         return
 
-    senior_interest = (interest_amount * senior_principal) / total_principal
-    junior_interest = (interest_amount * junior_principal) / total_principal
-    equity_interest = interest_amount - senior_interest - junior_interest
+    remaining_interest = interest_amount
+    if(system.senior.deployed >0 and system.senior.apr_bps >0 ):
+        senior_due = (system.senior.deployed * system.senior.apr_bps * timeElapsed)/(365 * 24 * 60 * 60 * 10000)
+        senior_paid = remaining_interest if remaining_interest < senior_due else senior_due
+        if senior_paid > 0:
+            remaining_interest -= senior_paid
+            system.senior_accrued_interest += senior_paid
     
-    system.senior_accrued_interest += senior_interest
-    system.junior_accrued_interest += junior_interest
-    system.equity_accrued_interest += equity_interest
+    if(system.junior.deployed >0 and system.junior.apr_bps >0 and remaining_interest >0 ):
+        junior_due = (system.junior.deployed * system.junior.apr_bps * timeElapsed)/(365 * 24 * 60 * 60 * 10000)
+        junior_paid = remaining_interest if remaining_interest < junior_due else junior_due
+        if junior_paid > 0:
+            remaining_interest -= junior_paid
+            system.junior_accrued_interest += junior_paid
+    if(remaining_interest >0 ):
+        system.equity_accrued_interest += remaining_interest
+    system.last_accrual_timestamp = current_timestamp
+    # senior_interest = (interest_amount * senior_principal) / total_principal
+    # junior_interest = (interest_amount * junior_principal) / total_principal
+    # equity_interest = interest_amount - senior_interest - junior_interest
+    
+    # system.senior_accrued_interest += senior_interest
+    # system.junior_accrued_interest += junior_interest
+    # system.equity_accrued_interest += equity_interest
 
 def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_timestamp: int):
     """
@@ -94,7 +115,7 @@ def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_ti
     new_interest = accrue_loan_interest(loan, current_timestamp)
     if new_interest > Decimal("0"):
         loan.interest_accrued += new_interest
-        on_interest_accrued(system, new_interest, loan.senior_principal_allocated, loan.junior_principal_allocated, loan.principal_issued)
+        on_interest_accrued(system, new_interest, current_timestamp, loan.last_accrual_timestamp)
         loan.last_accrual_timestamp = current_timestamp
 
     total_payment = amount
@@ -114,7 +135,7 @@ def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_ti
         loan.repaid = True
         loan.active = False
         
-    apply_interest_waterfall(system, interest_paid, current_timestamp)
+    apply_interest_waterfall(system, interest_paid)
     
     apply_principal_repayment(system, principal_paid)
     
@@ -128,7 +149,7 @@ def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_ti
         "remaining": total_payment - interest_paid - principal_paid # Should be 0 usually
     }
 
-def apply_interest_waterfall(system: SystemState, interest_paid: Decimal, current_timestamp: int):
+def apply_interest_waterfall(system: SystemState, interest_paid: Decimal):
     remaining = interest_paid
     system.total_unclaimed_interest += interest_paid
     

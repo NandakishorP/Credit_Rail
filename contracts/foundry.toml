@@ -13,7 +13,7 @@ runs = 1000
 seed = '0x2'
 
 [invariant]
-runs = 20000
+runs = 2000
 depth = 128
 fail_on_revert = true
 

@@ -17,9 +17,9 @@ def test_happy_path():
     print("--- Test Happy Path ---")
     # 1. Initialize System
     system = SystemState(
-        senior=TrancheState(idle=Decimal("80000.0"), deployed=Decimal("0.0")),
-        junior=TrancheState(idle=Decimal("15000.0"), deployed=Decimal("0.0")),
-        equity=TrancheState(idle=Decimal("5000.0"), deployed=Decimal("0.0"))
+        senior=TrancheState(idle=Decimal("80000.0"), deployed=Decimal("0.0"), apr_bps=Decimal("500")),
+        junior=TrancheState(idle=Decimal("15000.0"), deployed=Decimal("0.0"), apr_bps=Decimal("800")),
+        equity=TrancheState(idle=Decimal("5000.0"), deployed=Decimal("0.0"), apr_bps=Decimal("0"))
     )
     
     print(f"Initial System Idle: S={system.senior.idle}, J={system.junior.idle}, E={system.equity.idle}")
@@ -100,9 +100,9 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
     print("\n--- Portfolio Simulation ---")
 
     system = SystemState(
-        senior=TrancheState(idle=Decimal("800000"), deployed=Decimal("0")),
-        junior=TrancheState(idle=Decimal("150000"), deployed=Decimal("0")),
-        equity=TrancheState(idle=Decimal("50000"), deployed=Decimal("0"))
+        senior=TrancheState(idle=Decimal("800000"), deployed=Decimal("0"), apr_bps=Decimal("500")),
+        junior=TrancheState(idle=Decimal("150000"), deployed=Decimal("0"), apr_bps=Decimal("800")),
+        equity=TrancheState(idle=Decimal("50000"), deployed=Decimal("0"), apr_bps=Decimal("0"))
     )
 
     initial_s = system.senior.idle
@@ -146,19 +146,20 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
             loan.defaulted = True
             loan.active = False
 
-            total_principal_loss += loan.principal_outstanding
-            total_recovery += loan.principal_outstanding * Decimal(str(recovery_rate))
+            loss = loan.principal_outstanding
+            # Immediate loss recognition prevents "ghost capital" interest accrual
+            apply_loss(system, loss, Decimal("0"))
+            
+            total_principal_loss += loss # Still track for stats/debug
+            total_recovery += loss * Decimal(str(recovery_rate))
 
         else:
             full_payment = loan.principal_outstanding * (Decimal("1") + loan.apr)
             repay_loan(system, loan, full_payment, 365 * 24 * 3600)
 
     # -------------------------------------------------
-    # APPLY AGGREGATED PORTFOLIO LOSS (STRUCTURAL FIX)
+    # RECOVERY (Still deferred/batch)
     # -------------------------------------------------
-
-    if total_principal_loss > 0:
-        apply_loss(system, total_principal_loss, total_interest_loss)
 
     if total_recovery > 0:
         on_recovery(system, total_recovery)
