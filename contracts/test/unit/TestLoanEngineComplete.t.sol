@@ -36,6 +36,10 @@ contract TestLoanEngineComplete is Test {
     bytes testProofData = hex"1234";
     bytes32[] testPublicInputs;
 
+    bytes32 testUnderwriterKeyX = keccak256("underwriterX");
+    bytes32 testUnderwriterKeyY = keccak256("underwriterY");
+    bytes32 testIndustry = keccak256("TECH");
+
     function setUp() public {
         usdt = new ERC20Mock();
         vm.startPrank(deployer);
@@ -64,10 +68,6 @@ contract TestLoanEngineComplete is Test {
         bytes32 scopeHash = keccak256("policyScope1");
         creditPolicy.setPolicyScopeHash(1, scopeHash);
         
-        // Initialize public inputs with the matching hash
-        testPublicInputs = new bytes32[](1);
-        testPublicInputs[0] = scopeHash;
-
         creditPolicy.freezePolicy(1);
 
         // Setup loan engine
@@ -78,6 +78,23 @@ contract TestLoanEngineComplete is Test {
             address(tranchePool),
             address(usdt)
         );
+
+        // Authorize underwriter
+        loanEngine.setUnderwriterAuthorization(testUnderwriterKeyX, testUnderwriterKeyY, true);
+
+        // Initialize public inputs with all required fields
+        testPublicInputs = new bytes32[](11);
+        testPublicInputs[0] = scopeHash; // POLICY_VERSION_HASH_INDEX
+        testPublicInputs[1] = testBorrowerCommitment; // BORROWER_COMMITMENT_INDEX
+        testPublicInputs[2] = testUnderwriterKeyX; // UNDERWRITER_KEY_X_INDEX
+        testPublicInputs[3] = testUnderwriterKeyY; // UNDERWRITER_KEY_Y_INDEX
+        testPublicInputs[4] = bytes32(uint256(testTierId)); // TIER_ID_INDEX
+        testPublicInputs[5] = bytes32(testPrincipal); // PRINCIPAL_ISSUED_INDEX
+        testPublicInputs[6] = bytes32(testAprBps); // APR_BPS_INDEX
+        testPublicInputs[7] = bytes32(testOriginationFeeBps); // ORIGINATION_FEE_BPS_INDEX
+        testPublicInputs[8] = bytes32(testTermDays); // TERM_DAYS_INDEX
+        testPublicInputs[9] = testIndustry; // INDUSTRY_INDEX
+        testPublicInputs[10] = bytes32(block.timestamp); // GENERATION_TIMESTAMP_INDEX
 
         // Setup tranche pool
         _setupTranchePool();
@@ -119,7 +136,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -178,7 +195,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -203,7 +220,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -211,6 +228,9 @@ contract TestLoanEngineComplete is Test {
 
     function test_CreateLoan_RevertIf_OriginationFeeExceeded() public {
         vm.prank(deployer);
+        
+        testPublicInputs[7] = bytes32(uint256(600)); // ORIGINATION_FEE_BPS_INDEX
+        
         vm.expectRevert(
             abi.encodeWithSelector(
                 LoanEngine.LoanEngine__MaxOriginationFeeExceeded.selector,
@@ -228,7 +248,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             600, // 6% > max 5%
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -236,6 +256,9 @@ contract TestLoanEngineComplete is Test {
 
     function test_CreateLoan_RevertIf_InvalidParameters_ZeroPrincipal() public {
         vm.prank(deployer);
+        
+        testPublicInputs[5] = bytes32(0); // PRINCIPAL_ISSUED_INDEX
+        
         vm.expectRevert(
             abi.encodeWithSelector(
                 LoanEngine.LoanEngine__InvalidLoanParameters.selector,
@@ -254,7 +277,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -272,7 +295,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -294,7 +317,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -368,7 +391,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -397,7 +420,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -593,7 +616,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -681,7 +704,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -978,7 +1001,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -1057,7 +1080,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );
@@ -1162,7 +1185,7 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            bytes32(0),
+            testIndustry,
             testProofData,
             testPublicInputs
         );

@@ -114,7 +114,7 @@ def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_ti
         loan.repaid = True
         loan.active = False
         
-    apply_interest_waterfall(system, interest_paid)
+    apply_interest_waterfall(system, interest_paid, current_timestamp)
     
     apply_principal_repayment(system, principal_paid)
     
@@ -128,7 +128,7 @@ def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_ti
         "remaining": total_payment - interest_paid - principal_paid # Should be 0 usually
     }
 
-def apply_interest_waterfall(system: SystemState, interest_paid: Decimal):
+def apply_interest_waterfall(system: SystemState, interest_paid: Decimal, current_timestamp: int):
     remaining = interest_paid
     system.total_unclaimed_interest += interest_paid
     
