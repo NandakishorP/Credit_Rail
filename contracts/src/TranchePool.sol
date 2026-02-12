@@ -429,6 +429,8 @@ contract TranchePool is Ownable {
             emit PoolStateUpdated(PoolState.DEPLOYED);
         }
 
+        _accrueTrancheTargets();
+
         s_seniorTrancheIdleValue -= seniorAmount;
         s_juniorTrancheIdleValue -= juniorAmount;
         s_equityTrancheIdleValue -= equityAmount;
@@ -460,8 +462,10 @@ contract TranchePool is Ownable {
         uint256 remaining = interestAmount;
 
         // Senior gets up to what is owed
-        uint256 seniorOwed =
-            seniorTargetInterest - seniorAccruedInterest;
+        uint256 seniorOwed = 0;
+        if (seniorTargetInterest > seniorAccruedInterest) {
+            seniorOwed = seniorTargetInterest - seniorAccruedInterest;
+        }
 
         uint256 seniorPaid =
             remaining < seniorOwed ? remaining : seniorOwed;
@@ -472,8 +476,10 @@ contract TranchePool is Ownable {
         }
 
         // Junior next
-        uint256 juniorOwed =
-            juniorTargetInterest - juniorAccruedInterest;
+        uint256 juniorOwed = 0;
+        if (juniorTargetInterest > juniorAccruedInterest) {
+            juniorOwed = juniorTargetInterest - juniorAccruedInterest;
+        }
 
         uint256 juniorPaid =
             remaining < juniorOwed ? remaining : juniorOwed;
@@ -496,6 +502,8 @@ contract TranchePool is Ownable {
         if (principalRepaid == 0 && interestRepaid == 0) {
             revert TranchePool__InvalidTransferAmount(0);
         }
+
+        _accrueTrancheTargets();
 
         /*//////////////////////////////////////////////////////////////
                         INTEREST WATERFALL (INDEXED)
@@ -616,6 +624,8 @@ contract TranchePool is Ownable {
             revert TranchePool__ZeroValueError();
         }
 
+        _accrueTrancheTargets();
+
         /*//////////////////////////////////////////////////////////////
                     1️⃣ CANCEL GHOST INTEREST
         (SAME PRIORITY AS INTEREST PAYOUT)
@@ -631,6 +641,7 @@ contract TranchePool is Ownable {
             );
             seniorAccruedInterest -= seniorCancel;
             remainingInterest -= seniorCancel;
+            seniorTargetInterest -= _minimum(seniorTargetInterest, seniorCancel);
         }
 
         // Then junior
@@ -641,6 +652,7 @@ contract TranchePool is Ownable {
             );
             juniorAccruedInterest -= juniorCancel;
             remainingInterest -= juniorCancel;
+            juniorTargetInterest -= _minimum(juniorTargetInterest, juniorCancel);
         }
 
         // Any remaining interest is ignored (equity / protocol had no promise)
@@ -694,6 +706,8 @@ contract TranchePool is Ownable {
         if (amount == 0) {
             revert TranchePool__ZeroValueError();
         }
+
+        _accrueTrancheTargets();
 
         s_totalRecovered += amount;
         uint256 remaining = amount;
@@ -1194,6 +1208,7 @@ contract TranchePool is Ownable {
         if (aprbps == 0) {
             revert TranchePool__ZeroAPRError();
         }
+        _accrueTrancheTargets();
         s_senior_apr_bps = aprbps;
     }
 
@@ -1201,6 +1216,7 @@ contract TranchePool is Ownable {
         if (aprbps == 0) {
             revert TranchePool__ZeroAPRError();
         }
+        _accrueTrancheTargets();
         s_target_junior_apr_bps = aprbps;
     }
 

@@ -67,41 +67,63 @@ def allocate_capital(system: SystemState, amount: Decimal, origination_fee: Deci
         "equity_allocated": equity_amt
     }
 
+def _accrue_tranche_targets(system: SystemState, current_timestamp: int):
+    # Calculate time elapsed since last tranche accrual
+    if system.last_tranche_accrual_timestamp == 0:
+        system.last_tranche_accrual_timestamp = current_timestamp
+        return
+
+    time_elapsed = current_timestamp - system.last_tranche_accrual_timestamp
+    if time_elapsed == 0:
+        return
+
+    # Senior Target
+    if system.senior.deployed > Decimal("0"):
+        senior_target_inc = (system.senior.deployed * system.senior.apr_bps * time_elapsed) / (365 * 24 * 60 * 60 * 10000)
+        system.senior_target_interest += senior_target_inc
+
+    # Junior Target
+    if system.junior.deployed > Decimal("0"):
+        junior_target_inc = (system.junior.deployed * system.junior.apr_bps * time_elapsed) / (365 * 24 * 60 * 60 * 10000)
+        system.junior_target_interest += junior_target_inc
+
+    system.last_tranche_accrual_timestamp = current_timestamp
+
 def on_interest_accrued(system: SystemState, interest_amount: Decimal, current_timestamp: int, last_accrual_timestamp: int):
     """
-    Splits accrued interest into tranche buckets based on principal allocation.
+    Splits accrued interest into tranche buckets based on TARGET interest.
+    Ignores last_accrual_timestamp (loan specific) in favor of system.last_tranche_accrual_timestamp.
     """
     if interest_amount <= Decimal("0"):
         return
-    timeElapsed = current_timestamp - last_accrual_timestamp
-    if(timeElapsed == 0):
-        system.equity_accrued_interest += interest_amount
-        return
 
-    remaining_interest = interest_amount
-    if(system.senior.deployed >0 and system.senior.apr_bps >0 ):
-        senior_due = (system.senior.deployed * system.senior.apr_bps * timeElapsed)/(365 * 24 * 60 * 60 * 10000)
-        senior_paid = remaining_interest if remaining_interest < senior_due else senior_due
-        if senior_paid > 0:
-            remaining_interest -= senior_paid
-            system.senior_accrued_interest += senior_paid
-    
-    if(system.junior.deployed >0 and system.junior.apr_bps >0 and remaining_interest >0 ):
-        junior_due = (system.junior.deployed * system.junior.apr_bps * timeElapsed)/(365 * 24 * 60 * 60 * 10000)
-        junior_paid = remaining_interest if remaining_interest < junior_due else junior_due
-        if junior_paid > 0:
-            remaining_interest -= junior_paid
-            system.junior_accrued_interest += junior_paid
-    if(remaining_interest >0 ):
-        system.equity_accrued_interest += remaining_interest
-    system.last_accrual_timestamp = current_timestamp
-    # senior_interest = (interest_amount * senior_principal) / total_principal
-    # junior_interest = (interest_amount * junior_principal) / total_principal
-    # equity_interest = interest_amount - senior_interest - junior_interest
-    
-    # system.senior_accrued_interest += senior_interest
-    # system.junior_accrued_interest += junior_interest
-    # system.equity_accrued_interest += equity_interest
+    # 1. Update Targets based on time elapsed
+    _accrue_tranche_targets(system, current_timestamp)
+
+    remaining = interest_amount
+
+    # 2. Senior Payout (Target - Accrued)
+    senior_owed = system.senior_target_interest - system.senior_accrued_interest
+    # Clamp to 0 if negative (shouldn't happen but safe)
+    if senior_owed < Decimal("0"): senior_owed = Decimal("0")
+
+    senior_paid = min(remaining, senior_owed)
+    if senior_paid > Decimal("0"):
+        system.senior_accrued_interest += senior_paid
+        remaining -= senior_paid
+
+    # 3. Junior Payout (Target - Accrued)
+    junior_owed = system.junior_target_interest - system.junior_accrued_interest
+    if junior_owed < Decimal("0"): junior_owed = Decimal("0")
+
+    junior_paid = min(remaining, junior_owed)
+    if junior_paid > Decimal("0"):
+        system.junior_accrued_interest += junior_paid
+        remaining -= junior_paid
+
+    # 4. Equity / Residual
+    if remaining > Decimal("0"):
+        system.equity_accrued_interest += remaining
 
 def repay_loan(system: SystemState, loan: LoanState, amount: Decimal, current_timestamp: int):
     """
@@ -218,11 +240,13 @@ def apply_loss(system: SystemState, principal_loss: Decimal, interest_accrued_lo
     if remaining_interest > Decimal("0") and system.senior_accrued_interest > Decimal("0"):
         senior_cancel = min(remaining_interest, system.senior_accrued_interest)
         system.senior_accrued_interest -= senior_cancel
+        system.senior_target_interest -= min(system.senior_target_interest, senior_cancel)
         remaining_interest -= senior_cancel
         
     if remaining_interest > Decimal("0") and system.junior_accrued_interest > Decimal("0"):
         junior_cancel = min(remaining_interest, system.junior_accrued_interest)
         system.junior_accrued_interest -= junior_cancel
+        system.junior_target_interest -= min(system.junior_target_interest, junior_cancel)
         remaining_interest -= junior_cancel
         
     # 2. Principal Loss Waterfall

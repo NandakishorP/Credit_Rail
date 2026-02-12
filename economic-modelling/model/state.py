@@ -52,6 +52,10 @@ class SystemState:
     senior_accrued_interest: Decimal = Decimal("0.0")
     junior_accrued_interest: Decimal = Decimal("0.0")
     equity_accrued_interest: Decimal = Decimal("0.0")
+    
+    # Target Interest (Theoretical Due)
+    senior_target_interest: Decimal = Decimal("0.0")
+    junior_target_interest: Decimal = Decimal("0.0")
 
     senior_unclaimed_interest: Decimal = Decimal("0.0")
     junior_unclaimed_interest: Decimal = Decimal("0.0")
@@ -68,6 +72,8 @@ class SystemState:
     # Equity is the remainder (0.05)
 
     loans: List[LoanState] = field(default_factory=list)
+    
+    last_tranche_accrual_timestamp: int = 0
 
 
 def total_value(system: "SystemState") -> Decimal:
