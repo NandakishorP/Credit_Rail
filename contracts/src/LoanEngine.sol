@@ -463,7 +463,8 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         uint256 loanId,
         uint256 principalAmount,
         uint256 interestAmount,
-        address repaymentAgent
+        address repaymentAgent,
+        uint256 timestamp
     )
         external
         onlyOwner
@@ -480,7 +481,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__InvalidRepayment();
         }
 
-        _accrueInterest(loanId);
+        _accrueInterest(loanId, timestamp);
 
         // 1️⃣ Transfer funds to pool (settlement layer)
         IERC20(s_stableCoinAddress).safeTransferFrom(
@@ -521,26 +522,27 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             loan.loanId,
             principalPaid,
             interestPaid,
-            block.timestamp
+            timestamp
         );
 
         if (fullyRepaid) {
-            emit LoanClosed(loanId, block.timestamp);
+            emit LoanClosed(loanId, timestamp);
         }
     }
 
     function declareDefault(
         uint256 loanId,
-        bytes32 reasonHash
+        bytes32 reasonHash,
+        uint256 timestamp
     ) external onlyOwner {
         // Implementation goes here
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.ACTIVE) {
             revert LoanEngine__LoanIsNotActive(loanId);
         }
-        _accrueInterest(loanId);
+        _accrueInterest(loanId, timestamp);
         loan.state = LoanState.DEFAULTED;
-        emit LoanDefaulted(loanId, reasonHash, block.timestamp);
+        emit LoanDefaulted(loanId, reasonHash, timestamp);
     }
 
     function writeOffLoan(uint256 loanId) external onlyOwner {
@@ -584,13 +586,13 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         emit LoanRecovered(loanId, amount, block.timestamp);
     }
 
-    function _accrueInterest(uint256 loanId) internal {
+    function _accrueInterest(uint256 loanId,uint256 timestamp) internal {
         // Implementation goes here
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.ACTIVE) {
             revert LoanEngine__LoanIsNotActive(loanId);
         }
-        uint256 timeElapsed = block.timestamp - loan.lastAccrualTimestamp;
+        uint256 timeElapsed = timestamp - loan.lastAccrualTimestamp;
         if (loan.principalOutstanding == 0) {
             loan.lastAccrualTimestamp = block.timestamp;
             return;

@@ -367,7 +367,7 @@ contract MedusaTest {
         
         totalUnclaimedInterest += actualInterestPaid;
         
-        loanEngine.repayLoan(loanId, principalAmount, interestAmount, recevingEntity);
+        loanEngine.repayLoan(loanId, principalAmount, interestAmount, recevingEntity, block.timestamp);
         
         // Use ACTUAL principal paid (THIS IS THE FIX!)
         totalDeployedValue -= actualPrincipalPaid;
@@ -391,7 +391,7 @@ contract MedusaTest {
         LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
         if (loan.state != LoanEngine.LoanState.ACTIVE) return;
         
-        loanEngine.declareDefault(loanId, reasonHash);
+        loanEngine.declareDefault(loanId, reasonHash, block.timestamp);
     }
     
     function maybeWriteOffLoan(uint256 loanId) external {

@@ -395,7 +395,7 @@ contract EchidnaHandler {
         uint256 actualPrincipalPaid = _min(total - actualInterestPaid, loanBefore.principalOutstanding);
         
         usdt.approve(address(loanEngine), total);
-        try loanEngine.repayLoan(loanId, principalAmount, interestAmount, address(this)) {
+        try loanEngine.repayLoan(loanId, principalAmount, interestAmount, address(this), block.timestamp) {
             totalDeployedValue -= actualPrincipalPaid;
             totalIdleValue += actualPrincipalPaid;
             outstandingPrincipal -= actualPrincipalPaid;
@@ -414,7 +414,7 @@ contract EchidnaHandler {
         LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
         if (loan.state != LoanEngine.LoanState.ACTIVE) return;
         
-        try loanEngine.declareDefault(loanId, bytes32(0)) {} catch {}
+        try loanEngine.declareDefault(loanId, bytes32(0), block.timestamp) {} catch {}
     }
     
     function writeOffLoan(uint256 loanId) public {

@@ -440,8 +440,8 @@ contract Handler is Test {
             loanId,
             principalAmount,
             interestAmount,
-            recevingEntity
-
+            recevingEntity,
+            block.timestamp
         );
 
         outStandingPrincipal -= actualPrincipalPaid;
@@ -472,7 +472,7 @@ contract Handler is Test {
         }
 
         vm.prank(deployer);
-        loanEngine.declareDefault(loanId, reasonHash);
+        loanEngine.declareDefault(loanId, reasonHash, block.timestamp);
     }
 
     function maybeWriteOffLoan(uint256 loanId) public {

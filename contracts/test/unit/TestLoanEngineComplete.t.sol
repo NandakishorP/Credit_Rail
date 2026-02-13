@@ -474,7 +474,8 @@ contract TestLoanEngineComplete is Test {
             1,
             testPrincipal,
             expectedInterest,
-            repaymentAgent
+            repaymentAgent,
+            block.timestamp
         );
 
         (
@@ -528,7 +529,8 @@ contract TestLoanEngineComplete is Test {
             1,
             partialPrincipal,
             expectedInterest,
-            repaymentAgent
+            repaymentAgent,
+            block.timestamp
         );
 
         (
@@ -580,7 +582,8 @@ contract TestLoanEngineComplete is Test {
             1,
             repaymentAmount, // principalAmount labeled
             0,               // interestAmount labeled
-            repaymentAgent
+            repaymentAgent,
+            block.timestamp
         );
 
         (
@@ -640,7 +643,7 @@ contract TestLoanEngineComplete is Test {
                 1
             )
         );
-        loanEngine.repayLoan(1, 1000, 1000, repaymentAgent);
+        loanEngine.repayLoan(1, 1000, 1000, repaymentAgent, block.timestamp);
     }
 
     function test_RepayLoan_RevertIf_ZeroRepayment() public {
@@ -648,7 +651,7 @@ contract TestLoanEngineComplete is Test {
 
         vm.prank(deployer);
         vm.expectRevert(LoanEngine.LoanEngine__InvalidRepayment.selector);
-        loanEngine.repayLoan(1, 0, 0, repaymentAgent);
+        loanEngine.repayLoan(1, 0, 0, repaymentAgent, block.timestamp);
     }
 
     function test_RepayLoan_RevertIf_NotWhitelistedAgent() public {
@@ -663,7 +666,7 @@ contract TestLoanEngineComplete is Test {
                 nonWhitelistedAgent
             )
         );
-        loanEngine.repayLoan(1, 1000, 1000, nonWhitelistedAgent);
+        loanEngine.repayLoan(1, 1000, 1000, nonWhitelistedAgent, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -678,7 +681,7 @@ contract TestLoanEngineComplete is Test {
         bytes32 reasonHash = keccak256("Missed payment");
 
         vm.prank(deployer);
-        loanEngine.declareDefault(1, reasonHash);
+        loanEngine.declareDefault(1, reasonHash, block.timestamp);
 
         (
             ,
@@ -729,7 +732,7 @@ contract TestLoanEngineComplete is Test {
                 1
             )
         );
-        loanEngine.declareDefault(1, keccak256("reason"));
+        loanEngine.declareDefault(1, keccak256("reason"), block.timestamp);
     }
 
     function test_WriteOffLoan_Success() public {
@@ -739,7 +742,7 @@ contract TestLoanEngineComplete is Test {
 
         // Declare default first
         vm.prank(deployer);
-        loanEngine.declareDefault(1, keccak256("Missed payment"));
+        loanEngine.declareDefault(1, keccak256("Missed payment"), block.timestamp);
 
         (
             ,
@@ -838,7 +841,8 @@ contract TestLoanEngineComplete is Test {
             1,
             testPrincipal,
             expectedInterest,
-            repaymentAgent
+            repaymentAgent,
+            block.timestamp
         );
 
         // Now try to default and write off a fully repaid loan
@@ -857,7 +861,7 @@ contract TestLoanEngineComplete is Test {
 
         // Default and write off
         vm.startPrank(deployer);
-        loanEngine.declareDefault(1, keccak256("Missed payment"));
+        loanEngine.declareDefault(1, keccak256("Missed payment"), block.timestamp);
         loanEngine.writeOffLoan(1);
         vm.stopPrank();
 
@@ -903,7 +907,7 @@ contract TestLoanEngineComplete is Test {
         _createAndActivateLoan();
 
         vm.startPrank(deployer);
-        loanEngine.declareDefault(1, keccak256("reason"));
+        loanEngine.declareDefault(1, keccak256("reason"), block.timestamp);
         loanEngine.writeOffLoan(1);
 
         vm.expectRevert(LoanEngine.LoanEngine__ZeroRecovery.selector);
@@ -927,7 +931,7 @@ contract TestLoanEngineComplete is Test {
         usdt.approve(address(loanEngine), 1);
 
         vm.prank(deployer);
-        loanEngine.repayLoan(1, 0, 1, repaymentAgent);
+        loanEngine.repayLoan(1, 0, 1, repaymentAgent, block.timestamp);
 
         (, , , , , , , , uint256 interestAccrued, , , , , , , , , ) = loanEngine
             .s_loans(1);
@@ -949,7 +953,7 @@ contract TestLoanEngineComplete is Test {
         usdt.approve(address(loanEngine), 1);
 
         vm.prank(deployer);
-        loanEngine.repayLoan(1, 0, 1, repaymentAgent);
+        loanEngine.repayLoan(1, 0, 1, repaymentAgent, block.timestamp);
 
         (, , , , , , , , uint256 interestAccrued, , , , , , , , , ) = loanEngine
             .s_loans(1);
@@ -1036,7 +1040,7 @@ contract TestLoanEngineComplete is Test {
         usdt.approve(address(loanEngine), partialPrincipal + interest1);
 
         vm.prank(deployer);
-        loanEngine.repayLoan(1, partialPrincipal, interest1, repaymentAgent);
+        loanEngine.repayLoan(1, partialPrincipal, interest1, repaymentAgent, block.timestamp);
 
         // 4. Another partial repayment after 180 more days
         vm.warp(block.timestamp + 180 days);
@@ -1050,7 +1054,7 @@ contract TestLoanEngineComplete is Test {
         usdt.approve(address(loanEngine), remainingPrincipal + interest2);
 
         vm.prank(deployer);
-        loanEngine.repayLoan(1, remainingPrincipal, interest2, repaymentAgent);
+        loanEngine.repayLoan(1, remainingPrincipal, interest2, repaymentAgent, block.timestamp);
 
         // Verify final state
         (
@@ -1108,7 +1112,7 @@ contract TestLoanEngineComplete is Test {
 
         // Default
         vm.startPrank(deployer);
-        loanEngine.declareDefault(1, keccak256("Payment default"));
+        loanEngine.declareDefault(1, keccak256("Payment default"), block.timestamp);
 
         // Write off
         loanEngine.writeOffLoan(1);
