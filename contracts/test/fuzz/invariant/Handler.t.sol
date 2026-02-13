@@ -315,7 +315,8 @@ contract Handler is Test {
         );
 
         // Prepare public inputs
-        bytes32[] memory publicInputs = new bytes32[](11);
+        bytes32 nullifierHash = keccak256(abi.encode(nextLoanId,userIndex,borrowerCommitment, block.timestamp));
+        bytes32[] memory publicInputs = new bytes32[](13);
         publicInputs[0] = creditPolicy.policyScopeHash(activePolicyVersion);
         publicInputs[1] = borrowerCommitment;
         publicInputs[2] = bytes32(uint256(1)); // underwriterKeyX
@@ -327,11 +328,13 @@ contract Handler is Test {
         publicInputs[8] = bytes32(termDays);
         publicInputs[9] = bytes32(0); // industry
         publicInputs[10] = bytes32(block.timestamp); // proofTimestamp
+        publicInputs[11] = bytes32(nextLoanId); // LOAN_ID_INDEX
+        publicInputs[12] = nullifierHash; // NULLIFIER_HASH_INDEX
 
         vm.prank(deployer);
         loanEngine.createLoan(
             borrowerCommitment,
-            keccak256(abi.encode(nextLoanId,userIndex,borrowerCommitment, block.timestamp)), // nullifierHash
+            nullifierHash,
             activePolicyVersion,
             1,
             principalIssued,

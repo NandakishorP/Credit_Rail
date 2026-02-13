@@ -257,7 +257,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         bytes calldata proofData,
         bytes32[] calldata publicInputs
     ) external onlyOwner {
-        if(publicinput.length != TOTAL_PUBLIC_INPUTS){
+        if(publicInputs.length != TOTAL_PUBLIC_INPUTS){
             revert LoanEngine__InvalidPublicInputsLength();
         }
         if (
@@ -325,7 +325,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__InvalidPublicInputs();
         }
 
-        if(publicInputs[LOAN_ID_INDEX] != s_nextLoanId){
+        if(publicInputs[LOAN_ID_INDEX] != bytes32(s_nextLoanId)){
             revert LoanEngine__InvalidPublicInputs();
         }
 
