@@ -49,6 +49,8 @@ fn main(
     loan_term_days: pub u64, // Term in days
     industry_hash: pub Field, // Hash of industry code
     current_timestamp: pub u64, // Current block time (approx)
+    loanId: pub u64,
+    nullifierHash: pub Field,
     // === Private Inputs (hidden from verifier) ===
     // Underwriter signature
     underwriter_signature: [u8; 64],
@@ -92,10 +94,6 @@ fn main(
     tier_term_days: u64,
     tier_active: bool,
 ) {
-    // Suppress unused variable warnings for public inputs used for on-chain binding
-    let _ = tier_id;
-    let _ = industry_hash;
-
     //==============================================================
     //             1. VERIFY BORROWER COMMITMENT
     //==============================================================
@@ -110,6 +108,12 @@ fn main(
         5,
     );
     assert(computed_commitment == borrower_commitment, "Borrower commitment mismatch");
+
+    let computed_nullifier_hash = poseidon2::Poseidon2::hash(
+        [loanId as Field, borrower_secret, loan_principal as Field, attestation_timestamp as Field],
+        4,
+    );
+    assert(computed_nullifier_hash == nullifierHash, "Nullifier mismatch");
 
     //==============================================================
     //             1b. VERIFY ATTESATION AGE

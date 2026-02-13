@@ -52,6 +52,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     error LoanEngine__ProofExpired(uint256 proofTimestamp, uint256 currentTimestamp);
     error LoanEngine__ProofFromFuture(uint256 proofTimestamp, uint256 currentTimestamp);
     error LoanEngine__IndustryExcluded(uint256 policyVersion, bytes32 industry);
+    error LoanEngine__InvalidPublicInputsLength();
 
     modifier isWhiteListedOffRampingEntity(address entity) {
         _isWhiteListedOffRampingEntity(entity);
@@ -167,7 +168,10 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     uint256 public constant ORIGINATION_FEE_BPS_INDEX = 7;
     uint256 public constant TERM_DAYS_INDEX = 8;
     uint256 public constant INDUSTRY_INDEX = 9;
-    uint256 public constant GENERATION_TIMESTAMP_INDEX = 10;  
+    uint256 public constant GENERATION_TIMESTAMP_INDEX = 10;
+    uint256 public constant LOAN_ID_INDEX = 11;
+    uint256 public constant NULLIFIER_HASH_INDEX = 12;
+    uint256 public constant TOTAL_PUBLIC_INPUTS = 13;
 
     /*//////////////////////////////////////////////////////////////
                         EVENTS
@@ -253,7 +257,9 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         bytes calldata proofData,
         bytes32[] calldata publicInputs
     ) external onlyOwner {
-
+        if(publicinput.length != TOTAL_PUBLIC_INPUTS){
+            revert LoanEngine__InvalidPublicInputsLength();
+        }
         if (
             tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED &&
             tranchePool.getPoolState() != TranchePool.PoolState.COMMITED
@@ -316,6 +322,14 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         }
 
         if(publicInputs[INDUSTRY_INDEX] != industry){
+            revert LoanEngine__InvalidPublicInputs();
+        }
+
+        if(publicInputs[LOAN_ID_INDEX] != s_nextLoanId){
+            revert LoanEngine__InvalidPublicInputs();
+        }
+
+        if(publicInputs[NULLIFIER_HASH_INDEX] != nullifierHash){
             revert LoanEngine__InvalidPublicInputs();
         }
 
