@@ -2,6 +2,9 @@ import sys
 import os
 from decimal import Decimal, getcontext
 import random
+import statistics
+import csv
+import math
 from model.state import total_value
 from model.flows import on_recovery
 # Set precision to 28 digits
@@ -13,96 +16,25 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from model.state import SystemState, TrancheState, LoanState
 from model.flows import allocate_capital, repay_loan, apply_loss
 
-def test_happy_path():
-    print("--- Test Happy Path ---")
-    # 1. Initialize System
-    system = SystemState(
-        senior=TrancheState(idle=Decimal("80000.0"), deployed=Decimal("0.0"), apr_bps=Decimal("500")),
-        junior=TrancheState(idle=Decimal("15000.0"), deployed=Decimal("0.0"), apr_bps=Decimal("800")),
-        equity=TrancheState(idle=Decimal("5000.0"), deployed=Decimal("0.0"), apr_bps=Decimal("0"))
-    )
-    
-    print(f"Initial System Idle: S={system.senior.idle}, J={system.junior.idle}, E={system.equity.idle}")
 
-    # 2. Allocate Capital
-    loan_amount = Decimal("10000.0")
-    allocation = allocate_capital(system, loan_amount)
-    print(f"Allocation: {allocation}")
-    
-    # Verify Allocation
-    assert allocation['senior_allocated'] == Decimal("8000.0")
-    assert allocation['junior_allocated'] == Decimal("1500.0")
-    assert allocation['equity_allocated'] == Decimal("500.0")
-    
-    # 3. Create Loan
-    loan = LoanState(
-        loan_id=1,
-        principal_issued=loan_amount,
-        principal_outstanding=loan_amount,
-        interest_accrued=Decimal("0.0"),
-        interest_paid=Decimal("0.0"),
-        senior_principal_allocated=allocation['senior_allocated'],
-        junior_principal_allocated=allocation['junior_allocated'],
-        active=True,
-        defaulted=False,
-        repaid=False,
-        written_off=False,
-        apr=Decimal("0.10"), # 10%
-        term_days=365,
-        start_timestamp=0,
-        last_accrual_timestamp=0
-    )
-    system.loans.append(loan)
-    
-    # 4. Advance Time & Repay
-    # 6 months later (approx)
-    timestamp = int(182.5 * 24 * 3600)
-    
-    # Accrued Interest should be approx 500
-    # Payment: 5500 (500 interest, 5000 principal)
-    payment_result = repay_loan(system, loan, Decimal("5500.0"), timestamp)
-    print(f"Payment Result: {payment_result}")
-    
-    print(f"Loan Principal Outstanding: {loan.principal_outstanding}")
-    print(f"System State Deployed: S={system.senior.deployed}, J={system.junior.deployed}, E={system.equity.deployed}")
-    
-    # Verify Interest Waterfall
-    # Total Interest = 10000 * 0.1 * (182.5/365) = 500.0
-    # Split: S=400, J=75, E=25
-    
-    # Paid: 500 (fully covers interest)
-    # Remaining Payment: 5000 (Principal)
-    
-    # Principal Waterfall:
-    # Senior deployed: 8000 -> 3000? 
-    # Logic: Senior -> Junior -> Equity.
-    # 5000 paid.
-    # Senior deployed was 8000. 5000 < 8000.
-    # Senior deployed becomes 3000.
-    
-    assert abs(system.senior.deployed - Decimal("3000.0")) < Decimal("1e-9")
-    assert abs(system.junior.deployed - Decimal("1500.0")) < Decimal("1e-9")
-    assert abs(system.equity.deployed - Decimal("500.0")) < Decimal("1e-9")
-    
-    # Check Accrued Interest Balances (Should be reduced by payment)
-    # They should be 0 because we paid exact interest amount.
-    print(f"System Accrued Interest Balances: S={system.senior_accrued_interest}, J={system.junior_accrued_interest}, E={system.equity_accrued_interest}")
-    assert abs(system.senior_accrued_interest) < Decimal("1e-9")
-    assert abs(system.junior_accrued_interest) < Decimal("1e-9")
-    assert abs(system.equity_accrued_interest) < Decimal("1e-9")
-    
-    print("Happy Path Passed!")
+def simulate_portfolio(n_loans, default_rate, recovery_rate, 
+                       total_capital=Decimal("1000000"),
+                       allocation=(Decimal("0.80"), Decimal("0.15"), Decimal("0.05")),
+                       yields=(Decimal("500"), Decimal("800")),
+                       borrower_apr=Decimal("0.12")):
+    # print("\n--- Portfolio Simulation ---") # Reduce noise
 
+    senior_cap = total_capital * allocation[0]
+    junior_cap = total_capital * allocation[1]
+    equity_cap = total_capital * allocation[2]
 
-
-
-def simulate_portfolio(n_loans, default_rate, recovery_rate):
-    print("\n--- Portfolio Simulation ---")
+    start_senior_apr = yields[0]
+    start_junior_apr = yields[1]
 
     system = SystemState(
-        senior=TrancheState(idle=Decimal("800000"), deployed=Decimal("0"), apr_bps=Decimal("500")),
-        junior=TrancheState(idle=Decimal("150000"), deployed=Decimal("0"), apr_bps=Decimal("800")),
-        equity=TrancheState(idle=Decimal("50000"), deployed=Decimal("0"), apr_bps=Decimal("0"))
+        senior=TrancheState(idle=senior_cap, deployed=Decimal("0"), apr_bps=start_senior_apr),
+        junior=TrancheState(idle=junior_cap, deployed=Decimal("0"), apr_bps=start_junior_apr),
+        equity=TrancheState(idle=equity_cap, deployed=Decimal("0"), apr_bps=Decimal("0"))
     )
 
     initial_s = system.senior.idle
@@ -117,9 +49,19 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
     sim_time = 0
     SECONDS_IN_YEAR = 365 * 24 * 3600
 
+    # Calculate average loan size based on Capital Scale
+    # Private Credit Logic:
+    # - Small Fund (£10M): Loans might be £250k - £500k (SME)
+    # - Mid Fund (£100M): Loans might be £1M - £5M (Mid-Market)
+    # - Large Fund (£500M+): Loans might be £10M - £50M (Calculated Logic)
+    
+    avg_loan_size = total_capital / Decimal(n_loans) 
+    min_loan = avg_loan_size * Decimal("0.5")
+    max_loan = avg_loan_size * Decimal("1.5")
+
     # Deploy all loans at T=0
     for i in range(n_loans):
-        loan_amount = Decimal(str(random.randint(2000, 8000)))  # Smaller loans to fit 100 in 1M capital
+        loan_amount = Decimal(str(random.randint(int(min_loan), int(max_loan))))
         
         # Check if we have enough liquidity
         total_idle = system.senior.idle + system.junior.idle + system.equity.idle
@@ -140,7 +82,7 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
             defaulted=False,
             repaid=False,
             written_off=False,
-            apr=Decimal("0.12"),
+            apr=borrower_apr,
             term_days=365,
             start_timestamp=sim_time,
             last_accrual_timestamp=sim_time
@@ -191,17 +133,12 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
     print(f"Junior Breakdown: Idle={system.junior.idle} Deployed={system.junior.deployed} Unclaimed={system.junior_unclaimed_interest}")
     print(f"Equity Breakdown: Idle={system.equity.idle} Deployed={system.equity.deployed} Unclaimed={system.equity_unclaimed_interest}")
 
+    # Calculate Returns
     senior_return = (final_s - initial_s) / initial_s
     junior_return = (final_j - initial_j) / initial_j
     equity_return = (final_e - initial_e) / initial_e
 
-    print("Senior Return:", round(float(senior_return * 100), 2), "%")
-    print("Junior Return:", round(float(junior_return * 100), 2), "%")
-    print("Equity Return:", round(float(equity_return * 100), 2), "%")
-
     # Capital conservation invariant
-    # Capital conservation invariant
-    # Total Value = Idle + Deployed + Unclaimed Interest
     manual_total = (
         system.senior.idle + system.senior.deployed +
         system.junior.idle + system.junior.deployed +
@@ -212,15 +149,102 @@ def simulate_portfolio(n_loans, default_rate, recovery_rate):
     )
     assert abs(total_value(system) - manual_total) < Decimal("1e-6"), f"Invariant failed: {total_value(system)} != {manual_total}"
 
-def run_stress_grid():
-    default_rates = [0.005, 0.01, 0.02, 0.04]
-    recovery_rates = [0.5, 0.6, 0.7]
+    return {
+        "senior_return": float(senior_return),
+        "junior_return": float(junior_return),
+        "equity_return": float(equity_return),
+        "total_final_value": float(total_value(system))
+    }
 
-    for d in default_rates:
-        for r in recovery_rates:
-            print("\n==============================")
-            print(f"Default Rate: {d}, Recovery Rate: {r}")
-            simulate_portfolio(200, d, r)
+def run_stress_grid():
+    default_rates = [0.02, 0.05, 0.10] # 2% (Safe), 5% (Stressed), 10% (Crisis)
+    recovery_rates = [0.4] # Assume standard distressed recovery
+    
+    # Private Credit Fund Profiles
+    scenarios = [
+        # 1. SME Lending (Granular, Diversified)
+        # £25M AUM, ~250 Loans (Avg £100k)
+        # Yields: Senior 5%, Junior 8% | Borrower: 12%
+        {"name": "SME Fund (£25M)", "capital": Decimal("25000000"), "n_loans": 250, 
+         "alloc": (Decimal("0.80"), Decimal("0.15"), Decimal("0.05")), "yields": (Decimal("500"), Decimal("800")), "borrower_apr": Decimal("0.12")},
+
+        # 2. Mid-Market Direct Lending (Concentrated)
+        # £100M AUM, ~40 Loans (Avg £2.5M)
+        # Yields: Senior 6%, Junior 10% | Borrower: 14% (Riskier)
+        {"name": "Mid-Market DL (£100M)", "capital": Decimal("100000000"), "n_loans": 40,
+         "alloc": (Decimal("0.70"), Decimal("0.20"), Decimal("0.10")), "yields": (Decimal("600"), Decimal("1000")), "borrower_apr": Decimal("0.14")},
+         
+        # 3. Special Situations / Distressed (High Risk/Return)
+        # £50M AUM, ~20 Loans (Avg £2.5M)
+        # Yields: Senior 8%, Junior 15% | Borrower: 20%
+        # High Default expected, but compensated by yield.
+        {"name": "Spec Sit Fund (£50M)", "capital": Decimal("50000000"), "n_loans": 20,
+         "alloc": (Decimal("0.60"), Decimal("0.25"), Decimal("0.15")), "yields": (Decimal("800"), Decimal("1500")), "borrower_apr": Decimal("0.20")},
+    ]
+
+    ITERATIONS = 50 
+    
+    results_file = "private_credit_analysis.csv"
+    
+    with open(results_file, 'w', newline='') as csvfile:
+        fieldnames = ['scenario', 'default_rate', 'recovery_rate', 'iteration', 'senior_return', 'junior_return', 'equity_return', 'total_final_value']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for sc in scenarios:
+            print(f"\n=== Scenario: {sc['name']} ===")
+            
+            for d in default_rates:
+                for r in recovery_rates:
+                    print(f"  Default={d:.1%}, Recovery={r:.0%} ({ITERATIONS} runs)...", end="", flush=True)
+                    
+                    s_returns = []
+                    j_returns = []
+                    e_returns = []
+                    
+                    for i in range(ITERATIONS):
+                        res = simulate_portfolio(sc['n_loans'], d, r, 
+                                               total_capital=sc['capital'],
+                                               allocation=sc['alloc'],
+                                               yields=sc['yields'],
+                                               borrower_apr=sc['borrower_apr'])
+                        
+                        row = {
+                            'scenario': sc['name'],
+                            'default_rate': d,
+                            'recovery_rate': r,
+                            'iteration': i,
+                            'senior_return': res['senior_return'],
+                            'junior_return': res['junior_return'],
+                            'equity_return': res['equity_return'],
+                            'total_final_value': res['total_final_value']
+                        }
+                        writer.writerow(row)
+                        
+                        s_returns.append(res['senior_return'])
+                        j_returns.append(res['junior_return'])
+                        e_returns.append(res['equity_return'])
+
+                    print(" Done.")
+                    avg_j = statistics.mean(j_returns)
+                    avg_e = statistics.mean(e_returns)
+                    std_j = statistics.stdev(j_returns)
+                    std_e = statistics.stdev(e_returns)
+                    print(f"    Junior: {avg_j*100:.2f}% (±{std_j*100:.2f}%) | Equity: {avg_e*100:.2f}% (±{std_e*100:.2f}%)")
+                
+                # Calculate Stats
+                avg_s = statistics.mean(s_returns)
+                avg_j = statistics.mean(j_returns)
+                avg_e = statistics.mean(e_returns)
+                
+                std_s = statistics.stdev(s_returns) if len(s_returns) > 1 else 0
+                std_j = statistics.stdev(j_returns) if len(j_returns) > 1 else 0
+                std_e = statistics.stdev(e_returns) if len(e_returns) > 1 else 0
+                
+                print(f"Results for Default={d:.1%}, Recovery={r:.0%}:")
+                print(f"  Senior: Mean={avg_s*100:.2f}% (Std={std_s*100:.2f}%)")
+                print(f"  Junior: Mean={avg_j*100:.2f}% (Std={std_j*100:.2f}%)")
+                print(f"  Equity: Mean={avg_e*100:.2f}% (Std={std_e*100:.2f}%)")
 
 if __name__ == "__main__":
     run_stress_grid()

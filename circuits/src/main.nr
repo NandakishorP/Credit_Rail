@@ -152,7 +152,7 @@ fn main(
             borrower_interest_coverage as Field,
             borrower_current_ratio as Field,
             borrower_ebitda_margin_bps as Field,
-            industry_hash, // Bind industry to the signature too
+            industry_hash, // Bind industry to the signature
             attestation_timestamp as Field, // Bind timestamp to signature (Prevent Replay)
         ],
         12,
