@@ -13,7 +13,8 @@ mode = "3"
 gas_price = 0
 block_gas_limit = 100000000
 remappings = [
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts"
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts",
+    "@poseidon2-evm/=lib/poseidon2-evm/src/"
 ]
 
 [fuzz]

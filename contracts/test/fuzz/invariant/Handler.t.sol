@@ -7,6 +7,8 @@ import {TranchePool} from "../../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
+import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
+import {Field} from "@poseidon2-evm/Field.sol";
 
 contract Handler is Test {
     LoanEngine loanEngine;
@@ -303,12 +305,12 @@ contract Handler is Test {
             return;
         }
 
-        bytes32 borrowerCommitment = keccak256(
+        bytes32 borrowerCommitment = bytes32(uint256(keccak256(
             abi.encodePacked(
                 loanBorrowers[userIndex % loanBorrowers.length],
                 userIndex
             )
-        );
+        )) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
 
         // Get nextLoanId BEFORE vm.prank to avoid consuming the prank
         uint256 nextLoanId = loanEngine.getNextLoanId();
@@ -321,21 +323,16 @@ contract Handler is Test {
         );
 
         // Prepare public inputs
+        // Prepare public inputs
         bytes32 nullifierHash = keccak256(abi.encode(nextLoanId,userIndex,borrowerCommitment, block.timestamp));
-        bytes32[] memory publicInputs = new bytes32[](13);
+        bytes32[] memory publicInputs = new bytes32[](3);
         publicInputs[0] = creditPolicy.policyScopeHash(activePolicyVersion);
-        publicInputs[1] = borrowerCommitment;
-        publicInputs[2] = bytes32(uint256(1)); // underwriterKeyX
-        publicInputs[3] = bytes32(uint256(2)); // underwriterKeyY
-        publicInputs[4] = bytes32(uint256(1)); // tierId (tier 1)
-        publicInputs[5] = bytes32(principalIssued);
-        publicInputs[6] = bytes32(uint256(500)); // aprBps (500)
-        publicInputs[7] = bytes32(originationFeeBps);
-        publicInputs[8] = bytes32(termDays);
-        publicInputs[9] = bytes32(0); // industry
-        publicInputs[10] = bytes32(block.timestamp); // proofTimestamp
-        publicInputs[11] = bytes32(nextLoanId); // LOAN_ID_INDEX
-        publicInputs[12] = nullifierHash; // NULLIFIER_HASH_INDEX
+        publicInputs[2] = nullifierHash; // NULLIFIER_HASH_INDEX
+
+        bytes32 keyX = bytes32(uint256(1));
+        bytes32 keyY = bytes32(uint256(2));
+        
+        publicInputs[1] = bytes32(_computeLoanHash(borrowerCommitment, keyX, keyY, 1, principalIssued, 500, originationFeeBps, termDays, bytes32(0), block.timestamp, nextLoanId));
 
         vm.prank(deployer);
         loanEngine.createLoan(
@@ -348,6 +345,9 @@ contract Handler is Test {
             originationFeeBps,
             termDays,
             bytes32(0), // industry
+            keyX,
+            keyY,
+            block.timestamp,
             proofData,
             publicInputs
         );
@@ -781,6 +781,34 @@ contract Handler is Test {
 
     function _min(uint256 a, uint256 b) internal pure returns (uint256) {
         return a < b ? a : b;
+    }
+
+    function _computeLoanHash(
+        bytes32 borrowerCommitment,
+        bytes32 underwriterKeyX,
+        bytes32 underwriterKeyY,
+        uint8 tierId,
+        uint256 principal,
+        uint256 apr,
+        uint256 fee,
+        uint256 term,
+        bytes32 industry,
+        uint256 timestamp,
+        uint256 loanId
+    ) internal view returns (uint256) {
+        Field.Type[] memory inputs = new Field.Type[](11);
+        inputs[0] = Field.toField(uint256(borrowerCommitment));
+        inputs[1] = Field.toField(uint256(underwriterKeyX));
+        inputs[2] = Field.toField(uint256(underwriterKeyY));
+        inputs[3] = Field.toField(uint256(tierId));
+        inputs[4] = Field.toField(principal);
+        inputs[5] = Field.toField(apr);
+        inputs[6] = Field.toField(fee);
+        inputs[7] = Field.toField(term);
+        inputs[8] = Field.toField(uint256(industry));
+        inputs[9] = Field.toField(timestamp);
+        inputs[10] = Field.toField(loanId);
+        return Field.toUint256(Poseidon2(address(loanEngine.poseidon2())).hash(inputs));
     }
 
     function _accrueInterest(uint256 loanId) internal view returns (uint256) {

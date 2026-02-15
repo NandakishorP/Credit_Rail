@@ -336,8 +336,11 @@ contract EchidnaHandler {
             originationFeeBps,
             termDays,
             bytes32(0),
+            bytes32(0),
+            bytes32(0),
+            block.timestamp,
             proofData,
-            new bytes32[](0)
+            new bytes32[](3)
         ) {} catch {}
     }
     

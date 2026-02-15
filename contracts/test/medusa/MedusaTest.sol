@@ -315,8 +315,11 @@ contract MedusaTest {
             originationFeeBps,
             termDays,
             bytes32(0),
+            bytes32(0), // underwriterKeyX
+            bytes32(0), // underwriterKeyY
+            block.timestamp,
             proofData,
-            new bytes32[](0)
+            new bytes32[](3)
         );
     }
     
