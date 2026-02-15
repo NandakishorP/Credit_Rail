@@ -9,8 +9,8 @@ import {CreditRailStateFullFuzzTest} from "./CreditRailStateFullFuzzTest.t.sol";
 contract EchidnaCreditRailTest is CreditRailStateFullFuzzTest {
     
     constructor() CreditRailStateFullFuzzTest() {
-        // The parent constructor runs automatically, setting up:
-        // handler, loanEngine, tranchePool, etc.
+        // Since we changed the parent to use setUp(), we must call it here explicitly
+        setUp();
     }
 
     // -----------------------------------------------------------------------

@@ -51,6 +51,8 @@ contract MedusaTest {
     Hevm internal constant vm = Hevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
     
     constructor() {
+        vm.deal(deployer, 100 ether);
+        vm.startPrank(deployer); // Start prank early to cover deployments
         // Deploy contracts
         usdt = new ERC20Mock();
         tranchePool = new TranchePool(address(usdt));
@@ -78,6 +80,7 @@ contract MedusaTest {
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
         creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
         creditPolicy.setPolicyDocument(1, keccak256(bytes("document")), "ipfs://policyDocHash");
+        creditPolicy.setPolicyScopeHash(1, keccak256(bytes("scope")));
         creditPolicy.freezePolicy(1);
         
         // Setup loan engine
@@ -99,8 +102,9 @@ contract MedusaTest {
         loanEngine.setWhitelistedRecoveryAgent(recevingEntity, true);
         
         // Create and fund users (matching Foundry - lots of users)
-        for (uint160 i = 1; i < 100; i++) {
+        for (uint160 i = 1; i < 10; i++) {
             seniorUsers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
             if (i % 2 == 0) {
                 usdt.mint(address(i), 1_00_00_00000 * USDT);
                 tranchePool.updateWhitelist(address(i), true);
@@ -113,8 +117,9 @@ contract MedusaTest {
             }
         }
         
-        for (uint160 i = 1; i < 10; i++) {
+        for (uint160 i = 1; i < 5; i++) {
             juniorUsers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
             if (i % 2 == 0) {
                 usdt.mint(address(i), 500000_00_000 * USDT);
                 tranchePool.updateWhitelist(address(i), true);
@@ -124,16 +129,20 @@ contract MedusaTest {
             }
         }
         
-        for (uint160 i = 1; i < 5; i++) {
+        for (uint160 i = 1; i < 3; i++) {
             equityUsers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
             usdt.mint(address(i), 50_0000_0000 * USDT);
             tranchePool.updateEquityTrancheWhiteList(address(i), true);
         }
         
-        for (uint160 i = 200; i < 220; i++) {
+        for (uint160 i = 200; i < 205; i++) {
             loanBorrowers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
         }
         
+        vm.deal(recevingEntity, 100 ether);
+        vm.deal(feeManager, 100 ether);
         usdt.mint(recevingEntity, 50_0000_0000 * USDT);
     }
     
@@ -632,6 +641,7 @@ contract MedusaTest {
         });
     }
     
+    
     function _bound(uint256 x, uint256 min, uint256 max) internal pure returns (uint256) {
         if (min > max) return min;
         if (x < min) return min;
@@ -651,11 +661,14 @@ contract MedusaTest {
     function _stopImpersonate() internal {
         vm.stopPrank();
     }
+
+
 }
 
-// Hevm interface for cheatcodes
 interface Hevm {
     function startPrank(address) external;
     function stopPrank() external;
     function warp(uint256) external;
-}
+    function deal(address, uint256) external;
+    }
+

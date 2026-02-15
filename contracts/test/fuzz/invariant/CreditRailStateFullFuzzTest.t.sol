@@ -23,6 +23,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     address public deployer = makeAddr("deployer");
 
     function setUp() public {  // Change from constructor to setUp
+        vm.deal(deployer, 100 ether);
         vm.startPrank(deployer);
         usdt = new ERC20Mock();
         tranchePool = new TranchePool(address(usdt));
@@ -66,8 +67,8 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         loanEngine.setMaxOriginationFeeBps(500);
         tranchePool.setLoanEngine(address(loanEngine));
 
-        handler = new Handler(loanEngine, tranchePool, creditPolicy, usdt);
         vm.stopPrank();
+        handler = new Handler(loanEngine, tranchePool, creditPolicy, usdt);
         
         bytes4[] memory selectors = new bytes4[](18);
         selectors[0] = handler.depositSeniorTranche.selector;

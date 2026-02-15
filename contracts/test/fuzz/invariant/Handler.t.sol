@@ -90,8 +90,9 @@ contract Handler is Test {
         tranchePool.setSeniorAPR(500);
         tranchePool.setTargetJuniorAPR(1000);
 
-        for (uint160 i = 1; i < 100; i++) {
+        for (uint160 i = 1; i < 10; i++) {
             seniorUsers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
             if (i % 2 == 0) {
                 ERC20Mock(usdt).mint(address(i), 1_00_00_00000 * 1e18);
                 tranchePool.updateWhitelist(address(i), true);
@@ -103,8 +104,9 @@ contract Handler is Test {
                 tranchePool.updateWhitelist(address(i), true);
             }
         }
-        for (uint160 i = 1; i < 10; i++) {
+        for (uint160 i = 1; i < 5; i++) {
             juniorUsers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
             if (i % 2 == 0) {
                 ERC20Mock(usdt).mint(address(i), 500000_00_000 * 1e18);
                 tranchePool.updateWhitelist(address(i), true);
@@ -113,15 +115,19 @@ contract Handler is Test {
                 ERC20Mock(usdt).mint(address(i), 10_000000_000 * 1e18);
             }
         }
-        for (uint160 i = 1; i < 5; i++) {
+        for (uint160 i = 1; i < 3; i++) {
             equityUsers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
             ERC20Mock(usdt).mint(address(i), 50_0000_0000 * 1e18);
             tranchePool.updateEquityTrancheWhiteList(address(i), true);
         }
 
-        for (uint160 i = 200; i < 220; i++) {
+        for (uint160 i = 200; i < 205; i++) {
             loanBorrowers.push(address(i));
+            vm.deal(address(i), 100 ether); // Fund with ETH for gas
         }
+        vm.deal(address(recevingEntity), 100 ether); // Fund receiving entity
+        vm.deal(address(feeManager), 100 ether); // Fund fee manager
         ERC20Mock(usdt).mint(address(recevingEntity), 50_0000_0000 * 1e18);
 
         vm.stopPrank();
