@@ -39,18 +39,19 @@ use poseidon::poseidon2;
 fn main(
     // === Public Inputs (exposed to verifier) ===
     policy_version_hash: pub Field, // Hash of policy version (commitment to frozen policy)
-    borrower_commitment: pub Field, // Hash(secret || borrower_data)
-    underwriter_public_key_x: pub Field, // Underwriter PK X
-    underwriter_public_key_y: pub Field, // Underwriter PK Y
-    tier_id: pub u8, // Tier ID from policy
-    loan_principal: pub u64, // Requested loan principal
-    loan_apr_bps: pub u64, // Interest rate in basis points
-    loan_origination_fee_bps: pub u64, // Origination fee in basis points
-    loan_term_days: pub u64, // Term in days
-    industry_hash: pub Field, // Hash of industry code
-    current_timestamp: pub u64, // Current block time (approx)
-    loanId: pub u64,
+    loan_hash: pub Field,
     nullifierHash: pub Field,
+    borrower_commitment: Field, // Hash(secret || borrower_data)
+    underwriter_public_key_x: Field, // Underwriter PK X
+    underwriter_public_key_y: Field, // Underwriter PK Y
+    tier_id: u8, // Tier ID from policy
+    loan_principal: u64, // Requested loan principal
+    loan_apr_bps: u64, // Interest rate in basis points
+    loan_origination_fee_bps: u64, // Origination fee in basis points
+    loan_term_days: u64, // Term in days
+    industry_hash: Field, // Hash of industry code
+    current_timestamp: u64, // Current block time (approx)
+    loanId: u64,
     // === Private Inputs (hidden from verifier) ===
     // Underwriter signature
     underwriter_signature: [u8; 64],
@@ -94,20 +95,35 @@ fn main(
     tier_term_days: u64,
     tier_active: bool,
 ) {
+    let computed_loan_hash = compute_loan_hash(
+        borrower_commitment,
+        underwriter_public_key_x,
+        underwriter_public_key_y,
+        tier_id,
+        loan_principal,
+        loan_apr_bps,
+        loan_origination_fee_bps,
+        loan_term_days,
+        industry_hash,
+        current_timestamp,
+        loanId,
+    );
+
+    assert(computed_loan_hash == loan_hash, "Loan hash mismatch");
     //==============================================================
     //             1. VERIFY BORROWER COMMITMENT
     //==============================================================
-    let computed_commitment = poseidon2::Poseidon2::hash(
-        [
-            borrower_secret,
-            borrower_annual_revenue as Field,
-            borrower_ebitda as Field,
-            borrower_tangible_net_worth as Field,
-            borrower_business_age_days as Field,
-        ],
-        5,
+    //==============================================================
+    //             1. VERIFY BORROWER COMMITMENT
+    //==============================================================
+    verify_borrower_commitment(
+        borrower_commitment,
+        borrower_secret,
+        borrower_annual_revenue,
+        borrower_ebitda,
+        borrower_tangible_net_worth,
+        borrower_business_age_days,
     );
-    assert(computed_commitment == borrower_commitment, "Borrower commitment mismatch");
 
     let computed_nullifier_hash = poseidon2::Poseidon2::hash(
         [loanId as Field, borrower_secret, loan_principal as Field, attestation_timestamp as Field],
@@ -118,18 +134,11 @@ fn main(
     //==============================================================
     //             1b. VERIFY ATTESATION AGE
     //==============================================================
-    // Ensure the attestation is not expired
-    assert(current_timestamp >= attestation_timestamp, "Attestation time in future");
-
-    // Guard against overflow: Ensure policy max age is reasonable (e.g., < 27 years)
-    assert(policy_max_attestation_age_days < 10000, "Policy age too large");
-    let max_age_seconds = policy_max_attestation_age_days * 86400;
-
-    // Guard against u64 overflow in addition
-    // 0xffffffffffffffff = 18446744073709551615
-    assert(attestation_timestamp <= 18446744073709551615 - max_age_seconds, "Timestamp overflow");
-
-    assert(current_timestamp <= attestation_timestamp + max_age_seconds, "Attestation expired");
+    verify_attestation_age(
+        current_timestamp,
+        attestation_timestamp,
+        policy_max_attestation_age_days,
+    );
 
     //==============================================================
     //             1c. VERIFY UNDERWRITER SIGNATURE
@@ -180,32 +189,28 @@ fn main(
     //==============================================================
     // We must hash ALL policy constraints to ensure the proof is bound
     // to the specific frozen policy version.
-    let computed_policy_hash = poseidon2::Poseidon2::hash(
-        [
-            policy_min_annual_revenue as Field,
-            policy_min_ebitda as Field,
-            policy_min_tangible_net_worth as Field,
-            policy_min_business_age_days as Field,
-            policy_max_defaults_36_months as Field,
-            policy_bankruptcy_excluded as Field,
-            policy_max_debt_to_ebitda as Field,
-            policy_min_interest_coverage as Field,
-            policy_min_current_ratio as Field,
-            policy_min_ebitda_margin_bps as Field,
-            policy_max_attestation_age_days as Field,
-            // Tier constraints
-            tier_id as Field, // Bind Tier ID to policy hash
-            tier_min_revenue as Field,
-            tier_max_revenue as Field,
-            tier_min_ebitda as Field,
-            tier_max_debt_to_ebitda as Field,
-            tier_max_loan_to_ebitda as Field,
-            tier_interest_rate_bps as Field,
-            tier_origination_fee_bps as Field,
-            tier_term_days as Field,
-            tier_active as Field,
-        ],
-        21,
+    let computed_policy_hash = compute_policy_hash(
+        policy_min_annual_revenue,
+        policy_min_ebitda,
+        policy_min_tangible_net_worth,
+        policy_min_business_age_days,
+        policy_max_defaults_36_months,
+        policy_bankruptcy_excluded,
+        policy_max_debt_to_ebitda,
+        policy_min_interest_coverage,
+        policy_min_current_ratio,
+        policy_min_ebitda_margin_bps,
+        policy_max_attestation_age_days,
+        tier_id,
+        tier_min_revenue,
+        tier_max_revenue,
+        tier_min_ebitda,
+        tier_max_debt_to_ebitda,
+        tier_max_loan_to_ebitda,
+        tier_interest_rate_bps,
+        tier_origination_fee_bps,
+        tier_term_days,
+        tier_active,
     );
     assert(computed_policy_hash == policy_version_hash, "Policy hash mismatch");
 
@@ -250,6 +255,129 @@ fn main(
 
     // Industry exclusion is verified on-chain by LoanEngine check against
     // the industry_hash public input and the policy's excluded list.
+}
+
+fn compute_loan_hash(
+    borrower_commitment: Field,
+    underwriter_public_key_x: Field,
+    underwriter_public_key_y: Field,
+    tier_id: u8,
+    loan_principal: u64,
+    loan_apr_bps: u64,
+    loan_origination_fee_bps: u64,
+    loan_term_days: u64,
+    industry_hash: Field,
+    current_timestamp: u64,
+    loanId: u64,
+) -> Field {
+    poseidon2::Poseidon2::hash(
+        [
+            borrower_commitment,
+            underwriter_public_key_x,
+            underwriter_public_key_y,
+            tier_id as Field,
+            loan_principal as Field,
+            loan_apr_bps as Field,
+            loan_origination_fee_bps as Field,
+            loan_term_days as Field,
+            industry_hash,
+            current_timestamp as Field,
+            loanId as Field,
+        ],
+        11,
+    )
+}
+
+fn verify_borrower_commitment(
+    borrower_commitment: Field,
+    borrower_secret: Field,
+    borrower_annual_revenue: u64,
+    borrower_ebitda: u64,
+    borrower_tangible_net_worth: u64,
+    borrower_business_age_days: u64,
+) {
+    let computed_commitment = poseidon2::Poseidon2::hash(
+        [
+            borrower_secret,
+            borrower_annual_revenue as Field,
+            borrower_ebitda as Field,
+            borrower_tangible_net_worth as Field,
+            borrower_business_age_days as Field,
+        ],
+        5,
+    );
+    assert(computed_commitment == borrower_commitment, "Borrower commitment mismatch");
+}
+
+fn verify_attestation_age(
+    current_timestamp: u64,
+    attestation_timestamp: u64,
+    policy_max_attestation_age_days: u64,
+) {
+    // Ensure the attestation is not expired
+    assert(current_timestamp >= attestation_timestamp, "Attestation time in future");
+
+    // Guard against overflow: Ensure policy max age is reasonable (e.g., < 27 years)
+    assert(policy_max_attestation_age_days < 10000, "Policy age too large");
+    let max_age_seconds = policy_max_attestation_age_days * 86400;
+
+    // Guard against u64 overflow in addition
+    // 0xffffffffffffffff = 18446744073709551615
+    assert(attestation_timestamp <= 18446744073709551615 - max_age_seconds, "Timestamp overflow");
+
+    assert(current_timestamp <= attestation_timestamp + max_age_seconds, "Attestation expired");
+}
+
+fn compute_policy_hash(
+    policy_min_annual_revenue: u64,
+    policy_min_ebitda: u64,
+    policy_min_tangible_net_worth: u64,
+    policy_min_business_age_days: u64,
+    policy_max_defaults_36_months: u64,
+    policy_bankruptcy_excluded: bool,
+    policy_max_debt_to_ebitda: u64,
+    policy_min_interest_coverage: u64,
+    policy_min_current_ratio: u64,
+    policy_min_ebitda_margin_bps: u64,
+    policy_max_attestation_age_days: u64,
+    tier_id: u8,
+    tier_min_revenue: u64,
+    tier_max_revenue: u64,
+    tier_min_ebitda: u64,
+    tier_max_debt_to_ebitda: u64,
+    tier_max_loan_to_ebitda: u64,
+    tier_interest_rate_bps: u64,
+    tier_origination_fee_bps: u64,
+    tier_term_days: u64,
+    tier_active: bool,
+) -> Field {
+    poseidon2::Poseidon2::hash(
+        [
+            policy_min_annual_revenue as Field,
+            policy_min_ebitda as Field,
+            policy_min_tangible_net_worth as Field,
+            policy_min_business_age_days as Field,
+            policy_max_defaults_36_months as Field,
+            policy_bankruptcy_excluded as Field,
+            policy_max_debt_to_ebitda as Field,
+            policy_min_interest_coverage as Field,
+            policy_min_current_ratio as Field,
+            policy_min_ebitda_margin_bps as Field,
+            policy_max_attestation_age_days as Field,
+            // Tier constraints
+            tier_id as Field, // Bind Tier ID to policy hash
+            tier_min_revenue as Field,
+            tier_max_revenue as Field,
+            tier_min_ebitda as Field,
+            tier_max_debt_to_ebitda as Field,
+            tier_max_loan_to_ebitda as Field,
+            tier_interest_rate_bps as Field,
+            tier_origination_fee_bps as Field,
+            tier_term_days as Field,
+            tier_active as Field,
+        ],
+        21,
+    )
 }
 
 fn validate_policy_compliance(
@@ -2185,4 +2313,135 @@ fn test_boundary_business_age_one_below_min() {
         100,
         365,
     );
+}
+
+#[test]
+fn test_loan_hash_computation() {
+    let hash = compute_loan_hash(
+        123, // commitment
+        456, // pk_x
+        789, // pk_y
+        1, // tier_id
+        100000, // principal
+        500, // apr
+        100, // fee
+        365, // term
+        111, // industry
+        1625097600, // timestamp
+        999, // loanId
+    );
+    // Since poseidon is deterministic, we can just assert it runs and returns a field.
+    assert(hash != 0);
+}
+
+// ----------------------------------------------------
+// New Unit Tests for Logic Helper Functions
+// ----------------------------------------------------
+
+#[test]
+fn test_verify_attestation_age_valid() {
+    let now: u64 = 100000;
+    let attested: u64 = 95000;
+    let max_age_days: u64 = 1; // 86400 seconds
+    // 95000 + 86400 = 181400 > 100000. Valid.
+    verify_attestation_age(now, attested, max_age_days);
+}
+
+#[test(should_fail_with = "Attestation expired")]
+fn test_verify_attestation_age_expired() {
+    let now: u64 = 200000;
+    let attested: u64 = 100000;
+    let max_age_days: u64 = 1; // 86400 seconds
+    // 100000 + 86400 = 186400 < 200000. Expired.
+    verify_attestation_age(now, attested, max_age_days);
+}
+
+#[test(should_fail_with = "Attestation time in future")]
+fn test_verify_attestation_future() {
+    let now: u64 = 100000;
+    let attested: u64 = 100001; // Future
+    let max_age_days: u64 = 1;
+    verify_attestation_age(now, attested, max_age_days);
+}
+
+#[test]
+fn test_verify_borrower_commitment_valid() {
+    let secret = 123;
+    let rev = 100;
+    let ebitda = 50;
+    let nw = 200;
+    let age = 365;
+
+    let expected_commitment = poseidon2::Poseidon2::hash(
+        [secret, rev as Field, ebitda as Field, nw as Field, age as Field],
+        5,
+    );
+
+    verify_borrower_commitment(expected_commitment, secret, rev, ebitda, nw, age);
+}
+
+#[test(should_fail_with = "Borrower commitment mismatch")]
+fn test_verify_borrower_commitment_invalid() {
+    let secret = 123;
+    let rev = 100;
+    let ebitda = 50;
+    let nw = 200;
+    let age = 365;
+
+    let fake_commitment = 999999; // Random wrong commitment
+
+    verify_borrower_commitment(fake_commitment, secret, rev, ebitda, nw, age);
+}
+
+#[test]
+fn test_compute_policy_hash_deterministic() {
+    // Just verify it computes something non-zero given inputs
+    let h1 = compute_policy_hash(
+        1,
+        1,
+        1,
+        1,
+        1,
+        true,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        true,
+    );
+    let h2 = compute_policy_hash(
+        1,
+        1,
+        1,
+        1,
+        1,
+        true,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        true,
+    );
+    assert(h1 == h2);
+    assert(h1 != 0);
 }

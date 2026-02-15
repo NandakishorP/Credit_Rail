@@ -83,7 +83,8 @@ def total_value(system: "SystemState") -> Decimal:
         system.equity.idle + system.equity.deployed +
         system.senior_unclaimed_interest +
         system.junior_unclaimed_interest +
-        system.equity_unclaimed_interest
+        system.equity_unclaimed_interest +
+        system.protocol_revenue
     )
 
 def assert_conservation(before: Decimal, after: Decimal, tolerance=Decimal("0.000001")):
