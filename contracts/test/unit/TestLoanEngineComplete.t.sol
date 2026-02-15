@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {TranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
+import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 import {Field} from "@poseidon2-evm/Field.sol";
@@ -1486,10 +1487,10 @@ contract TestLoanEngineComplete is Test {
     function _createEligibilityCriteria()
         internal
         pure
-        returns (CreditPolicy.EligibilityCriteria memory)
+        returns (ICreditPolicy.EligibilityCriteria memory)
     {
         return
-            CreditPolicy.EligibilityCriteria({
+            ICreditPolicy.EligibilityCriteria({
                 minAnnualRevenue: 1_00_00_000,
                 minEBITDA: 10_00_000,
                 minTangibleNetWorth: 5_00_00_000,
@@ -1502,10 +1503,10 @@ contract TestLoanEngineComplete is Test {
     function _createFinancialRatios()
         internal
         pure
-        returns (CreditPolicy.FinancialRatios memory)
+        returns (ICreditPolicy.FinancialRatios memory)
     {
         return
-            CreditPolicy.FinancialRatios({
+            ICreditPolicy.FinancialRatios({
                 maxTotalDebtToEBITDA: 4e18,
                 minInterestCoverageRatio: 2e18,
                 minCurrentRatio: 1e18,
@@ -1516,10 +1517,10 @@ contract TestLoanEngineComplete is Test {
     function _createConcentrationLimits()
         internal
         pure
-        returns (CreditPolicy.ConcentrationLimits memory)
+        returns (ICreditPolicy.ConcentrationLimits memory)
     {
         return
-            CreditPolicy.ConcentrationLimits({
+            ICreditPolicy.ConcentrationLimits({
                 maxSingleBorrowerBps: 1000,
                 maxIndustryConcentrationBps: 3000
             });
@@ -1528,10 +1529,10 @@ contract TestLoanEngineComplete is Test {
     function _createAttestationRequirements()
         internal
         pure
-        returns (CreditPolicy.AttestationRequirements memory)
+        returns (ICreditPolicy.AttestationRequirements memory)
     {
         return
-            CreditPolicy.AttestationRequirements({
+            ICreditPolicy.AttestationRequirements({
                 maxAttestationAgeDays: 90,
                 reAttestationFrequencyDays: 180,
                 requiresCPAAttestation: true
@@ -1541,10 +1542,10 @@ contract TestLoanEngineComplete is Test {
     function _createMaintenanceCovenants()
         internal
         pure
-        returns (CreditPolicy.MaintenanceCovenants memory)
+        returns (ICreditPolicy.MaintenanceCovenants memory)
     {
         return
-            CreditPolicy.MaintenanceCovenants({
+            ICreditPolicy.MaintenanceCovenants({
                 maxLeverageRatio: 4e18,
                 minCoverageRatio: 2e18,
                 minLiquidityAmount: 1_00_00_000,
@@ -1555,9 +1556,9 @@ contract TestLoanEngineComplete is Test {
 
     function _createMockTier(
         string memory name
-    ) internal pure returns (CreditPolicy.LoanTier memory) {
+    ) internal pure returns (ICreditPolicy.LoanTier memory) {
         return
-            CreditPolicy.LoanTier({
+            ICreditPolicy.LoanTier({
                 name: name,
                 minRevenue: 1_00_00_000,
                 maxRevenue: 5_00_00_000,

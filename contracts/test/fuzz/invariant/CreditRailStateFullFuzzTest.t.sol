@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {LoanEngine} from "../../../src/LoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
+import {ICreditPolicy} from "../../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../../mocks/MockPoseidon2.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -23,7 +24,8 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     uint256 public USDT = 1e18;
     address public deployer = makeAddr("deployer");
 
-    function setUp() public {  // Change from constructor to setUp
+    function setUp() public {
+        // Change from constructor to setUp
         vm.deal(deployer, 100 ether);
         vm.startPrank(deployer);
         usdt = new ERC20Mock();
@@ -72,7 +74,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
 
         vm.stopPrank();
         handler = new Handler(loanEngine, tranchePool, creditPolicy, usdt);
-        
+
         bytes4[] memory selectors = new bytes4[](18);
         selectors[0] = handler.depositSeniorTranche.selector;
         selectors[1] = handler.depositJuniorTranche.selector;
@@ -92,7 +94,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         selectors[15] = handler.withdrawSeniorTranche.selector;
         selectors[16] = handler.withdrawJuniorTranche.selector;
         selectors[17] = handler.withdrawEquityTranche.selector;
-        
+
         targetSelector(
             FuzzSelector({addr: address(handler), selectors: selectors})
         );
@@ -102,10 +104,10 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     function _createEligibilityCriteria()
         internal
         pure
-        returns (CreditPolicy.EligibilityCriteria memory)
+        returns (ICreditPolicy.EligibilityCriteria memory)
     {
         return
-            CreditPolicy.EligibilityCriteria({
+            ICreditPolicy.EligibilityCriteria({
                 minAnnualRevenue: 1_00_00_000,
                 minEBITDA: 10_00_000,
                 minTangibleNetWorth: 5_00_00_000,
@@ -118,10 +120,10 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     function _createFinancialRatios()
         internal
         pure
-        returns (CreditPolicy.FinancialRatios memory)
+        returns (ICreditPolicy.FinancialRatios memory)
     {
         return
-            CreditPolicy.FinancialRatios({
+            ICreditPolicy.FinancialRatios({
                 maxTotalDebtToEBITDA: 4e18,
                 minInterestCoverageRatio: 2e18,
                 minCurrentRatio: 1e18,
@@ -132,10 +134,10 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     function _createConcentrationLimits()
         internal
         pure
-        returns (CreditPolicy.ConcentrationLimits memory)
+        returns (ICreditPolicy.ConcentrationLimits memory)
     {
         return
-            CreditPolicy.ConcentrationLimits({
+            ICreditPolicy.ConcentrationLimits({
                 maxSingleBorrowerBps: 1000,
                 maxIndustryConcentrationBps: 3000
             });
@@ -144,10 +146,10 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     function _createAttestationRequirements()
         internal
         pure
-        returns (CreditPolicy.AttestationRequirements memory)
+        returns (ICreditPolicy.AttestationRequirements memory)
     {
         return
-            CreditPolicy.AttestationRequirements({
+            ICreditPolicy.AttestationRequirements({
                 maxAttestationAgeDays: 90,
                 reAttestationFrequencyDays: 180,
                 requiresCPAAttestation: true
@@ -157,10 +159,10 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     function _createMaintenanceCovenants()
         internal
         pure
-        returns (CreditPolicy.MaintenanceCovenants memory)
+        returns (ICreditPolicy.MaintenanceCovenants memory)
     {
         return
-            CreditPolicy.MaintenanceCovenants({
+            ICreditPolicy.MaintenanceCovenants({
                 maxLeverageRatio: 4e18,
                 minCoverageRatio: 2e18,
                 minLiquidityAmount: 1_00_00_000,
@@ -171,9 +173,9 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
 
     function _createMockTier(
         string memory name
-    ) internal pure returns (CreditPolicy.LoanTier memory) {
+    ) internal pure returns (ICreditPolicy.LoanTier memory) {
         return
-            CreditPolicy.LoanTier({
+            ICreditPolicy.LoanTier({
                 name: name,
                 minRevenue: 1_00_00_000,
                 maxRevenue: 5_00_00_000,
@@ -272,12 +274,16 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
 
         if (tranchePool.getTotalRecovered() >= tranchePool.getTotalLoss()) {
             // If we recovered more than lost, the hole should be completely filled.
-            assertEq(totalShortfall, 0, "Shortfall must be 0 if fully recovered");
+            assertEq(
+                totalShortfall,
+                0,
+                "Shortfall must be 0 if fully recovered"
+            );
         } else {
             // If we haven't recovered everything, shortfall should exactly match the remaining hole.
             assertEq(
-                totalShortfall, 
-                tranchePool.getTotalLoss() - tranchePool.getTotalRecovered(), 
+                totalShortfall,
+                tranchePool.getTotalLoss() - tranchePool.getTotalRecovered(),
                 "Shortfall mismatch"
             );
         }
@@ -286,8 +292,8 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     function invariant__totalIdleValueIntegrity() public view {
         assertEq(
             tranchePool.getSeniorTrancheIdleValue() +
-            tranchePool.getJuniorTrancheIdleValue() +
-            tranchePool.getEquityTrancheIdleValue(),
+                tranchePool.getJuniorTrancheIdleValue() +
+                tranchePool.getEquityTrancheIdleValue(),
             tranchePool.getTotalIdleValue(),
             "Sum of tranche idle values != total idle value"
         );
@@ -307,68 +313,103 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         uint256 nextId = loanEngine.getNextLoanId();
         for (uint256 i = 1; i < nextId; i++) {
             LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
-            
+
             // NONE and CREATED should have 0 principal outstanding
-            if (loan.state == LoanEngine.LoanState.NONE || 
-                loan.state == LoanEngine.LoanState.CREATED) {
-                assertEq(loan.principalOutstanding, 0,
-                    "NONE/CREATED loan has outstanding principal");
+            if (
+                loan.state == LoanEngine.LoanState.NONE ||
+                loan.state == LoanEngine.LoanState.CREATED
+            ) {
+                assertEq(
+                    loan.principalOutstanding,
+                    0,
+                    "NONE/CREATED loan has outstanding principal"
+                );
             }
-            
+
             // REPAID and WRITTEN_OFF must have 0 outstanding
-            if (loan.state == LoanEngine.LoanState.REPAID ||
-                loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
-                assertEq(loan.principalOutstanding, 0,
-                    "Terminal loan has outstanding principal");
+            if (
+                loan.state == LoanEngine.LoanState.REPAID ||
+                loan.state == LoanEngine.LoanState.WRITTEN_OFF
+            ) {
+                assertEq(
+                    loan.principalOutstanding,
+                    0,
+                    "Terminal loan has outstanding principal"
+                );
             }
-            
+
             // ACTIVE loans must have principalOutstanding <= principalIssued
             if (loan.state == LoanEngine.LoanState.ACTIVE) {
-                assertLe(loan.principalOutstanding, loan.principalIssued,
-                    "Active loan: outstanding > issued");
+                assertLe(
+                    loan.principalOutstanding,
+                    loan.principalIssued,
+                    "Active loan: outstanding > issued"
+                );
             }
         }
     }
 
     function invariant__interestIndexMonotonicity() public view {
-    // Indices initialize at 1e18 and can only increase
-        assertGe(tranchePool.getSeniorInterestIndex(), 1e18,
-            "Senior interest index below initial");
-        assertGe(tranchePool.getJuniorInterestIndex(), 1e18,
-            "Junior interest index below initial");
-        assertGe(tranchePool.getEquityInterestIndex(), 1e18,
-            "Equity interest index below initial");
+        // Indices initialize at 1e18 and can only increase
+        assertGe(
+            tranchePool.getSeniorInterestIndex(),
+            1e18,
+            "Senior interest index below initial"
+        );
+        assertGe(
+            tranchePool.getJuniorInterestIndex(),
+            1e18,
+            "Junior interest index below initial"
+        );
+        assertGe(
+            tranchePool.getEquityInterestIndex(),
+            1e18,
+            "Equity interest index below initial"
+        );
     }
 
     function invariant__poolStateValidityDeployedCapital() public view {
         TranchePool.PoolState state = tranchePool.getPoolState();
-        if (state == TranchePool.PoolState.OPEN || 
-            state == TranchePool.PoolState.CLOSED) {
-            assertEq(tranchePool.getTotalDeployedValue(), 0,
-                "OPEN/CLOSED pool has deployed capital");
+        if (
+            state == TranchePool.PoolState.OPEN ||
+            state == TranchePool.PoolState.CLOSED
+        ) {
+            assertEq(
+                tranchePool.getTotalDeployedValue(),
+                0,
+                "OPEN/CLOSED pool has deployed capital"
+            );
         }
-        
+
         // Cannot close with active loans (deployed > 0)
         if (state == TranchePool.PoolState.CLOSED) {
-            assertEq(tranchePool.getTotalDeployedValue(), 0,
-                "CLOSED pool still has deployed capital");
+            assertEq(
+                tranchePool.getTotalDeployedValue(),
+                0,
+                "CLOSED pool still has deployed capital"
+            );
         }
     }
 
     function invariant__loanInterestAccounting() public view {
         uint256 nextId = loanEngine.getNextLoanId();
-        
+
         for (uint256 i = 1; i < nextId; i++) {
             LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
             if (loan.state == LoanEngine.LoanState.REPAID) {
-                assertEq(loan.interestAccrued, 0,
-                    "REPAID loan has remaining accrued interest");
+                assertEq(
+                    loan.interestAccrued,
+                    0,
+                    "REPAID loan has remaining accrued interest"
+                );
             }
             if (loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
-                assertEq(loan.interestAccrued, 0,
-                    "WRITTEN_OFF loan has accrued interest");
+                assertEq(
+                    loan.interestAccrued,
+                    0,
+                    "WRITTEN_OFF loan has accrued interest"
+                );
             }
         }
     }
-
 }

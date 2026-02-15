@@ -15,13 +15,22 @@ jobs:
         with:
           submodules: recursive  # Fetch all git submodules
       
-      - name: Install Foundry
+      - name: Install Foundry (zkSync)
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: nightly-2feb41d0e092df0cfc692fe6eb8d399c6a8e9cf7
+      
+      - name: Install zksolc
+        run: |
+          curl -L https://github.com/matter-labs/zksolc-bin/releases/download/v1.5.15/zksolc-linux-amd64-musl-v1.5.15 -o /usr/local/bin/zksolc
+          chmod +x /usr/local/bin/zksolc
+          zksolc --version
       
       - name: Install dependencies
         run: forge install
       
-      - name: Run tests
+      - name: Build with zkSync
+        run: forge build --zksync
+      
+      - name: Run unit tests
         run: forge test --match-path "test/unit/*.t.sol"

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {HonkVerifier} from "../src/Verifier.sol";
+import {HonkVerifier} from "../src-zk/Verifier.sol";
 import {LoanEngine} from "../src/LoanEngine.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {TranchePool} from "../src/TranchePool.sol";
@@ -63,11 +63,7 @@ contract DeployFullSystem is Script {
         console2.log("4. CreditPolicy deployed at:", creditPolicy);
 
         // 5. Deploy TranchePool
-        TranchePool _tranchePool = new TranchePool(
-            stablecoin,
-            "Senior Tranche",
-            "SR-TRN"
-        );
+        TranchePool _tranchePool = new TranchePool(stablecoin);
         tranchePool = address(_tranchePool);
         console2.log("5. TranchePool deployed at:", tranchePool);
 
@@ -84,7 +80,7 @@ contract DeployFullSystem is Script {
         console2.log("6. LoanEngine deployed at:", loanEngine);
 
         // 7. Setup: Set LoanEngine as the engine for TranchePool
-        _tranchePool.setEngine(loanEngine);
+        _tranchePool.setLoanEngine(loanEngine);
         console2.log("7. TranchePool engine set to LoanEngine");
 
         // 8. Mint some USDC for testing

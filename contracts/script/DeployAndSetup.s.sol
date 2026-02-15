@@ -4,8 +4,9 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import "../src/LoanEngine.sol";
 import "../src/CreditPolicy.sol";
+import {ICreditPolicy} from "../src/interfaces/ICreditPolicy.sol";
 import "../src/TranchePool.sol";
-import {HonkVerifier} from "../src/Verifier.sol";
+import {HonkVerifier} from "../src-zk/Verifier.sol";
 import "../test/mocks/MockPoseidon2.sol";
 import "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
@@ -25,7 +26,7 @@ contract DeployAndSetup is Script {
         console.log("HonkVerifier:", address(verifier));
 
         // 3. Deploy CreditPolicy
-        CreditPolicy policy = new CreditPolicy(deployer);
+        CreditPolicy policy = new CreditPolicy();
         console.log("CreditPolicy:", address(policy));
 
         // 4. Deploy ERC20Mock (USDC)
@@ -33,7 +34,7 @@ contract DeployAndSetup is Script {
         console.log("USDC:", address(usdc));
 
         // 5. Deploy TranchePool
-        TranchePool pool = new TranchePool(address(usdc), deployer);
+        TranchePool pool = new TranchePool(address(usdc));
         console.log("TranchePool:", address(pool));
 
         // 6. Deploy LoanEngine
@@ -53,7 +54,7 @@ contract DeployAndSetup is Script {
 
         policy.updateEligibility(
             policyVersion,
-            CreditPolicy.EligibilityCriteria({
+            ICreditPolicy.EligibilityCriteria({
                 minAnnualRevenue: 1000000,
                 minEBITDA: 100000,
                 minTangibleNetWorth: 250000,
@@ -65,7 +66,7 @@ contract DeployAndSetup is Script {
 
         policy.updateRatios(
             policyVersion,
-            CreditPolicy.FinancialRatios({
+            ICreditPolicy.FinancialRatios({
                 maxTotalDebtToEBITDA: 40000,
                 minInterestCoverageRatio: 15000,
                 minCurrentRatio: 12000,
@@ -75,7 +76,7 @@ contract DeployAndSetup is Script {
 
         policy.updateConcentration(
             policyVersion,
-            CreditPolicy.ConcentrationLimits({
+            ICreditPolicy.ConcentrationLimits({
                 maxSingleBorrowerBps: 1000,
                 maxIndustryConcentrationBps: 2500
             })
@@ -83,7 +84,7 @@ contract DeployAndSetup is Script {
 
         policy.updateAttestation(
             policyVersion,
-            CreditPolicy.AttestationRequirements({
+            ICreditPolicy.AttestationRequirements({
                 maxAttestationAgeDays: 90,
                 reAttestationFrequencyDays: 365,
                 requiresCPAAttestation: false
@@ -92,7 +93,7 @@ contract DeployAndSetup is Script {
 
         policy.updateCovenants(
             policyVersion,
-            CreditPolicy.MaintenanceCovenants({
+            ICreditPolicy.MaintenanceCovenants({
                 maxLeverageRatio: 50000,
                 minCoverageRatio: 10000,
                 minLiquidityAmount: 50000,
@@ -104,7 +105,7 @@ contract DeployAndSetup is Script {
         policy.setLoanTier(
             policyVersion,
             1,
-            CreditPolicy.LoanTier({
+            ICreditPolicy.LoanTier({
                 name: "Standard",
                 minRevenue: 1000000,
                 maxRevenue: 10000000,
@@ -128,17 +129,16 @@ contract DeployAndSetup is Script {
         console.log("Policy frozen: version", policyVersion);
 
         // 8. Setup TranchePool
-        pool.whitelistAddress(address(engine));
+        pool.setLoanEngine(address(engine));
+        pool.updateWhitelist(deployer, true);
 
         // Mint USDC and deposit to pool
         usdc.mint(deployer, 10_000_000e18);
         usdc.approve(address(pool), 10_000_000e18);
         usdc.transfer(address(pool), 5_000_000e18);
 
-        pool.commit();
-        pool.deploy();
-        pool.allocateCapital(address(engine), 1_000_000e18);
-        console.log("Pool deployed and capital allocated");
+        pool.setPoolState(TranchePool.PoolState.COMMITED);
+        console.log("Pool committed with capital");
 
         vm.stopBroadcast();
 

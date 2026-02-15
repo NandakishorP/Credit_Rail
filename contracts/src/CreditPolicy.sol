@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
 
-
 /**
  * @title CreditPolicy
  * @notice Immutable-by-version credit constitution for private credit funds
@@ -69,44 +68,21 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         ELIGIBILITY (PRE-LOAN)
     //////////////////////////////////////////////////////////////*/
-    struct EligibilityCriteria {
-        uint256 minAnnualRevenue;
-        uint256 minEBITDA;
-        uint256 minTangibleNetWorth;
-        uint256 minBusinessAgeDays;
-        uint256 maxDefaultsLast36Months;
-        bool bankruptcyExcluded;
-    }
+    // Struct defined in ICreditPolicy interface
 
     mapping(uint256 => EligibilityCriteria) public eligibility;
 
     /*//////////////////////////////////////////////////////////////
                         FINANCIAL RATIOS (UNDERWRITING)
     //////////////////////////////////////////////////////////////*/
-    struct FinancialRatios {
-        uint256 maxTotalDebtToEBITDA;
-        uint256 minInterestCoverageRatio;
-        uint256 minCurrentRatio;
-        uint256 minEBITDAMarginBps;
-    }
+    // Struct defined in ICreditPolicy interface
 
     mapping(uint256 => FinancialRatios) public ratios;
 
     /*//////////////////////////////////////////////////////////////
                         LOAN TIERS (PRICING REFERENCE)
     //////////////////////////////////////////////////////////////*/
-    struct LoanTier {
-        string name;
-        uint256 minRevenue;
-        uint256 maxRevenue;
-        uint256 minEBITDA;
-        uint256 maxDebtToEBITDA;
-        uint256 maxLoanToEBITDA;
-        uint256 interestRateBps;
-        uint256 originationFeeBps;
-        uint256 termDays;
-        bool active;
-    }
+    // Struct defined in ICreditPolicy interface
 
     mapping(uint256 => mapping(uint8 => LoanTier)) public loanTiers;
     mapping(uint256 => uint8) public totalTiers;
@@ -115,10 +91,7 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         CONCENTRATION LIMITS
     //////////////////////////////////////////////////////////////*/
-    struct ConcentrationLimits {
-        uint256 maxSingleBorrowerBps;
-        uint256 maxIndustryConcentrationBps;
-    }
+    // Struct defined in ICreditPolicy interface
 
     mapping(uint256 => ConcentrationLimits) public concentration;
 
@@ -130,24 +103,14 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         ATTESTATION REQUIREMENTS
     //////////////////////////////////////////////////////////////*/
-    struct AttestationRequirements {
-        uint256 maxAttestationAgeDays;
-        uint256 reAttestationFrequencyDays;
-        bool requiresCPAAttestation;
-    }
+    // Struct defined in ICreditPolicy interface
 
     mapping(uint256 => AttestationRequirements) public attestation;
 
     /*//////////////////////////////////////////////////////////////
                         MAINTENANCE COVENANTS
     //////////////////////////////////////////////////////////////*/
-    struct MaintenanceCovenants {
-        uint256 maxLeverageRatio;
-        uint256 minCoverageRatio;
-        uint256 minLiquidityAmount;
-        bool allowsDividends;
-        uint256 reportingFrequencyDays;
-    }
+    // Struct defined in ICreditPolicy interface
 
     mapping(uint256 => MaintenanceCovenants) public covenants;
 
@@ -198,11 +161,7 @@ contract CreditPolicy is ICreditPolicy {
         string uri,
         uint256 timestamp
     );
-    event PolicyScopeHashSet(
-        uint256 version,
-        bytes32 hash,
-        uint256 timestamp
-    );
+    event PolicyScopeHashSet(uint256 version, bytes32 hash, uint256 timestamp);
     event PolicyDeactivated(uint256 version, uint256 timestamp);
 
     /*//////////////////////////////////////////////////////////////

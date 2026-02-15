@@ -2,9 +2,10 @@
 pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {HonkVerifier} from "../src/Verifier.sol";
+import {HonkVerifier} from "../src-zk/Verifier.sol";
 import {LoanEngine} from "../src/LoanEngine.sol";
 import {TranchePool} from "../src/TranchePool.sol";
+import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
@@ -64,11 +65,7 @@ contract E2EZkLoanTest is Script {
         creditPolicy = new CreditPolicy();
         console2.log("[4/6] CreditPolicy:", address(creditPolicy));
 
-        tranchePool = new TranchePool(
-            address(usdc),
-            "Senior Tranche",
-            "SR-TRN"
-        );
+        tranchePool = new TranchePool(address(usdc));
         console2.log("[5/6] TranchePool:", address(tranchePool));
 
         loanEngine = new LoanEngine(
@@ -82,7 +79,7 @@ contract E2EZkLoanTest is Script {
         console2.log("[6/6] LoanEngine:", address(loanEngine));
 
         // Setup pool
-        tranchePool.setEngine(address(loanEngine));
+        tranchePool.setLoanEngine(address(loanEngine));
         usdc.mint(address(tranchePool), 10_000_000 * 1e6);
         console2.log("      Pool funded with 10M USDC");
 
@@ -95,50 +92,50 @@ contract E2EZkLoanTest is Script {
 
         creditPolicy.updateEligibility(
             policyVersion,
-            CreditPolicy.EligibilityCriteria({
-                minRevenue: 1_000_000,
-                minEbitda: 100_000,
-                minNetWorth: 250_000,
-                minAgeDays: 730,
-                maxDefaults: 0,
+            ICreditPolicy.EligibilityCriteria({
+                minAnnualRevenue: 1_000_000,
+                minEBITDA: 100_000,
+                minTangibleNetWorth: 250_000,
+                minBusinessAgeDays: 730,
+                maxDefaultsLast36Months: 0,
                 bankruptcyExcluded: true
             })
         );
 
         creditPolicy.updateRatios(
             policyVersion,
-            CreditPolicy.FinancialRatios({
-                maxDebtToEbitda: 40_000,
-                minInterestCoverage: 15_000,
+            ICreditPolicy.FinancialRatios({
+                maxTotalDebtToEBITDA: 40_000,
+                minInterestCoverageRatio: 15_000,
                 minCurrentRatio: 12_000,
-                minEbitdaMarginBps: 1000
+                minEBITDAMarginBps: 1000
             })
         );
 
         creditPolicy.updateConcentration(
             policyVersion,
-            CreditPolicy.ConcentrationLimits({
-                maxSingleExposure: 10_000_000,
-                maxIndustryExposure: 50_000_000,
-                maxGeographicExposure: 30_000_000
+            ICreditPolicy.ConcentrationLimits({
+                maxSingleBorrowerBps: 1000,
+                maxIndustryConcentrationBps: 2500
             })
         );
 
         creditPolicy.updateAttestation(
             policyVersion,
-            CreditPolicy.AttestationRequirements({
+            ICreditPolicy.AttestationRequirements({
                 maxAttestationAgeDays: 90,
-                requiredAttestationLevel: 1,
-                requiresMultipleUnderwriters: false
+                reAttestationFrequencyDays: 365,
+                requiresCPAAttestation: false
             })
         );
 
         creditPolicy.updateCovenants(
             policyVersion,
-            CreditPolicy.MaintenanceCovenants({
+            ICreditPolicy.MaintenanceCovenants({
                 maxLeverageRatio: 50_000,
-                minLiquidityRatio: 10_000,
-                requiresPeriodicReporting: true,
+                minCoverageRatio: 10_000,
+                minLiquidityAmount: 100_000,
+                allowsDividends: true,
                 reportingFrequencyDays: 30
             })
         );
@@ -146,15 +143,16 @@ contract E2EZkLoanTest is Script {
         creditPolicy.setLoanTier(
             policyVersion,
             1,
-            CreditPolicy.LoanTier({
+            ICreditPolicy.LoanTier({
+                name: "Standard",
                 minRevenue: 1_000_000,
                 maxRevenue: 10_000_000,
-                minEbitda: 100_000,
-                maxDebtToEbitda: 40_000,
-                maxLoanToEbitda: 1e18,
+                minEBITDA: 100_000,
+                maxDebtToEBITDA: 40_000,
+                maxLoanToEBITDA: 1e18,
                 interestRateBps: 1200,
                 originationFeeBps: 100,
-                maxTermDays: 365,
+                termDays: 365,
                 active: true
             })
         );
@@ -163,8 +161,8 @@ contract E2EZkLoanTest is Script {
         console2.log("      Policy created and frozen");
 
         // Transition pool to DEPLOYED state
-        tranchePool.transitionToCommitted();
-        tranchePool.transitionToDeployed();
+        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(TranchePool.PoolState.DEPLOYED);
         console2.log("      TranchePool transitioned to DEPLOYED");
 
         vm.stopBroadcast();

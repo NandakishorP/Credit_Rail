@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
+import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {Test} from "forge-std/Test.sol";
 
 contract TestCreditPolicy is Test {
@@ -52,10 +53,10 @@ contract TestCreditPolicy is Test {
     function _createEligibilityCriteria()
         internal
         pure
-        returns (CreditPolicy.EligibilityCriteria memory)
+        returns (ICreditPolicy.EligibilityCriteria memory)
     {
         return
-            CreditPolicy.EligibilityCriteria({
+            ICreditPolicy.EligibilityCriteria({
                 minAnnualRevenue: 1_00_00_000,
                 minEBITDA: 10_00_000,
                 minTangibleNetWorth: 5_00_00_000,
@@ -68,10 +69,10 @@ contract TestCreditPolicy is Test {
     function _createFinancialRatios()
         internal
         pure
-        returns (CreditPolicy.FinancialRatios memory)
+        returns (ICreditPolicy.FinancialRatios memory)
     {
         return
-            CreditPolicy.FinancialRatios({
+            ICreditPolicy.FinancialRatios({
                 maxTotalDebtToEBITDA: 4e18,
                 minInterestCoverageRatio: 2e18,
                 minCurrentRatio: 1e18,
@@ -82,10 +83,10 @@ contract TestCreditPolicy is Test {
     function _createConcentrationLimits()
         internal
         pure
-        returns (CreditPolicy.ConcentrationLimits memory)
+        returns (ICreditPolicy.ConcentrationLimits memory)
     {
         return
-            CreditPolicy.ConcentrationLimits({
+            ICreditPolicy.ConcentrationLimits({
                 maxSingleBorrowerBps: 1000,
                 maxIndustryConcentrationBps: 3000
             });
@@ -94,10 +95,10 @@ contract TestCreditPolicy is Test {
     function _createAttestationRequirements()
         internal
         pure
-        returns (CreditPolicy.AttestationRequirements memory)
+        returns (ICreditPolicy.AttestationRequirements memory)
     {
         return
-            CreditPolicy.AttestationRequirements({
+            ICreditPolicy.AttestationRequirements({
                 maxAttestationAgeDays: 90,
                 reAttestationFrequencyDays: 180,
                 requiresCPAAttestation: true
@@ -107,10 +108,10 @@ contract TestCreditPolicy is Test {
     function _createMaintenanceCovenants()
         internal
         pure
-        returns (CreditPolicy.MaintenanceCovenants memory)
+        returns (ICreditPolicy.MaintenanceCovenants memory)
     {
         return
-            CreditPolicy.MaintenanceCovenants({
+            ICreditPolicy.MaintenanceCovenants({
                 maxLeverageRatio: 4e18,
                 minCoverageRatio: 2e18,
                 minLiquidityAmount: 1_00_00_000,
@@ -121,9 +122,9 @@ contract TestCreditPolicy is Test {
 
     function _createMockTier(
         string memory name
-    ) internal pure returns (CreditPolicy.LoanTier memory) {
+    ) internal pure returns (ICreditPolicy.LoanTier memory) {
         return
-            CreditPolicy.LoanTier({
+            ICreditPolicy.LoanTier({
                 name: name,
                 minRevenue: 1_00_00_000,
                 maxRevenue: 5_00_00_000,
@@ -662,7 +663,7 @@ contract TestCreditPolicy is Test {
 
         vm.warp(block.timestamp + 100);
 
-        CreditPolicy.EligibilityCriteria memory newCriteria = CreditPolicy
+        ICreditPolicy.EligibilityCriteria memory newCriteria = ICreditPolicy
             .EligibilityCriteria({
                 minAnnualRevenue: 2_00_00_000,
                 minEBITDA: 20_00_000,
@@ -729,7 +730,7 @@ contract TestCreditPolicy is Test {
 
     function testEligibilityWithZeroValues() public {
         _createPolicy(1);
-        CreditPolicy.EligibilityCriteria memory criteria = CreditPolicy
+        ICreditPolicy.EligibilityCriteria memory criteria = ICreditPolicy
             .EligibilityCriteria({
                 minAnnualRevenue: 0,
                 minEBITDA: 0,
@@ -984,7 +985,7 @@ contract TestCreditPolicy is Test {
 
     function testSetLoanTierStoresDataCorrectly() public {
         _createPolicy(1);
-        CreditPolicy.LoanTier memory tier = _createMockTier("Premium Tier");
+        ICreditPolicy.LoanTier memory tier = _createMockTier("Premium Tier");
         tier.interestRateBps = 950;
 
         vm.prank(deployer);
@@ -1080,11 +1081,11 @@ contract TestCreditPolicy is Test {
         _createPolicy(1);
         vm.startPrank(deployer);
 
-        CreditPolicy.LoanTier memory tier1 = _createMockTier("Original");
+        ICreditPolicy.LoanTier memory tier1 = _createMockTier("Original");
         tier1.interestRateBps = 800;
         creditPolicy.setLoanTier(1, 0, tier1);
 
-        CreditPolicy.LoanTier memory tier2 = _createMockTier("Updated");
+        ICreditPolicy.LoanTier memory tier2 = _createMockTier("Updated");
         tier2.interestRateBps = 900;
         creditPolicy.setLoanTier(1, 0, tier2);
 
@@ -1441,7 +1442,7 @@ contract TestCreditPolicy is Test {
     // Test setting empty string for tier name
     function testLoanTierWithEmptyName() public {
         _createPolicy(1);
-        CreditPolicy.LoanTier memory tier = _createMockTier("");
+        ICreditPolicy.LoanTier memory tier = _createMockTier("");
 
         vm.prank(deployer);
         creditPolicy.setLoanTier(1, 0, tier);

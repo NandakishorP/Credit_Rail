@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {HonkVerifier} from "../src/Verifier.sol";
+import {HonkVerifier} from "../src-zk/Verifier.sol";
 
 /**
  * @title TestZkProof

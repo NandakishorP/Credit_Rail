@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {LoanEngine} from "../../../src/LoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
+import {ICreditPolicy} from "../../../src/interfaces/ICreditPolicy.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../../mocks/MockPoseidon2.sol";
@@ -117,7 +118,7 @@ contract EchidnaHandler {
 
         creditPolicy.updateEligibility(
             1,
-            CreditPolicy.EligibilityCriteria({
+            ICreditPolicy.EligibilityCriteria({
                 minAnnualRevenue: 1_00_00_000,
                 minEBITDA: 10_00_000,
                 minTangibleNetWorth: 5_00_00_000,
@@ -129,7 +130,7 @@ contract EchidnaHandler {
 
         creditPolicy.updateRatios(
             1,
-            CreditPolicy.FinancialRatios({
+            ICreditPolicy.FinancialRatios({
                 maxTotalDebtToEBITDA: 4e18,
                 minInterestCoverageRatio: 2e18,
                 minCurrentRatio: 1e18,
@@ -139,7 +140,7 @@ contract EchidnaHandler {
 
         creditPolicy.updateConcentration(
             1,
-            CreditPolicy.ConcentrationLimits({
+            ICreditPolicy.ConcentrationLimits({
                 maxSingleBorrowerBps: 1000,
                 maxIndustryConcentrationBps: 3000
             })
@@ -147,7 +148,7 @@ contract EchidnaHandler {
 
         creditPolicy.updateAttestation(
             1,
-            CreditPolicy.AttestationRequirements({
+            ICreditPolicy.AttestationRequirements({
                 maxAttestationAgeDays: 90,
                 reAttestationFrequencyDays: 180,
                 requiresCPAAttestation: true
@@ -156,7 +157,7 @@ contract EchidnaHandler {
 
         creditPolicy.updateCovenants(
             1,
-            CreditPolicy.MaintenanceCovenants({
+            ICreditPolicy.MaintenanceCovenants({
                 maxLeverageRatio: 4e18,
                 minCoverageRatio: 2e18,
                 minLiquidityAmount: 1_00_00_000,
@@ -168,7 +169,7 @@ contract EchidnaHandler {
         creditPolicy.setLoanTier(
             1,
             1,
-            CreditPolicy.LoanTier({
+            ICreditPolicy.LoanTier({
                 name: "Tier 1",
                 minRevenue: 1_00_00_000,
                 maxRevenue: 5_00_00_000,
