@@ -7,7 +7,7 @@ import {TranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {MockLoanProofVerifier} from "../mocks/MockLoanProofVerifier.sol";
-import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
+import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 import {Field} from "@poseidon2-evm/Field.sol";
 
 contract TestLoanEngineComplete is Test {
@@ -28,7 +28,11 @@ contract TestLoanEngineComplete is Test {
     uint256 public USDT = 1e18;
 
     // Test loan parameters
-    bytes32 testBorrowerCommitment = bytes32(uint256(keccak256("borrower123")) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
+    bytes32 testBorrowerCommitment =
+        bytes32(
+            uint256(keccak256("borrower123")) %
+                21888242871839275222246405745257275088548364400416034343698204186575808495617
+        );
     uint256 testPolicyVersion = 1;
     uint8 testTierId = 1;
     uint256 testPrincipal = 1_000_000 * USDT;
@@ -38,9 +42,66 @@ contract TestLoanEngineComplete is Test {
     bytes testProofData = hex"1234";
     bytes32[] testPublicInputs;
 
-    bytes32 testUnderwriterKeyX = bytes32(uint256(keccak256("underwriterX")) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
-    bytes32 testUnderwriterKeyY = bytes32(uint256(keccak256("underwriterY")) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
-    bytes32 testIndustry = bytes32(uint256(keccak256("TECH")) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
+    bytes32 testUnderwriterKeyX =
+        bytes32(
+            uint256(keccak256("underwriterX")) %
+                21888242871839275222246405745257275088548364400416034343698204186575808495617
+        );
+    bytes32 testUnderwriterKeyY =
+        bytes32(
+            uint256(keccak256("underwriterY")) %
+                21888242871839275222246405745257275088548364400416034343698204186575808495617
+        );
+    bytes32 testIndustry =
+        bytes32(
+            uint256(keccak256("TECH")) %
+                21888242871839275222246405745257275088548364400416034343698204186575808495617
+        );
+
+    // Helper to create CreateLoanParams struct with custom nullifier, policyVersion, tierId, principal, apr, fee, term, and timestamp
+    function _buildParams(
+        bytes32 nullifier,
+        uint256 policyVersion,
+        uint8 tierId,
+        uint256 principal,
+        uint256 apr,
+        uint256 fee,
+        uint256 term,
+        uint256 timestamp
+    ) internal view returns (LoanEngine.CreateLoanParams memory) {
+        return
+            LoanEngine.CreateLoanParams({
+                borrowerCommitment: testBorrowerCommitment,
+                nullifierHash: nullifier,
+                policyVersion: policyVersion,
+                tierId: tierId,
+                principalIssued: principal,
+                aprBps: apr,
+                originationFeeBps: fee,
+                termDays: term,
+                industry: testIndustry,
+                underwriterKeyX: testUnderwriterKeyX,
+                underwriterKeyY: testUnderwriterKeyY,
+                proofTimestamp: timestamp
+            });
+    }
+
+    // Convenience wrapper for standard test params with just nullifier override
+    function _buildStandardParams(
+        bytes32 nullifier
+    ) internal view returns (LoanEngine.CreateLoanParams memory) {
+        return
+            _buildParams(
+                nullifier,
+                testPolicyVersion,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                block.timestamp
+            );
+    }
 
     function setUp() public {
         usdt = new ERC20Mock();
@@ -69,20 +130,26 @@ contract TestLoanEngineComplete is Test {
         // Set policy scope hash to match what we will use in public inputs
         bytes32 scopeHash = keccak256("policyScope1");
         creditPolicy.setPolicyScopeHash(1, scopeHash);
-        
+
         creditPolicy.freezePolicy(1);
 
         // Setup loan engine
+        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         loanEngine = new LoanEngine(
             address(creditPolicy),
             address(verifier),
             500, // max origination fee 5%
             address(tranchePool),
-            address(usdt)
+            address(usdt),
+            address(mockPoseidon)
         );
 
         // Authorize underwriter
-        loanEngine.setUnderwriterAuthorization(testUnderwriterKeyX, testUnderwriterKeyY, true);
+        loanEngine.setUnderwriterAuthorization(
+            testUnderwriterKeyX,
+            testUnderwriterKeyY,
+            true
+        );
 
         // Initialize public inputs with 3 fields (Policy, LoanHash, Nullifier)
         testPublicInputs = new bytes32[](3);
@@ -136,7 +203,10 @@ contract TestLoanEngineComplete is Test {
         inputs[8] = Field.toField(uint256(industry));
         inputs[9] = Field.toField(timestamp);
         inputs[10] = Field.toField(loanId);
-        return Field.toUint256(Poseidon2(address(loanEngine.poseidon2())).hash(inputs));
+        return
+            Field.toUint256(
+                MockPoseidon2(address(loanEngine.poseidon2())).hash(inputs)
+            );
     }
 
     function _hashString(string memory str) internal pure returns (bytes32) {
@@ -149,25 +219,28 @@ contract TestLoanEngineComplete is Test {
 
     function test_CreateLoan_Success() public {
         uint256 nextLoanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, nextLoanId));
-        
-        vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier1"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                nextLoanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier1")
+        );
+
+        vm.prank(deployer);
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         (
             uint256 loanId,
@@ -211,7 +284,21 @@ contract TestLoanEngineComplete is Test {
         testPublicInputs[2] = keccak256("nullifier2");
         testPublicInputs[0] = creditPolicy.policyScopeHash(2);
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -219,29 +306,38 @@ contract TestLoanEngineComplete is Test {
                 2
             )
         );
-        loanEngine.createLoan(
-            testBorrowerCommitment,
+        LoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier2"),
-            2,
+            2, // policyVersion 2 (unfrozen)
             testTierId,
             testPrincipal,
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+            block.timestamp
         );
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
         vm.stopPrank();
     }
 
     function test_CreateLoan_RevertIf_TierNotInPolicy() public {
         testPublicInputs[2] = keccak256("nullifier3");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, 99, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                99,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -250,9 +346,7 @@ contract TestLoanEngineComplete is Test {
                 99
             )
         );
-        vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
+        LoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier3"),
             testPolicyVersion,
             99, // Invalid tier
@@ -260,20 +354,30 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+            block.timestamp
         );
+        vm.prank(deployer);
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
     }
 
     function test_CreateLoan_RevertIf_OriginationFeeExceeded() public {
-        
         testPublicInputs[2] = keccak256("nullifier4");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, 600, testTermDays, testIndustry, block.timestamp, loanId));
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                600,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -283,9 +387,7 @@ contract TestLoanEngineComplete is Test {
                 500
             )
         );
-        vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
+        LoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier4"),
             testPolicyVersion,
             testTierId,
@@ -293,22 +395,32 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             600, // 6% > max 5%
             testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+            block.timestamp
         );
+        vm.prank(deployer);
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
     }
 
     function test_CreateLoan_RevertIf_InvalidParameters_ZeroPrincipal() public {
-        
         uint256 invalidPrincipal = 0;
-        
+
         testPublicInputs[2] = keccak256("nullifier5");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, 0, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                0,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -319,9 +431,7 @@ contract TestLoanEngineComplete is Test {
                 testTermDays
             )
         );
-        vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
+        LoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier5"),
             testPolicyVersion,
             testTierId,
@@ -329,38 +439,38 @@ contract TestLoanEngineComplete is Test {
             testAprBps,
             testOriginationFeeBps,
             testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+            block.timestamp
         );
+        vm.prank(deployer);
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
     }
 
     function test_CreateLoan_RevertIf_NotOwner() public {
         testPublicInputs[2] = keccak256("nullifier6");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
+        );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier6")
+        );
 
         vm.expectRevert();
         vm.prank(seniorUser1);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier6"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
-        );
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -371,25 +481,28 @@ contract TestLoanEngineComplete is Test {
         // Create loan first
         testPublicInputs[2] = keccak256("nullifier7");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
+        );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier7")
+        );
 
         vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier7"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
-        );
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         uint256 poolBalanceBefore = usdt.balanceOf(address(tranchePool));
         uint256 offRampBalanceBefore = usdt.balanceOf(offRampEntity);
@@ -453,24 +566,26 @@ contract TestLoanEngineComplete is Test {
         vm.startPrank(deployer);
         testPublicInputs[2] = keccak256("nullifier8");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
-
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier8"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier8")
+        );
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         loanEngine.activateLoan(1, offRampEntity, feeManager);
 
@@ -489,24 +604,26 @@ contract TestLoanEngineComplete is Test {
         vm.startPrank(deployer);
         testPublicInputs[2] = keccak256("nullifier9");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
-
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier9"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier9")
+        );
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         address nonWhitelistedEntity = makeAddr("nonWhitelisted");
         vm.expectRevert(
@@ -653,7 +770,7 @@ contract TestLoanEngineComplete is Test {
         loanEngine.repayLoan(
             1,
             repaymentAmount, // principalAmount labeled
-            0,               // interestAmount labeled
+            0, // interestAmount labeled
             repaymentAgent,
             block.timestamp
         );
@@ -668,12 +785,12 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             uint256 interestAccrued, // 8
-            uint256 interestPaid, // 9
+            uint256 interestPaid, // 9 // 14
             ,
             ,
             ,
             ,
-            , // 14
+            ,
             ,
             ,
 
@@ -683,36 +800,46 @@ contract TestLoanEngineComplete is Test {
         assertEq(interestAccrued, 0, "Waterfall should pay interest first");
 
         // CHECK 2: Interest Paid should track the amount paid
-        assertEq(interestPaid, expectedInterest, "Interest paid tracks correct amount");
+        assertEq(
+            interestPaid,
+            expectedInterest,
+            "Interest paid tracks correct amount"
+        );
 
         // CHECK 3: Principal Outstanding should reduce by (Repayment - Interest)
         // repaymentAmount (50k) - expectedInterest (~17k) = ~33k principal reduction
         uint256 expectedPrincipalPaid = repaymentAmount - expectedInterest;
-        assertEq(principalOutstanding, testPrincipal - expectedPrincipalPaid, "Principal reduced by remainder");
+        assertEq(
+            principalOutstanding,
+            testPrincipal - expectedPrincipalPaid,
+            "Principal reduced by remainder"
+        );
     }
 
     function test_RepayLoan_RevertIf_NotActive() public {
         testPublicInputs[2] = keccak256("nullifier10");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
-
-        vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier10"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier10")
+        );
+        vm.prank(deployer);
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         vm.prank(deployer);
         vm.expectRevert(
@@ -744,7 +871,13 @@ contract TestLoanEngineComplete is Test {
                 nonWhitelistedAgent
             )
         );
-        loanEngine.repayLoan(1, 1000, 1000, nonWhitelistedAgent, block.timestamp);
+        loanEngine.repayLoan(
+            1,
+            1000,
+            1000,
+            nonWhitelistedAgent,
+            block.timestamp
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -789,25 +922,27 @@ contract TestLoanEngineComplete is Test {
     function test_DeclareDefault_RevertIf_NotActive() public {
         testPublicInputs[2] = keccak256("nullifier11");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
-
-        vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier11"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier11")
+        );
+        vm.prank(deployer);
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         vm.prank(deployer);
         vm.expectRevert(
@@ -826,7 +961,11 @@ contract TestLoanEngineComplete is Test {
 
         // Declare default first
         vm.prank(deployer);
-        loanEngine.declareDefault(1, keccak256("Missed payment"), block.timestamp);
+        loanEngine.declareDefault(
+            1,
+            keccak256("Missed payment"),
+            block.timestamp
+        );
 
         (
             ,
@@ -945,7 +1084,11 @@ contract TestLoanEngineComplete is Test {
 
         // Default and write off
         vm.startPrank(deployer);
-        loanEngine.declareDefault(1, keccak256("Missed payment"), block.timestamp);
+        loanEngine.declareDefault(
+            1,
+            keccak256("Missed payment"),
+            block.timestamp
+        );
         loanEngine.writeOffLoan(1);
         vm.stopPrank();
 
@@ -1094,25 +1237,27 @@ contract TestLoanEngineComplete is Test {
         // 1. Create loan
         testPublicInputs[2] = keccak256("nullifier12");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
-
-        vm.prank(deployer);
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier12"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier12")
+        );
+        vm.prank(deployer);
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         // 2. Activate loan
         vm.prank(deployer);
@@ -1130,7 +1275,13 @@ contract TestLoanEngineComplete is Test {
         usdt.approve(address(loanEngine), partialPrincipal + interest1);
 
         vm.prank(deployer);
-        loanEngine.repayLoan(1, partialPrincipal, interest1, repaymentAgent, block.timestamp);
+        loanEngine.repayLoan(
+            1,
+            partialPrincipal,
+            interest1,
+            repaymentAgent,
+            block.timestamp
+        );
 
         // 4. Another partial repayment after 180 more days
         vm.warp(block.timestamp + 180 days);
@@ -1144,7 +1295,13 @@ contract TestLoanEngineComplete is Test {
         usdt.approve(address(loanEngine), remainingPrincipal + interest2);
 
         vm.prank(deployer);
-        loanEngine.repayLoan(1, remainingPrincipal, interest2, repaymentAgent, block.timestamp);
+        loanEngine.repayLoan(
+            1,
+            remainingPrincipal,
+            interest2,
+            repaymentAgent,
+            block.timestamp
+        );
 
         // Verify final state
         (
@@ -1181,24 +1338,26 @@ contract TestLoanEngineComplete is Test {
 
         testPublicInputs[2] = keccak256("nullifier13");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, smallerPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
-
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier13"),
-            testPolicyVersion,
-            testTierId,
-            smallerPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                smallerPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier13")
+        );
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         loanEngine.activateLoan(1, offRampEntity, feeManager);
         vm.stopPrank();
@@ -1208,7 +1367,11 @@ contract TestLoanEngineComplete is Test {
 
         // Default
         vm.startPrank(deployer);
-        loanEngine.declareDefault(1, keccak256("Payment default"), block.timestamp);
+        loanEngine.declareDefault(
+            1,
+            keccak256("Payment default"),
+            block.timestamp
+        );
 
         // Write off
         loanEngine.writeOffLoan(1);
@@ -1293,24 +1456,26 @@ contract TestLoanEngineComplete is Test {
         vm.startPrank(deployer);
         testPublicInputs[2] = keccak256("nullifier14");
         uint256 loanId = loanEngine.getNextLoanId();
-        testPublicInputs[1] = bytes32(_computeLoanHash(testBorrowerCommitment, testUnderwriterKeyX, testUnderwriterKeyY, testTierId, testPrincipal, testAprBps, testOriginationFeeBps, testTermDays, testIndustry, block.timestamp, loanId));
-
-        loanEngine.createLoan(
-            testBorrowerCommitment,
-            keccak256("nullifier14"),
-            testPolicyVersion,
-            testTierId,
-            testPrincipal,
-            testAprBps,
-            testOriginationFeeBps,
-            testTermDays,
-            testIndustry,
-            testUnderwriterKeyX,
-            testUnderwriterKeyY,
-            block.timestamp,
-            testProofData,
-            testPublicInputs
+        testPublicInputs[1] = bytes32(
+            _computeLoanHash(
+                testBorrowerCommitment,
+                testUnderwriterKeyX,
+                testUnderwriterKeyY,
+                testTierId,
+                testPrincipal,
+                testAprBps,
+                testOriginationFeeBps,
+                testTermDays,
+                testIndustry,
+                block.timestamp,
+                loanId
+            )
         );
+
+        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+            keccak256("nullifier14")
+        );
+        loanEngine.createLoan(params, testProofData, testPublicInputs);
 
         loanEngine.activateLoan(1, offRampEntity, feeManager);
         vm.stopPrank();

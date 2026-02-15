@@ -1,0 +1,15 @@
+{
+    "name": "zk-scripts",
+    "version": "1.0.0",
+    "description": "Integration scripts for Credit Rail",
+    "main": "test_integration.ts",
+    "scripts": {
+        "test": "npx tsx test_integration.ts"
+    },
+    "dependencies": {
+        "@aztec/bb.js": "^2.1.8",
+        "@noir-lang/noir_js": "^1.0.0-beta.16",
+        "ethers": "^6.15.0",
+        "tsx": "^4.19.1"
+    }
+}

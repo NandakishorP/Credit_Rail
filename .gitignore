@@ -7,3 +7,11 @@ contracts/corpus/
 contracts/corpus_echidna/
 contracts/medusa-corpus/
 economic-modelling/notes.md
+# ZK Scripts
+zk-scripts/node_modules/
+anvil-zksync.log
+
+# Compiled artifacts that can be regenerated
+contracts/zkout/
+__pycache__/
+*.pyc

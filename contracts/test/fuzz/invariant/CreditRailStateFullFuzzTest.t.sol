@@ -5,6 +5,7 @@ import {LoanEngine} from "../../../src/LoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
+import {MockPoseidon2} from "../../mocks/MockPoseidon2.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 import {Handler} from "./Handler.t.sol";
@@ -57,12 +58,14 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         creditPolicy.freezePolicy(1);
 
         MockLoanProofVerifier mockLoanProofVerifier = new MockLoanProofVerifier();
+        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         loanEngine = new LoanEngine(
             address(creditPolicy),
             address(mockLoanProofVerifier),
             maxOriginationFeeBps,
             address(tranchePool),
-            address(usdt)
+            address(usdt),
+            address(mockPoseidon)
         );
         loanEngine.setMaxOriginationFeeBps(500);
         tranchePool.setLoanEngine(address(loanEngine));

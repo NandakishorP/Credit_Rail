@@ -8,7 +8,7 @@ import {ITranchePool} from "./interfaces/ITranchePool.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TranchePool} from "./TranchePool.sol";
-import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
+import {IPoseidon2} from "./interfaces/IPoseidon2.sol";
 import {Field} from "@poseidon2-evm/Field.sol";
 
 contract LoanEngine is Ownable, ReentrancyGuard {
@@ -51,8 +51,14 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     error LoanEngine__ProofAlreadyUsed();
     error LoanEngine__InvalidPublicInputs();
     error LoanEngine__InvalidUnderwriterKey();
-    error LoanEngine__ProofExpired(uint256 proofTimestamp, uint256 currentTimestamp);
-    error LoanEngine__ProofFromFuture(uint256 proofTimestamp, uint256 currentTimestamp);
+    error LoanEngine__ProofExpired(
+        uint256 proofTimestamp,
+        uint256 currentTimestamp
+    );
+    error LoanEngine__ProofFromFuture(
+        uint256 proofTimestamp,
+        uint256 currentTimestamp
+    );
     error LoanEngine__IndustryExcluded(uint256 policyVersion, bytes32 industry);
     error LoanEngine__InvalidPublicInputsLength();
 
@@ -123,7 +129,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     mapping(bytes32 => bool) public authorizedUnderwriters;
     uint256 public constant STANDARD_BPS = 100;
     uint256 public constant PROOF_MAX_AGE = 1 hours;
-    Poseidon2 public poseidon2;
+    IPoseidon2 public poseidon2;
     enum LoanState {
         NONE,
         CREATED,
@@ -158,6 +164,21 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         // allocation_ratio
         uint256 seniorPrincipalAllocated;
         uint256 juniorPrincipalAllocated;
+    }
+
+    struct CreateLoanParams {
+        bytes32 borrowerCommitment;
+        bytes32 nullifierHash;
+        uint256 policyVersion;
+        uint8 tierId;
+        uint256 principalIssued;
+        uint256 aprBps;
+        uint256 originationFeeBps;
+        uint256 termDays;
+        bytes32 industry;
+        bytes32 underwriterKeyX;
+        bytes32 underwriterKeyY;
+        uint256 proofTimestamp;
     }
 
     uint256 public constant POLICY_VERSION_HASH_INDEX = 0;
@@ -221,14 +242,15 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         address _loanProofVerifier,
         uint256 _maxOriginationFeeBps,
         address _tranchePool,
-        address _stableCoinAddress
+        address _stableCoinAddress,
+        address _poseidon2
     ) Ownable(msg.sender) {
         creditPolicyContract = ICreditPolicy(_creditPolicyContract);
         loanProofVerifier = IVerifier(_loanProofVerifier);
         s_maxOriginationFeeBps = _maxOriginationFeeBps;
         tranchePool = ITranchePool(_tranchePool);
         s_stableCoinAddress = _stableCoinAddress;
-        poseidon2 = new Poseidon2();
+        poseidon2 = IPoseidon2(_poseidon2);
     }
 
     // A notarization step that records a policy-compliant loan intent on-chain
@@ -236,22 +258,11 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     // borrowerCommitment should match the publicinput commitment
     // all the parameteres should match the public inputs
     function createLoan(
-        bytes32 borrowerCommitment,
-        bytes32 nullifierHash,
-        uint256 policyVersion,
-        uint8 tierId,
-        uint256 principalIssued,
-        uint256 aprBps,
-        uint256 originationFeeBps,
-        uint256 termDays,
-        bytes32 industry,
-        bytes32 underwriterKeyX,
-        bytes32 underwriterKeyY,
-        uint256 proofTimestamp,
+        CreateLoanParams calldata params,
         bytes calldata proofData,
         bytes32[] calldata publicInputs
     ) external onlyOwner {
-        if(publicInputs.length != TOTAL_PUBLIC_INPUTS){
+        if (publicInputs.length != TOTAL_PUBLIC_INPUTS) {
             revert LoanEngine__InvalidPublicInputsLength();
         }
         if (
@@ -264,81 +275,115 @@ contract LoanEngine is Ownable, ReentrancyGuard {
             revert LoanEngine__LoanExists(s_nextLoanId);
         }
 
-        if (!creditPolicyContract.isPolicyFrozen(policyVersion)) {
-            revert LoanEngine__PolicyNotFrozen(policyVersion);
+        if (!creditPolicyContract.isPolicyFrozen(params.policyVersion)) {
+            revert LoanEngine__PolicyNotFrozen(params.policyVersion);
         }
 
-        if (creditPolicyContract.isIndustryExcluded(policyVersion, industry)) {
-            revert LoanEngine__IndustryExcluded(policyVersion, industry);
+        if (
+            creditPolicyContract.isIndustryExcluded(
+                params.policyVersion,
+                params.industry
+            )
+        ) {
+            revert LoanEngine__IndustryExcluded(
+                params.policyVersion,
+                params.industry
+            );
         }
 
-        if (!creditPolicyContract.tierExistsInPolicy(policyVersion, tierId)) {
-            revert LoanEngine__LoanTierIsNotInPolicy(policyVersion, tierId);
+        if (
+            !creditPolicyContract.tierExistsInPolicy(
+                params.policyVersion,
+                params.tierId
+            )
+        ) {
+            revert LoanEngine__LoanTierIsNotInPolicy(
+                params.policyVersion,
+                params.tierId
+            );
         }
 
-        if (s_nullifierHashes[nullifierHash]) {
+        if (s_nullifierHashes[params.nullifierHash]) {
             revert LoanEngine__ProofAlreadyUsed();
         }
 
         // Verify that the proof was generated using the correct policy version hash
         // publicInputs[0] must correspond to the policy_version_hash from the circuit
-        if (publicInputs[POLICY_VERSION_HASH_INDEX] != creditPolicyContract.policyScopeHash(policyVersion)) {
-             revert LoanEngine__InvalidPublicInputs();
-        }
-
-        if(publicInputs[NULLIFIER_HASH_INDEX] != nullifierHash){
+        if (
+            publicInputs[POLICY_VERSION_HASH_INDEX] !=
+            creditPolicyContract.policyScopeHash(params.policyVersion)
+        ) {
             revert LoanEngine__InvalidPublicInputs();
         }
 
-        bytes32 underwriterKeyHash = keccak256(abi.encodePacked(underwriterKeyX, underwriterKeyY));
+        if (publicInputs[NULLIFIER_HASH_INDEX] != params.nullifierHash) {
+            revert LoanEngine__InvalidPublicInputs();
+        }
+
+        bytes32 underwriterKeyHash = keccak256(
+            abi.encodePacked(params.underwriterKeyX, params.underwriterKeyY)
+        );
         if (!authorizedUnderwriters[underwriterKeyHash]) {
             revert LoanEngine__InvalidUnderwriterKey();
         }
 
         // Reconstruct Loan Hash
         Field.Type[] memory inputs = new Field.Type[](11);
-        inputs[0] = Field.toField(uint256(borrowerCommitment));
-        inputs[1] = Field.toField(uint256(underwriterKeyX));
-        inputs[2] = Field.toField(uint256(underwriterKeyY));
-        inputs[3] = Field.toField(uint256(tierId));
-        inputs[4] = Field.toField(principalIssued);
-        inputs[5] = Field.toField(aprBps);
-        inputs[6] = Field.toField(originationFeeBps);
-        inputs[7] = Field.toField(termDays);
-        inputs[8] = Field.toField(uint256(industry));
-        inputs[9] = Field.toField(proofTimestamp);
+        inputs[0] = Field.toField(uint256(params.borrowerCommitment));
+        inputs[1] = Field.toField(uint256(params.underwriterKeyX));
+        inputs[2] = Field.toField(uint256(params.underwriterKeyY));
+        inputs[3] = Field.toField(uint256(params.tierId));
+        inputs[4] = Field.toField(params.principalIssued);
+        inputs[5] = Field.toField(params.aprBps);
+        inputs[6] = Field.toField(params.originationFeeBps);
+        inputs[7] = Field.toField(params.termDays);
+        inputs[8] = Field.toField(uint256(params.industry));
+        inputs[9] = Field.toField(params.proofTimestamp);
         inputs[10] = Field.toField(s_nextLoanId);
 
-        if(Field.toUint256(poseidon2.hash(inputs)) != uint256(publicInputs[LOAN_HASH_INDEX])){
+        if (
+            Field.toUint256(poseidon2.hash(inputs)) !=
+            uint256(publicInputs[LOAN_HASH_INDEX])
+        ) {
             revert LoanEngine__InvalidPublicInputs();
         }
 
-        if (proofTimestamp > block.timestamp) {
-            revert LoanEngine__ProofFromFuture(proofTimestamp, block.timestamp);
+        if (params.proofTimestamp > block.timestamp) {
+            revert LoanEngine__ProofFromFuture(
+                params.proofTimestamp,
+                block.timestamp
+            );
         }
         // ALLOW A DRIFT OF PROOF_MAX_AGE
-        if (block.timestamp - proofTimestamp > PROOF_MAX_AGE) {
-            revert LoanEngine__ProofExpired(proofTimestamp, block.timestamp);
-        }
-
-        if (principalIssued == 0 || aprBps == 0 || termDays == 0) {
-            revert LoanEngine__InvalidLoanParameters(
-                s_nextLoanId,
-                principalIssued,
-                aprBps,
-                termDays
+        if (block.timestamp - params.proofTimestamp > PROOF_MAX_AGE) {
+            revert LoanEngine__ProofExpired(
+                params.proofTimestamp,
+                block.timestamp
             );
         }
 
-        if (originationFeeBps > s_maxOriginationFeeBps) {
+        if (
+            params.principalIssued == 0 ||
+            params.aprBps == 0 ||
+            params.termDays == 0
+        ) {
+            revert LoanEngine__InvalidLoanParameters(
+                s_nextLoanId,
+                params.principalIssued,
+                params.aprBps,
+                params.termDays
+            );
+        }
+
+        if (params.originationFeeBps > s_maxOriginationFeeBps) {
             revert LoanEngine__MaxOriginationFeeExceeded(
                 s_nextLoanId,
-                originationFeeBps,
+                params.originationFeeBps,
                 s_maxOriginationFeeBps
             );
         }
 
-        if (principalIssued > tranchePool.getTotalIdleValue()) {
+        if (params.principalIssued > tranchePool.getTotalIdleValue()) {
             revert LoanEngine__InsufficientPoolLiquidity();
         }
 
@@ -348,19 +393,19 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         Loan memory newLoan = Loan({
             loanId: s_nextLoanId,
-            borrowerCommitment: borrowerCommitment,
-            policyVersion: policyVersion,
-            tierId: tierId,
-            principalIssued: principalIssued,
+            borrowerCommitment: params.borrowerCommitment,
+            policyVersion: params.policyVersion,
+            tierId: params.tierId,
+            principalIssued: params.principalIssued,
             principalOutstanding: 0,
-            aprBps: aprBps,
-            originationFeeBps: originationFeeBps,
+            aprBps: params.aprBps,
+            originationFeeBps: params.originationFeeBps,
             interestAccrued: 0,
             interestPaid: 0,
             lastAccrualTimestamp: 0,
             startTimestamp: 0,
             maturityTimestamp: 0,
-            termDays: termDays,
+            termDays: params.termDays,
             state: LoanState.CREATED,
             totalRecovered: 0,
             seniorPrincipalAllocated: 0,
@@ -368,13 +413,13 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         });
 
         s_loans[s_nextLoanId++] = newLoan;
-        s_nullifierHashes[nullifierHash] = true;
+        s_nullifierHashes[params.nullifierHash] = true;
 
         emit LoanCreated(
             newLoan.loanId,
-            borrowerCommitment,
-            principalIssued,
-            tierId,
+            params.borrowerCommitment,
+            params.principalIssued,
+            params.tierId,
             block.timestamp
         );
     }
@@ -497,12 +542,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
 
         tranchePool.onRepayment(principalPaid, interestPaid);
 
-        emit LoanRepaid(
-            loan.loanId,
-            principalPaid,
-            interestPaid,
-            timestamp
-        );
+        emit LoanRepaid(loan.loanId, principalPaid, interestPaid, timestamp);
 
         if (fullyRepaid) {
             emit LoanClosed(loanId, timestamp);
@@ -565,7 +605,7 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         emit LoanRecovered(loanId, amount, block.timestamp);
     }
 
-    function _accrueInterest(uint256 loanId,uint256 timestamp) internal {
+    function _accrueInterest(uint256 loanId, uint256 timestamp) internal {
         // Implementation goes here
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.ACTIVE) {
@@ -627,8 +667,6 @@ contract LoanEngine is Ownable, ReentrancyGuard {
         return s_maxOriginationFeeBps;
     }
 
-    
-
     function setUnderwriterAuthorization(
         bytes32 keyX,
         bytes32 keyY,
@@ -636,7 +674,13 @@ contract LoanEngine is Ownable, ReentrancyGuard {
     ) external onlyOwner {
         bytes32 keyHash = keccak256(abi.encodePacked(keyX, keyY));
         authorizedUnderwriters[keyHash] = isAuthorized;
-        emit UnderwriterAuthorizationUpdated(keyHash, keyX, keyY, isAuthorized, block.timestamp);
+        emit UnderwriterAuthorizationUpdated(
+            keyHash,
+            keyX,
+            keyY,
+            isAuthorized,
+            block.timestamp
+        );
     }
 
     function getNextLoanId() external view returns (uint256) {
