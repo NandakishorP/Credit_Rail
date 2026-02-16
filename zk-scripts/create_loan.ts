@@ -19,10 +19,15 @@ const LOAN_ENGINE = process.env.LOAN_ENGINE || "0xb98e374C912ff8C02ac7363c57d5bf
 const CREDIT_POLICY = process.env.CREDIT_POLICY || "0x22D151A1313d9B517Fa437F1F5B3744E636D8790";
 const TRANCHE_POOL = process.env.TRANCHE_POOL || "0xd7385ba726A7b72933E63FCb0Dfee8Bcae63478c";
 const USDC = process.env.USDC || "0x82778c3185fD0666d3f34F8930B4287405D9fBe4";
+const VERIFIER = process.env.VERIFIER || "0x6B828bcb33305478cd7d27eB323F5C5B7b4aFdbe";
 
 // Load circuit
 const circuitPath = path.resolve(__dirname, "../circuits/target/circuits.json");
 const circuit = JSON.parse(fs.readFileSync(circuitPath, "utf-8"));
+
+const HONK_VERIFIER_ABI = [
+  "function verify(bytes calldata proof, bytes32[] calldata publicInputs) external returns (bool)"
+];
 
 // LoanEngine ABI (partial)
 const LOAN_ENGINE_ABI = [
@@ -32,7 +37,10 @@ const LOAN_ENGINE_ABI = [
     bytes32[] calldata publicInputs
   ) external`,
   "function getNextLoanId() external view returns (uint256)",
-  "function getLoanDetails(uint256 loanId) external view returns (tuple(uint8 state, bytes32 borrowerCommitment, uint256 policyVersion, uint8 tierId, uint256 principalIssued, uint256 aprBps, uint256 originationFeeBps, uint256 termDays, bytes32 industry, uint256 interestEarned, uint256 principalRepaid, bytes32 nullifierHash, uint256 createdAt, bytes32 underwriterKeyX, bytes32 underwriterKeyY))"
+  "function getLoanDetails(uint256 loanId) external view returns (tuple(uint8 state, bytes32 borrowerCommitment, uint256 policyVersion, uint8 tierId, uint256 principalIssued, uint256 aprBps, uint256 originationFeeBps, uint256 termDays, bytes32 industry, uint256 interestEarned, uint256 principalRepaid, bytes32 nullifierHash, uint256 createdAt, bytes32 underwriterKeyX, bytes32 underwriterKeyY))",
+  "function setUnderwriterAuthorization(bytes32 keyX, bytes32 keyY, bool authorized) external",
+  "function setWhitelistedOffRampingEntity(address entity, bool whitelisted) external",
+  "function authorizedUnderwriters(bytes32 keyHash) external view returns (bool)"
 ];
 
 const CREDIT_POLICY_ABI = [
@@ -40,6 +48,7 @@ const CREDIT_POLICY_ABI = [
   "function freezePolicy(uint256 policyId) external",
   "function isPolicyFrozen(uint256 policyId) external view returns (bool)",
   "function policyCreated(uint256 version) external view returns (bool)",
+  "function policyScopeHash(uint256 version) external view returns (bytes32)",
   `function updateEligibility(uint256 version, (uint256 minAnnualRevenue, uint256 minEBITDA, uint256 minTangibleNetWorth, uint256 minBusinessAgeDays, uint256 maxDefaultsLast36Months, bool bankruptcyExcluded) data) external`,
   `function updateRatios(uint256 version, (uint256 maxTotalDebtToEBITDA, uint256 minInterestCoverageRatio, uint256 minCurrentRatio, uint256 minEBITDAMarginBps) data) external`,
   `function updateConcentration(uint256 version, (uint256 maxSingleBorrowerBps, uint256 maxIndustryConcentrationBps) data) external`,
@@ -97,157 +106,22 @@ async function main() {
   }
 
   // --- Define Test Data ---
-  const timestamp = Math.floor(Date.now() / 1000);
+  // Get the current block timestamp from the chain (anvil-zksync has a low genesis timestamp)
+  const latestBlock = await provider.getBlock("latest");
+  const blockTimestamp = Number(latestBlock!.timestamp);
+  console.log(`Current block timestamp: ${blockTimestamp}`);
+  
+  // Use the chain's block timestamp, not real-world Date.now()
+  const timestamp = blockTimestamp;
   const loanId = Number(await loanEngine.getNextLoanId());
   const attestation_timestamp = timestamp;
   
-  // Use policy version 1 (fresh deployment)
-  let policyId = 1;
+  // Use policy version 2 (because full_deploy.sh created version 1 with wrong scope hash)
+  let policyId = 2;
   
   console.log(`Creating loan ID: ${loanId}`);
 
-  // Check if policy exists and is frozen
-  const policyExists = await creditPolicy.policyCreated(policyId);
-  const isFrozen = policyExists ? await creditPolicy.isPolicyFrozen(policyId) : false;
-  
-  if (!isFrozen) {
-    console.log(`Setting up policy version ${policyId}...`);
-    
-    if (!policyExists) {
-      console.log("  Creating policy...");
-      const tx = await creditPolicy.createPolicy(policyId);
-      await tx.wait();
-    }
-
-    console.log("  Setting eligibility...");
-    await (await creditPolicy.updateEligibility(policyId, {
-      minAnnualRevenue: 1000000,
-      minEBITDA: 100000,
-      minTangibleNetWorth: 250000,
-      minBusinessAgeDays: 730,
-      maxDefaultsLast36Months: 0,
-      bankruptcyExcluded: true
-    })).wait();
-
-    console.log("  Setting ratios...");
-    await (await creditPolicy.updateRatios(policyId, {
-      maxTotalDebtToEBITDA: 40000,
-      minInterestCoverageRatio: 15000,
-      minCurrentRatio: 12000,
-      minEBITDAMarginBps: 1000
-    })).wait();
-
-    console.log("  Setting concentration...");
-    await (await creditPolicy.updateConcentration(policyId, {
-      maxSingleBorrowerBps: 1000,
-      maxIndustryConcentrationBps: 2500
-    })).wait();
-
-    console.log("  Setting attestation...");
-    await (await creditPolicy.updateAttestation(policyId, {
-      maxAttestationAgeDays: 90,
-      reAttestationFrequencyDays: 365,
-      requiresCPAAttestation: false
-    })).wait();
-
-    console.log("  Setting covenants...");
-    await (await creditPolicy.updateCovenants(policyId, {
-      maxLeverageRatio: 50000,
-      minCoverageRatio: 10000,
-      minLiquidityAmount: 50000,
-      allowsDividends: true,
-      reportingFrequencyDays: 90
-    })).wait();
-
-    console.log("  Setting loan tier...");
-    await (await creditPolicy.setLoanTier(policyId, 1, {
-      name: "Standard",
-      minRevenue: 1000000,
-      maxRevenue: 10000000,
-      minEBITDA: 100000,
-      maxDebtToEBITDA: 40000,
-      maxLoanToEBITDA: BigInt("1000000000000000000"),
-      interestRateBps: 1200,
-      originationFeeBps: 100,
-      termDays: 365,
-      active: true
-    })).wait();
-
-    console.log("  Setting policy document...");
-    const docHash = ethers.keccak256(ethers.toUtf8Bytes("policy_document_v2"));
-    await (await creditPolicy.setPolicyDocument(policyId, docHash, "ipfs://test")).wait();
-
-    console.log("  Setting policy scope hash...");
-    const scopeHash = ethers.keccak256(ethers.toUtf8Bytes("policy_scope_v2"));
-    await (await creditPolicy.setPolicyScopeHash(policyId, scopeHash)).wait();
-
-    console.log("  Freezing policy...");
-    await (await creditPolicy.freezePolicy(policyId)).wait();
-    console.log("  ✅ Policy fully configured and frozen!");
-  } else {
-    console.log(`Policy version ${policyId} already frozen, using it`);
-  }
-
-  // --- Setup TranchePool ---
-  console.log("\nSetting up TranchePool...");
-  
-  // Check pool state (0=OPEN, 1=COMMITED, 2=DEPLOYED)
-  const poolState = await tranchePool.getPoolState();
-  console.log(`  Current pool state: ${poolState}`);
-  
-  // Whitelist LoanEngine if not already whitelisted
-  const isWhitelisted = await tranchePool.isAddressWhitelisted(LOAN_ENGINE);
-  if (!isWhitelisted) {
-    console.log("  Whitelisting LoanEngine...");
-    await (await tranchePool.whitelistAddress(LOAN_ENGINE)).wait();
-  }
-
-  // Mint USDC and fund the pool
-  const loanAmount = BigInt(500000) * BigInt(10**18);  // 500k USDC (18 decimals)
-  const fundAmount = loanAmount * BigInt(2);  // Double the loan amount for safety
-  
-  console.log("  Minting USDC...");
-  await (await usdc.mint(await signer.getAddress(), fundAmount)).wait();
-  
-  console.log("  Approving USDC for TranchePool...");
-  await (await usdc.approve(TRANCHE_POOL, fundAmount)).wait();
-  
-  // If pool is OPEN, we need to commit and deploy it
-  if (poolState === 0n) {
-    console.log("  Transferring USDC to TranchePool...");
-    await (await usdc.transfer(TRANCHE_POOL, fundAmount)).wait();
-    
-    console.log("  Committing pool...");
-    await (await tranchePool.commit()).wait();
-    
-    console.log("  Deploying pool...");
-    await (await tranchePool.deploy()).wait();
-  }
-  
-  // Allocate capital to LoanEngine
-  const existingAllocation = await tranchePool.getAllocation(LOAN_ENGINE);
-  if (existingAllocation < loanAmount) {
-    console.log("  Allocating capital to LoanEngine...");
-    await (await tranchePool.allocateCapital(LOAN_ENGINE, loanAmount)).wait();
-  }
-  
-  console.log("  ✅ TranchePool ready!");
-
-
-  const borrower_data = {
-    revenue: 5000000,
-    ebitda: 750000,
-    net_worth: 1000000,
-    age_days: 1095,
-    defaults: 0,
-    bankruptcy: false,
-    debt_to_ebitda: 25000,
-    interest_coverage: 20000,
-    current_ratio: 15000,
-    margin_bps: 1500,
-    secret: "0x1234567890123456789012345678901234567890123456789012345678901234"
-  };
-
+  // Define policy and tier constants first (used for both policy setup and circuit)
   const policy = {
     min_revenue: 1000000,
     min_ebitda: 100000,
@@ -273,6 +147,69 @@ async function main() {
     origination_fee: 100,
     term: 365,
     active: true
+  };
+
+  // Compute the policy_version_hash (Poseidon2) that the circuit will output
+  const policy_version_hash = await poseidonHash([
+    policy.min_revenue, policy.min_ebitda, policy.min_net_worth, policy.min_age,
+    policy.max_defaults, Number(policy.bankruptcy_excluded), policy.max_debt_to_ebitda,
+    policy.min_interest_coverage, policy.min_current_ratio, policy.min_margin_bps,
+    policy.max_attestation_age, tier.id, tier.min_revenue, tier.max_revenue,
+    tier.min_ebitda, tier.max_debt_to_ebitda, tier.max_loan_to_ebitda,
+    tier.interest_rate, tier.origination_fee, tier.term, Number(tier.active)
+  ]);
+  const policy_version_hash_bytes32 = "0x" + policy_version_hash.toString().slice(2).padStart(64, '0');
+  console.log(`Policy version hash (Poseidon2): ${policy_version_hash_bytes32}`);
+
+  // Check if policy exists and is frozen - policy setup is done via setup_policy2.sh or cast commands
+  const policyExists = await creditPolicy.policyCreated(policyId);
+  const isFrozen = policyExists ? await creditPolicy.isPolicyFrozen(policyId) : false;
+  
+  if (!isFrozen) {
+    console.error(`❌ Policy ${policyId} is not frozen. Please run the policy setup first.`);
+    console.error("   Use cast commands or setup_policy2.sh to create and freeze the policy.");
+    process.exit(1);
+  }
+  
+  console.log(`✅ Using frozen policy version ${policyId}`);
+
+  // Verify the on-chain scope hash matches our computed hash
+  const onChainScopeHash = await creditPolicy.policyScopeHash(policyId);
+  console.log(`  On-chain scope hash: ${onChainScopeHash}`);
+  console.log(`  Expected hash:       ${policy_version_hash_bytes32}`);
+  if (onChainScopeHash.toLowerCase() !== policy_version_hash_bytes32.toLowerCase()) {
+    console.error("❌ Scope hash mismatch! The policy was set up with a different scope hash.");
+    process.exit(1);
+  }
+  console.log("  ✅ Scope hash matches!");
+
+  // --- TranchePool is already set up by full_deploy.sh ---
+  console.log("\nTranchePool already configured by deployment script");
+  
+  // Check pool state (0=OPEN, 1=COMMITED, 2=DEPLOYED)
+  const poolState = await tranchePool.getPoolState();
+  console.log(`  Current pool state: ${poolState} (expected: 2 = DEPLOYED)`);
+  
+  if (poolState !== 2n) {
+    console.error("Error: Pool is not in DEPLOYED state. Run full_deploy.sh first.");
+    process.exit(1);
+  }
+  
+  console.log("  ✅ TranchePool ready!");
+
+  // Borrower data
+  const borrower_data = {
+    revenue: 5000000,
+    ebitda: 750000,
+    net_worth: 1000000,
+    age_days: 1095,
+    defaults: 0,
+    bankruptcy: false,
+    debt_to_ebitda: 25000,
+    interest_coverage: 20000,
+    current_ratio: 15000,
+    margin_bps: 1500,
+    secret: "0x1234567890123456789012345678901234567890123456789012345678901234"
   };
 
   const loan = {
@@ -319,14 +256,7 @@ async function main() {
     borrower_data.age_days
   ]);
 
-  const policy_version_hash = await poseidonHash([
-    policy.min_revenue, policy.min_ebitda, policy.min_net_worth, policy.min_age,
-    policy.max_defaults, Number(policy.bankruptcy_excluded), policy.max_debt_to_ebitda,
-    policy.min_interest_coverage, policy.min_current_ratio, policy.min_margin_bps,
-    policy.max_attestation_age, tier.id, tier.min_revenue, tier.max_revenue,
-    tier.min_ebitda, tier.max_debt_to_ebitda, tier.max_loan_to_ebitda,
-    tier.interest_rate, tier.origination_fee, tier.term, Number(tier.active)
-  ]);
+  // policy_version_hash already computed earlier in the script
 
   const loan_hash = await poseidonHash([
     borrower_commitment, pubKeyX, pubKeyY, tier.id, loan.principal, loan.apr,
@@ -455,12 +385,92 @@ async function main() {
   console.log("\n--- Creating Loan ---");
   console.log("Params:", JSON.stringify(createLoanParams, null, 2));
 
+  // Authorize underwriter key if not already authorized
+  const underwriterKeyXBytes = "0x" + pubKeyX.toString(16).padStart(64, '0');
+  const underwriterKeyYBytes = "0x" + pubKeyY.toString(16).padStart(64, '0');
+  const underwriterKeyHash = ethers.keccak256(ethers.solidityPacked(["bytes32", "bytes32"], [underwriterKeyXBytes, underwriterKeyYBytes]));
+  
+  console.log("\nAuthorizing underwriter...");
+  const isAuthorized = await loanEngine.authorizedUnderwriters(underwriterKeyHash);
+  if (!isAuthorized) {
+    console.log("  Setting underwriter authorization...");
+    const authTx = await loanEngine.setUnderwriterAuthorization(underwriterKeyXBytes, underwriterKeyYBytes, true);
+    await authTx.wait();
+    console.log("  ✅ Underwriter authorized");
+  } else {
+    console.log("  Underwriter already authorized");
+  }
+
+  // Whitelist off-ramping entity (the deployer/signer)
+  const signerAddress = await signer.getAddress();
+  console.log("\nWhitelisting off-ramping entity...");
   try {
+    const whitelistTx = await loanEngine.setWhitelistedOffRampingEntity(signerAddress, true);
+    await whitelistTx.wait();
+    console.log("  ✅ Off-ramping entity whitelisted");
+  } catch (e: any) {
+    // May already be whitelisted
+    console.log("  Off-ramping entity may already be whitelisted");
+  }
+
+  // ========================================
+  // DIRECT VERIFIER TEST
+  // ========================================
+  console.log("\n" + "=".repeat(60));
+  console.log("DIRECT VERIFIER TEST");
+  console.log("=".repeat(60));
+  
+  const verifier = new ethers.Contract(VERIFIER, HONK_VERIFIER_ABI, signer);
+  
+  console.log(`\nVerifier address: ${VERIFIER}`);
+  console.log(`Proof length: ${proofHex.length} bytes`);
+  console.log(`Public inputs count: ${publicInputsBytes32.length}`);
+  
+  console.log("\nCalling verifier.verify() directly...");
+  try {
+    const isValid = await verifier.verify.staticCall(proofHex, publicInputsBytes32);
+    console.log(`✅ Verifier returned: ${isValid}`);
+  } catch (verifyError: any) {
+    console.error("❌ Direct verifier call FAILED:");
+    console.error(verifyError.message || verifyError);
+    
+    // Try to get more details
+    try {
+      const gasEstimate = await verifier.verify.estimateGas(proofHex, publicInputsBytes32);
+      console.log(`Gas estimate would be: ${gasEstimate.toString()}`);
+    } catch (gasError: any) {
+      console.error("Gas estimation also failed:", gasError.message);
+    }
+  }
+
+  console.log("\nSubmitting createLoan transaction...");
+  try {
+    // First try a static call to get a revert reason
+    console.log("Testing with staticCall first...");
+    try {
+      await loanEngine.createLoan.staticCall(
+        createLoanParams,
+        proofHex,
+        publicInputsBytes32
+      );
+      console.log("✅ staticCall passed!");
+    } catch (staticError: any) {
+      console.error("❌ staticCall failed with:", staticError.reason || staticError.message);
+      // Try to decode the error
+      if (staticError.data) {
+        console.error("Error data:", staticError.data);
+      }
+    }
+    
+    // Get the current nonce from the network to avoid desync
+    const currentNonce = await provider.getTransactionCount(signerAddress, "pending");
+    console.log(`Using nonce: ${currentNonce}`);
+    
     const tx = await loanEngine.createLoan(
       createLoanParams,
       proofHex,
       publicInputsBytes32,
-      { gasLimit: 5000000 }
+      { gasLimit: 10000000, nonce: currentNonce }
     );
     
     console.log(`Transaction hash: ${tx.hash}`);

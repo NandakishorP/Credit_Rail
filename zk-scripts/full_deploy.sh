@@ -15,19 +15,19 @@ echo "============================================================"
 
 # Deploy contracts
 echo "1. Deploying ZKTranscriptLib..."
-TRANSCRIPT=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" src/Verifier.sol:ZKTranscriptLib 2>&1 | grep "Deployed to:" | awk '{print $3}')
+TRANSCRIPT=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" src-zk/Verifier.sol:ZKTranscriptLib 2>&1 | grep "Deployed to:" | awk '{print $3}')
 echo "   ZKTranscriptLib: $TRANSCRIPT"
 
 echo "2. Deploying HonkVerifier..."
-VERIFIER=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --libraries "src/Verifier.sol:ZKTranscriptLib:$TRANSCRIPT" src/Verifier.sol:HonkVerifier 2>&1 | grep "Deployed to:" | awk '{print $3}')
+VERIFIER=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --libraries "src-zk/Verifier.sol:ZKTranscriptLib:$TRANSCRIPT" src-zk/Verifier.sol:HonkVerifier 2>&1 | grep "Deployed to:" | awk '{print $3}')
 echo "   HonkVerifier: $VERIFIER"
 
-echo "3. Deploying MockPoseidon2..."
-POSEIDON=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" test/mocks/MockPoseidon2.sol:MockPoseidon2 2>&1 | grep "Deployed to:" | awk '{print $3}')
-echo "   MockPoseidon2: $POSEIDON"
+echo "3. Deploying Poseidon2 (real implementation)..."
+POSEIDON=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" lib/poseidon2-evm/src/Poseidon2.sol:Poseidon2 2>&1 | grep "Deployed to:" | awk '{print $3}')
+echo "   Poseidon2: $POSEIDON"
 
 echo "4. Deploying CreditPolicy..."
-POLICY=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" src/CreditPolicy.sol:CreditPolicy --constructor-args "$DEPLOYER" 2>&1 | grep "Deployed to:" | awk '{print $3}')
+POLICY=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" src/CreditPolicy.sol:CreditPolicy 2>&1 | grep "Deployed to:" | awk '{print $3}')
 echo "   CreditPolicy: $POLICY"
 
 echo "5. Deploying ERC20Mock (USDC)..."
@@ -35,7 +35,7 @@ USDC=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key 
 echo "   USDC: $USDC"
 
 echo "6. Deploying TranchePool..."
-POOL=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" src/TranchePool.sol:TranchePool --constructor-args "$USDC" "$DEPLOYER" 2>&1 | grep "Deployed to:" | awk '{print $3}')
+POOL=$(forge create --zk-compile --broadcast --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" src/TranchePool.sol:TranchePool --constructor-args "$USDC" 2>&1 | grep "Deployed to:" | awk '{print $3}')
 echo "   TranchePool: $POOL"
 
 echo "7. Deploying LoanEngine..."
@@ -71,6 +71,10 @@ echo "   Set attestation"
 cast send "$POLICY" "updateCovenants(uint256,(uint256,uint256,uint256,bool,uint256))" 1 "(50000,10000,50000,true,90)" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
 echo "   Set covenants"
 
+# Set max tiers first (required before setting loan tier)
+cast send "$POLICY" "setMaxTiers(uint8)" 5 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set max tiers to 5"
+
 # Set loan tier
 cast send "$POLICY" "setLoanTier(uint256,uint8,(string,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool))" 1 1 '("Standard",1000000,10000000,100000,40000,1000000000000000000,1200,100,365,true)' --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
 echo "   Set loan tier"
@@ -94,29 +98,66 @@ echo "============================================================"
 echo "Setting up TranchePool..."
 echo "============================================================"
 
-# Whitelist LoanEngine
-cast send "$POOL" "whitelistAddress(address)" "$ENGINE" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "   Whitelisted LoanEngine"
+# Set LoanEngine
+cast send "$POOL" "setLoanEngine(address)" "$ENGINE" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set LoanEngine"
+
+# Whitelist deployer
+cast send "$POOL" "updateWhitelist(address,bool)" "$DEPLOYER" true --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Whitelisted deployer"
+
+# Whitelist deployer for equity tranche
+cast send "$POOL" "updateEquityTrancheWhiteList(address,bool)" "$DEPLOYER" true --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Whitelisted deployer for equity tranche"
 
 # Mint USDC
 cast send "$USDC" "mint(address,uint256)" "$DEPLOYER" "10000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
 echo "   Minted USDC"
 
-# Transfer USDC to pool
-cast send "$USDC" "transfer(address,uint256)" "$POOL" "5000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "   Transferred USDC to pool"
+# Approve TranchePool to spend USDC
+cast send "$USDC" "approve(address,uint256)" "$POOL" "10000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Approved USDC for pool"
 
-# Commit pool
-cast send "$POOL" "commit()" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "   Committed pool"
+# Set max caps for deposits FIRST (before min deposit amounts)
+cast send "$POOL" "setMaxAllocationCapSeniorTranche(uint256)" "5000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set senior max cap"
+cast send "$POOL" "setMaxAllocationCapJuniorTranche(uint256)" "5000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set junior max cap"
+cast send "$POOL" "setMaxAllocationCapEquityTranche(uint256)" "5000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set equity max cap"
 
-# Deploy pool
-cast send "$POOL" "deploy()" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "   Deployed pool"
+# Set min deposit amounts to 1 (now that max caps are set)
+cast send "$POOL" "setMinimumDepositAmountSeniorTranche(uint256)" 1 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set min senior deposit to 1"
+cast send "$POOL" "setMinimumDepositAmountJuniorTranche(uint256)" 1 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set min junior deposit to 1"
+cast send "$POOL" "setMinimumDepositAmountEquityTranche(uint256)" 1 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set min equity deposit to 1"
 
-# Allocate capital
-cast send "$POOL" "allocateCapital(address,uint256)" "$ENGINE" "1000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "   ✅ Allocated capital to LoanEngine"
+# Pool is OPEN by default (state 0), so we can deposit
+# Deposit to Senior Tranche
+cast send "$POOL" "depositSeniorTranche(uint256)" "1000000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Deposited 1M USDC to Senior Tranche"
+
+# Deposit to Junior Tranche
+cast send "$POOL" "depositJuniorTranche(uint256)" "500000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Deposited 500K USDC to Junior Tranche"
+
+# Deposit to Equity Tranche
+cast send "$POOL" "depositEquityTranche(uint256)" "250000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Deposited 250K USDC to Equity Tranche"
+
+# Set pool state to COMMITED
+cast send "$POOL" "setPoolState(uint8)" 1 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   Set pool state to COMMITED"
+
+# Set pool state to DEPLOYED
+cast send "$POOL" "setPoolState(uint8)" 2 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
+echo "   ✅ Set pool state to DEPLOYED"
+
+# Check idle value
+IDLE=$(cast call "$POOL" "getTotalIdleValue()" --rpc-url "$RPC_URL")
+echo "   Total idle value: $IDLE"
 
 echo ""
 echo "============================================================"
