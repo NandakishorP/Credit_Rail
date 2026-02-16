@@ -15,10 +15,10 @@ jobs:
         with:
           submodules: recursive  # Fetch all git submodules
       
-      - name: Install Foundry (zkSync)
+      - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly-2feb41d0e092df0cfc692fe6eb8d399c6a8e9cf7
+          version: stable
       
       - name: Install zksolc
         run: |
