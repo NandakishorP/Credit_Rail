@@ -17,8 +17,17 @@ jobs:
       
       - name: Install foundry-zksync
         run: |
-          # Install foundry-zksync from Matter Labs
-          curl -L https://raw.githubusercontent.com/matter-labs/foundry-zksync/main/install-foundry-zksync | bash
+          # Download and install foundry-zksync binaries directly
+          mkdir -p $HOME/.foundry/bin
+          
+          # Get latest release from foundry-zksync
+          RELEASE_URL="https://github.com/matter-labs/foundry-zksync/releases/latest/download"
+          
+          # Download Linux binaries
+          curl -L "${RELEASE_URL}/foundry_nightly_linux_amd64.tar.gz" -o /tmp/foundry-zksync.tar.gz
+          tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
+          chmod +x $HOME/.foundry/bin/*
+          
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
       
       - name: Verify foundry-zksync installation
