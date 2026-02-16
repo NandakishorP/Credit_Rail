@@ -15,22 +15,28 @@ jobs:
         with:
           submodules: recursive  # Fetch all git submodules
       
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
-      
-      - name: Install zksolc
+      - name: Install foundry-zksync
         run: |
-          curl -L https://github.com/matter-labs/zksolc-bin/releases/download/v1.5.15/zksolc-linux-amd64-musl-v1.5.15 -o /usr/local/bin/zksolc
-          chmod +x /usr/local/bin/zksolc
-          zksolc --version
+          # Install foundry-zksync from Matter Labs
+          curl -L https://raw.githubusercontent.com/matter-labs/foundry-zksync/main/install-foundry-zksync | bash
+          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+      
+      - name: Verify foundry-zksync installation
+        run: |
+          export PATH="$HOME/.foundry/bin:$PATH"
+          forge --version
       
       - name: Install dependencies
-        run: forge install
+        run: |
+          export PATH="$HOME/.foundry/bin:$PATH"
+          forge install
       
       - name: Build with zkSync
-        run: forge build --zksync
+        run: |
+          export PATH="$HOME/.foundry/bin:$PATH"
+          forge build --zksync
       
       - name: Run unit tests
-        run: forge test --match-path "test/unit/*.t.sol"
+        run: |
+          export PATH="$HOME/.foundry/bin:$PATH"
+          forge test --match-path "test/unit/*.t.sol"
