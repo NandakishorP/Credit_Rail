@@ -20,11 +20,16 @@ jobs:
           # Download and install foundry-zksync binaries directly
           mkdir -p $HOME/.foundry/bin
           
-          # Get latest release from foundry-zksync
-          RELEASE_URL="https://github.com/matter-labs/foundry-zksync/releases/latest/download"
+          # Get the latest release version
+          VERSION=$(curl -sL "https://api.github.com/repos/matter-labs/foundry-zksync/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
+          echo "Installing foundry-zksync version: $VERSION"
           
-          # Download Linux binaries
-          curl -L "${RELEASE_URL}/foundry_nightly_linux_amd64.tar.gz" -o /tmp/foundry-zksync.tar.gz
+          # Download Linux amd64 binaries
+          DOWNLOAD_URL="https://github.com/matter-labs/foundry-zksync/releases/download/${VERSION}/foundry_zksync_${VERSION#foundry-zksync-}_linux_amd64.tar.gz"
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L "$DOWNLOAD_URL" -o /tmp/foundry-zksync.tar.gz
+          
+          # Extract binaries
           tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
           chmod +x $HOME/.foundry/bin/*
           
