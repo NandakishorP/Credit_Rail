@@ -2,9 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract TranchePool is Ownable {
+contract TranchePool is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // Errors
@@ -140,7 +142,7 @@ contract TranchePool is Ownable {
     mapping(address => uint256) public equityUserIndex;
 
     // Stable coin
-    address public s_stableCoin;
+    address public immutable i_stableCoin;
     address public loanEngine;
 
     // Capital allocation factor (e.g., 80 for 80% senior, 15% junior, 5% equity)
@@ -209,7 +211,8 @@ contract TranchePool is Ownable {
     }
 
     constructor(address stableCoin_) Ownable(msg.sender) {
-        s_stableCoin = stableCoin_;
+        if (stableCoin_ == address(0)) revert TranchePool__ZeroAddressError();
+        i_stableCoin = stableCoin_;
         seniorInterestIndex = 1e18;
         juniorInterestIndex = 1e18;
         equityInterestIndex = 1e18;
@@ -218,7 +221,7 @@ contract TranchePool is Ownable {
 
     function depositSeniorTranche(
         uint256 amount
-    ) external isWhiteListed(msg.sender) {
+    ) external isWhiteListed(msg.sender) whenNotPaused nonReentrant {
         // q: wy we need a minimum deposit for a tranche?
         // a: in book.
         if (poolState != PoolState.OPEN) {
@@ -247,7 +250,7 @@ contract TranchePool is Ownable {
         // so what shares == amount holding 1:1 is valid and is not affecting or opening any attack vectors.
         uint256 shares = amount;
 
-        IERC20(s_stableCoin).safeTransferFrom(
+        IERC20(i_stableCoin).safeTransferFrom(
             msg.sender,
             address(this),
             amount
@@ -268,7 +271,7 @@ contract TranchePool is Ownable {
 
     function depositJuniorTranche(
         uint256 amount
-    ) external isWhiteListed(msg.sender) {
+    ) external isWhiteListed(msg.sender) whenNotPaused nonReentrant {
         if (poolState != PoolState.OPEN) {
             revert TranchePool__PoolIsNotOpen();
         }
@@ -285,7 +288,7 @@ contract TranchePool is Ownable {
 
         uint256 shares = amount;
 
-        IERC20(s_stableCoin).safeTransferFrom(
+        IERC20(i_stableCoin).safeTransferFrom(
             msg.sender,
             address(this),
             amount
@@ -307,7 +310,12 @@ contract TranchePool is Ownable {
 
     function depositEquityTranche(
         uint256 amount
-    ) external isWhiteListedForEquityTranche(msg.sender) {
+    )
+        external
+        isWhiteListedForEquityTranche(msg.sender)
+        whenNotPaused
+        nonReentrant
+    {
         if (poolState != PoolState.OPEN) {
             revert TranchePool__PoolIsNotOpen();
         }
@@ -324,7 +332,7 @@ contract TranchePool is Ownable {
 
         uint256 shares = amount;
 
-        IERC20(s_stableCoin).safeTransferFrom(
+        IERC20(i_stableCoin).safeTransferFrom(
             msg.sender,
             address(this),
             amount
@@ -439,10 +447,10 @@ contract TranchePool is Ownable {
         s_juniorTrancheDeployedValue += juniorAmount;
         s_equityTrancheDeployedValue += equityAmount;
 
-        IERC20(s_stableCoin).safeTransfer(deployer, totalDisbursement);
+        IERC20(i_stableCoin).safeTransfer(deployer, totalDisbursement);
 
         if (fees > 0) {
-            IERC20(s_stableCoin).safeTransfer(feeManager, fees);
+            IERC20(i_stableCoin).safeTransfer(feeManager, fees);
         }
 
         emit CapitalAllocated(
@@ -454,7 +462,9 @@ contract TranchePool is Ownable {
         return (seniorAmount, juniorAmount, equityAmount);
     }
 
-    function onInterestAccrued(uint256 interestAmount) external onlyLoanEngine(msg.sender) {
+    function onInterestAccrued(
+        uint256 interestAmount
+    ) external onlyLoanEngine(msg.sender) {
         if (interestAmount == 0) return;
 
         _accrueTrancheTargets();
@@ -467,8 +477,7 @@ contract TranchePool is Ownable {
             seniorOwed = seniorTargetInterest - seniorAccruedInterest;
         }
 
-        uint256 seniorPaid =
-            remaining < seniorOwed ? remaining : seniorOwed;
+        uint256 seniorPaid = remaining < seniorOwed ? remaining : seniorOwed;
 
         if (seniorPaid > 0) {
             seniorAccruedInterest += seniorPaid;
@@ -481,8 +490,7 @@ contract TranchePool is Ownable {
             juniorOwed = juniorTargetInterest - juniorAccruedInterest;
         }
 
-        uint256 juniorPaid =
-            remaining < juniorOwed ? remaining : juniorOwed;
+        uint256 juniorPaid = remaining < juniorOwed ? remaining : juniorOwed;
 
         if (juniorPaid > 0) {
             juniorAccruedInterest += juniorPaid;
@@ -643,7 +651,10 @@ contract TranchePool is Ownable {
             );
             seniorAccruedInterest -= seniorCancel;
             remainingInterest -= seniorCancel;
-            seniorTargetInterest -= _minimum(seniorTargetInterest, seniorCancel);
+            seniorTargetInterest -= _minimum(
+                seniorTargetInterest,
+                seniorCancel
+            );
         }
 
         // Then junior
@@ -654,7 +665,10 @@ contract TranchePool is Ownable {
             );
             juniorAccruedInterest -= juniorCancel;
             remainingInterest -= juniorCancel;
-            juniorTargetInterest -= _minimum(juniorTargetInterest, juniorCancel);
+            juniorTargetInterest -= _minimum(
+                juniorTargetInterest,
+                juniorCancel
+            );
         }
 
         // Any remaining interest is ignored (equity / protocol had no promise)
@@ -747,7 +761,7 @@ contract TranchePool is Ownable {
     }
 
     // when the pool closes if the user withdraw the shares before claiming interest on those he will lose the interest for the withdrawn shares
-    function claimSeniorInterest() external {
+    function claimSeniorInterest() external nonReentrant {
         uint256 userShares = s_seniorTrancheShares[msg.sender];
         if (userShares == 0) revert TranchePool__InsufficientShares();
 
@@ -761,10 +775,10 @@ contract TranchePool is Ownable {
         seniorUserIndex[msg.sender] = seniorInterestIndex;
         s_totalUnclaimedInterest -= claimable;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, claimable);
     }
 
-    function claimJuniorInterest() external {
+    function claimJuniorInterest() external nonReentrant {
         uint256 userShares = s_juniorTrancheShares[msg.sender];
         if (userShares == 0) revert TranchePool__InsufficientShares();
 
@@ -778,12 +792,13 @@ contract TranchePool is Ownable {
         juniorUserIndex[msg.sender] = juniorInterestIndex;
         s_totalUnclaimedInterest -= claimable;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, claimable);
     }
 
     function claimEquityInterest()
         external
         isWhiteListedForEquityTranche(msg.sender)
+        nonReentrant
     {
         uint256 userShares = s_equityTrancheShares[msg.sender];
         if (userShares == 0) revert TranchePool__InsufficientShares();
@@ -798,7 +813,7 @@ contract TranchePool is Ownable {
         // CHANGED: update user index BEFORE transfer
         equityUserIndex[msg.sender] = equityInterestIndex;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, claimable);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, claimable);
     }
 
     /**
@@ -810,7 +825,7 @@ contract TranchePool is Ownable {
      */
     function withdrawSeniorTranche(
         uint256 shares
-    ) external isWhiteListed(msg.sender) {
+    ) external isWhiteListed(msg.sender) nonReentrant {
         if (poolState != PoolState.OPEN && poolState != PoolState.CLOSED) {
             revert TranchePool__WithdrawNotAllowed(poolState);
         }
@@ -849,7 +864,7 @@ contract TranchePool is Ownable {
         s_seniorTrancheIdleValue -= amountToWithdraw;
         s_totalDeposited -= amountToWithdraw;
         // Transfer tokens
-        IERC20(s_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
 
         emit WithdrawnFromSeniorTranche(
             msg.sender,
@@ -865,7 +880,7 @@ contract TranchePool is Ownable {
      */
     function withdrawJuniorTranche(
         uint256 shares
-    ) external isWhiteListed(msg.sender) {
+    ) external isWhiteListed(msg.sender) nonReentrant {
         if (poolState != PoolState.OPEN && poolState != PoolState.CLOSED) {
             revert TranchePool__WithdrawNotAllowed(poolState);
         }
@@ -900,7 +915,7 @@ contract TranchePool is Ownable {
         s_juniorTrancheIdleValue -= amountToWithdraw;
         s_totalDeposited -= amountToWithdraw;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
 
         emit WithdrawnFromJuniorTranche(
             msg.sender,
@@ -912,7 +927,7 @@ contract TranchePool is Ownable {
 
     function withdrawEquityTranche(
         uint256 shares
-    ) external isWhiteListedForEquityTranche(msg.sender) {
+    ) external isWhiteListedForEquityTranche(msg.sender) nonReentrant {
         if (poolState != PoolState.OPEN && poolState != PoolState.CLOSED) {
             revert TranchePool__WithdrawNotAllowed(poolState);
         }
@@ -943,7 +958,7 @@ contract TranchePool is Ownable {
         s_equityTrancheIdleValue -= amountToWithdraw;
         s_totalDeposited -= amountToWithdraw;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, amountToWithdraw);
 
         emit WithdrawnFromEquityTranche(
             msg.sender,
@@ -959,7 +974,7 @@ contract TranchePool is Ownable {
      */
     function withdrawSeniorTrancheByAmount(
         uint256 amount
-    ) external isWhiteListed(msg.sender) {
+    ) external isWhiteListed(msg.sender) nonReentrant {
         if (poolState != PoolState.OPEN && poolState != PoolState.CLOSED) {
             revert TranchePool__WithdrawNotAllowed(poolState);
         }
@@ -994,7 +1009,7 @@ contract TranchePool is Ownable {
         s_seniorTrancheIdleValue -= amount;
         s_totalDeposited -= amount;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, amount);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, amount);
 
         emit WithdrawnFromSeniorTranche(
             msg.sender,
@@ -1010,7 +1025,7 @@ contract TranchePool is Ownable {
      */
     function withdrawJuniorTrancheByAmount(
         uint256 amount
-    ) external isWhiteListed(msg.sender) {
+    ) external isWhiteListed(msg.sender) nonReentrant {
         if (poolState != PoolState.OPEN && poolState != PoolState.CLOSED) {
             revert TranchePool__WithdrawNotAllowed(poolState);
         }
@@ -1044,7 +1059,7 @@ contract TranchePool is Ownable {
         s_juniorTrancheIdleValue -= amount;
         s_totalDeposited -= amount;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, amount);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, amount);
 
         emit WithdrawnFromJuniorTranche(
             msg.sender,
@@ -1056,7 +1071,7 @@ contract TranchePool is Ownable {
 
     function withdrawEquityTrancheByAmount(
         uint256 amount
-    ) external isWhiteListedForEquityTranche(msg.sender) {
+    ) external isWhiteListedForEquityTranche(msg.sender) nonReentrant {
         if (poolState != PoolState.OPEN && poolState != PoolState.CLOSED) {
             revert TranchePool__WithdrawNotAllowed(poolState);
         }
@@ -1090,7 +1105,7 @@ contract TranchePool is Ownable {
         s_equityTrancheIdleValue -= amount;
         s_totalDeposited -= amount;
 
-        IERC20(s_stableCoin).safeTransfer(msg.sender, amount);
+        IERC20(i_stableCoin).safeTransfer(msg.sender, amount);
 
         emit WithdrawnFromEquityTranche(
             msg.sender,
@@ -1111,17 +1126,17 @@ contract TranchePool is Ownable {
         if (s_seniorTrancheDeployedValue > 0) {
             seniorTargetInterest +=
                 (s_seniorTrancheDeployedValue *
-                s_senior_apr_bps *
-                timeElapsed)
-                / (365 days * 10_000);
+                    s_senior_apr_bps *
+                    timeElapsed) /
+                (365 days * 10_000);
         }
 
         if (s_juniorTrancheDeployedValue > 0) {
             juniorTargetInterest +=
                 (s_juniorTrancheDeployedValue *
-                s_target_junior_apr_bps *
-                timeElapsed)
-                / (365 days * 10_000);
+                    s_target_junior_apr_bps *
+                    timeElapsed) /
+                (365 days * 10_000);
         }
 
         lastTrancheAccrualTimestamp = currentTimestamp;
@@ -1472,5 +1487,17 @@ contract TranchePool is Ownable {
 
     function getEquityPrincipalShortfall() external view returns (uint256) {
         return equityPrincipalShortfall;
+    }
+
+    /// @notice Pause all deposit functions
+    /// @dev Only owner can pause
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpause all deposit functions
+    /// @dev Only owner can unpause
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }

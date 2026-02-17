@@ -1,0 +1,107 @@
+============================================================
+Deploying all contracts to anvil-zksync
+============================================================
+1. Deploying ZKTranscriptLib...
+   ZKTranscriptLib: 0x588758d8a0Ad1162A6294f3C274753137E664aE0
+2. Deploying HonkVerifier...
+   HonkVerifier: 0x6B828bcb33305478cd7d27eB323F5C5B7b4aFdbe
+3. Deploying MockPoseidon2...
+   MockPoseidon2: 0xC7B060B7D883DBd86AEc6C2AA71e02Ec6Aaf82CE
+4. Deploying CreditPolicy...
+   CreditPolicy: 0x22D151A1313d9B517Fa437F1F5B3744E636D8790
+5. Deploying ERC20Mock (USDC)...
+   USDC: 0x82778c3185fD0666d3f34F8930B4287405D9fBe4
+6. Deploying TranchePool...
+   TranchePool: 0xd7385ba726A7b72933E63FCb0Dfee8Bcae63478c
+7. Deploying LoanEngine...
+   LoanEngine: 0xb98e374C912ff8C02ac7363c57d5bfdb48f40d53
+
+============================================================
+Setting up CreditPolicy...
+============================================================
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Created policy version 1
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set eligibility
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set ratios
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set concentration
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set attestation
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set covenants
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set max tiers to 5
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set loan tier
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set policy document
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set policy scope hash
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   ✅ Policy frozen!
+
+============================================================
+Setting up TranchePool...
+============================================================
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set LoanEngine
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Whitelisted deployer
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Minted USDC
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Transferred USDC to pool
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   Set pool state to COMMITED
+Warning: Found unknown `fallback_oz` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `ignore` config for profile `default` defined in foundry.toml.
+Warning: Found unknown `mode` config for profile `default` defined in foundry.toml.
+   ✅ Set pool state to DEPLOYED
+
+============================================================
+DEPLOYMENT COMPLETE!
+============================================================
+
+export LOAN_ENGINE=0xb98e374C912ff8C02ac7363c57d5bfdb48f40d53
+export CREDIT_POLICY=0x22D151A1313d9B517Fa437F1F5B3744E636D8790
+export TRANCHE_POOL=0xd7385ba726A7b72933E63FCb0Dfee8Bcae63478c
+export USDC=0x82778c3185fD0666d3f34F8930B4287405D9fBe4
+export VERIFIER=0x6B828bcb33305478cd7d27eB323F5C5B7b4aFdbe
+export POSEIDON=0xC7B060B7D883DBd86AEc6C2AA71e02Ec6Aaf82CE
+export RPC_URL=http://127.0.0.1:8546
+
+Environment saved to: zk-scripts/.env.deployed

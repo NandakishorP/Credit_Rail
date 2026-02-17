@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {LoanEngine} from "../src/LoanEngine.sol";
+import {ILoanEngine} from "../src/interfaces/ILoanEngine.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../src/interfaces/ICreditPolicy.sol";
 import {TranchePool} from "../src/TranchePool.sol";
@@ -236,7 +237,7 @@ contract CreateLoanWithZkProof is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Create loan params
-        LoanEngine.CreateLoanParams memory params = LoanEngine
+        ILoanEngine.CreateLoanParams memory params = ILoanEngine
             .CreateLoanParams({
                 borrowerCommitment: borrowerCommitment,
                 nullifierHash: nullifierHash,

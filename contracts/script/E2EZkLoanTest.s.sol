@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {HonkVerifier} from "../src-zk/Verifier.sol";
 import {LoanEngine} from "../src/LoanEngine.sol";
+import {ILoanEngine} from "../src/interfaces/ILoanEngine.sol";
 import {TranchePool} from "../src/TranchePool.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -223,7 +224,7 @@ contract E2EZkLoanTest is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        LoanEngine.CreateLoanParams memory loanParams = LoanEngine
+        ILoanEngine.CreateLoanParams memory loanParams = ILoanEngine
             .CreateLoanParams({
                 borrowerCommitment: borrowerCommitment,
                 nullifierHash: nullifierHash,

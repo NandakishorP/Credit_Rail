@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {LoanEngine} from "../../src/LoanEngine.sol";
+import {ILoanEngine} from "../../src/interfaces/ILoanEngine.sol";
 import {Test} from "forge-std/Test.sol";
 import {TranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -69,9 +70,9 @@ contract TestLoanEngineComplete is Test {
         uint256 fee,
         uint256 term,
         uint256 timestamp
-    ) internal view returns (LoanEngine.CreateLoanParams memory) {
+    ) internal view returns (ILoanEngine.CreateLoanParams memory) {
         return
-            LoanEngine.CreateLoanParams({
+            ILoanEngine.CreateLoanParams({
                 borrowerCommitment: testBorrowerCommitment,
                 nullifierHash: nullifier,
                 policyVersion: policyVersion,
@@ -90,7 +91,7 @@ contract TestLoanEngineComplete is Test {
     // Convenience wrapper for standard test params with just nullifier override
     function _buildStandardParams(
         bytes32 nullifier
-    ) internal view returns (LoanEngine.CreateLoanParams memory) {
+    ) internal view returns (ILoanEngine.CreateLoanParams memory) {
         return
             _buildParams(
                 nullifier,
@@ -236,7 +237,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier1")
         );
 
@@ -258,7 +259,7 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             ,
-            LoanEngine.LoanState state,
+            ILoanEngine.LoanState state,
             ,
             ,
 
@@ -272,7 +273,7 @@ contract TestLoanEngineComplete is Test {
         assertEq(principalOutstanding, 0);
         assertEq(aprBps, testAprBps);
         assertEq(originationFeeBps, testOriginationFeeBps);
-        assertEq(uint256(state), uint256(LoanEngine.LoanState.CREATED));
+        assertEq(uint256(state), uint256(ILoanEngine.LoanState.CREATED));
     }
 
     function test_CreateLoan_RevertIf_PolicyNotFrozen() public {
@@ -303,11 +304,11 @@ contract TestLoanEngineComplete is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__PolicyNotFrozen.selector,
+                ILoanEngine.LoanEngine__PolicyNotFrozen.selector,
                 2
             )
         );
-        LoanEngine.CreateLoanParams memory params = _buildParams(
+        ILoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier2"),
             2, // policyVersion 2 (unfrozen)
             testTierId,
@@ -342,12 +343,12 @@ contract TestLoanEngineComplete is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__LoanTierIsNotInPolicy.selector,
+                ILoanEngine.LoanEngine__LoanTierIsNotInPolicy.selector,
                 testPolicyVersion,
                 99
             )
         );
-        LoanEngine.CreateLoanParams memory params = _buildParams(
+        ILoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier3"),
             testPolicyVersion,
             99, // Invalid tier
@@ -382,13 +383,13 @@ contract TestLoanEngineComplete is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__MaxOriginationFeeExceeded.selector,
+                ILoanEngine.LoanEngine__MaxOriginationFeeExceeded.selector,
                 1,
                 600,
                 500
             )
         );
-        LoanEngine.CreateLoanParams memory params = _buildParams(
+        ILoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier4"),
             testPolicyVersion,
             testTierId,
@@ -425,14 +426,14 @@ contract TestLoanEngineComplete is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__InvalidLoanParameters.selector,
+                ILoanEngine.LoanEngine__InvalidLoanParameters.selector,
                 1,
                 0,
                 testAprBps,
                 testTermDays
             )
         );
-        LoanEngine.CreateLoanParams memory params = _buildParams(
+        ILoanEngine.CreateLoanParams memory params = _buildParams(
             keccak256("nullifier5"),
             testPolicyVersion,
             testTierId,
@@ -465,7 +466,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier6")
         );
 
@@ -498,7 +499,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier7")
         );
 
@@ -527,14 +528,14 @@ contract TestLoanEngineComplete is Test {
             uint256 startTimestamp,
             uint256 maturityTimestamp,
             ,
-            LoanEngine.LoanState state,
+            ILoanEngine.LoanState state,
             ,
             ,
 
         ) = loanEngine.s_loans(1);
 
         assertEq(principalOutstanding, testPrincipal);
-        assertEq(uint256(state), uint256(LoanEngine.LoanState.ACTIVE));
+        assertEq(uint256(state), uint256(ILoanEngine.LoanState.ACTIVE));
         assertEq(lastAccrualTimestamp, block.timestamp);
         assertEq(startTimestamp, block.timestamp);
         assertEq(maturityTimestamp, block.timestamp + (testTermDays * 1 days));
@@ -583,7 +584,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier8")
         );
         loanEngine.createLoan(params, testProofData, testPublicInputs);
@@ -593,7 +594,7 @@ contract TestLoanEngineComplete is Test {
         // Try to activate again
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__LoanIsNotInCreatedState.selector,
+                ILoanEngine.LoanEngine__LoanIsNotInCreatedState.selector,
                 1
             )
         );
@@ -621,7 +622,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier9")
         );
         loanEngine.createLoan(params, testProofData, testPublicInputs);
@@ -629,7 +630,7 @@ contract TestLoanEngineComplete is Test {
         address nonWhitelistedEntity = makeAddr("nonWhitelisted");
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__InvalidOffRampingEntity.selector,
+                ILoanEngine.LoanEngine__InvalidOffRampingEntity.selector,
                 nonWhitelistedEntity
             )
         );
@@ -683,7 +684,7 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             ,
-            LoanEngine.LoanState state,
+            ILoanEngine.LoanState state,
             ,
             ,
 
@@ -692,7 +693,7 @@ contract TestLoanEngineComplete is Test {
         assertEq(principalOutstanding, 0);
         assertEq(interestAccrued, 0);
         assertEq(interestPaid, expectedInterest);
-        assertEq(uint256(state), uint256(LoanEngine.LoanState.REPAID));
+        assertEq(uint256(state), uint256(ILoanEngine.LoanState.REPAID));
     }
 
     function test_RepayLoan_PartialRepayment() public {
@@ -738,7 +739,7 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             ,
-            LoanEngine.LoanState state,
+            ILoanEngine.LoanState state,
             ,
             ,
 
@@ -746,7 +747,7 @@ contract TestLoanEngineComplete is Test {
 
         assertEq(principalOutstanding, testPrincipal - partialPrincipal);
         assertEq(interestAccrued, 0); // All interest paid
-        assertEq(uint256(state), uint256(LoanEngine.LoanState.ACTIVE)); // Still active
+        assertEq(uint256(state), uint256(ILoanEngine.LoanState.ACTIVE)); // Still active
     }
 
     function test_RepayLoan_Waterfall_IgnoresLabels() public {
@@ -836,7 +837,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier10")
         );
         vm.prank(deployer);
@@ -845,7 +846,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__LoanIsNotActive.selector,
+                ILoanEngine.LoanEngine__LoanIsNotActive.selector,
                 1
             )
         );
@@ -856,7 +857,7 @@ contract TestLoanEngineComplete is Test {
         _createAndActivateLoan();
 
         vm.prank(deployer);
-        vm.expectRevert(LoanEngine.LoanEngine__InvalidRepayment.selector);
+        vm.expectRevert(ILoanEngine.LoanEngine__InvalidRepayment.selector);
         loanEngine.repayLoan(1, 0, 0, repaymentAgent, block.timestamp);
     }
 
@@ -868,7 +869,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__InvalidRepaymentAgent.selector,
+                ILoanEngine.LoanEngine__InvalidRepaymentAgent.selector,
                 nonWhitelistedAgent
             )
         );
@@ -910,13 +911,13 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             ,
-            LoanEngine.LoanState state,
+            ILoanEngine.LoanState state,
             ,
             ,
 
         ) = loanEngine.s_loans(1);
 
-        assertEq(uint256(state), uint256(LoanEngine.LoanState.DEFAULTED));
+        assertEq(uint256(state), uint256(ILoanEngine.LoanState.DEFAULTED));
         assertGt(interestAccrued, 0); // Interest was accrued before default
     }
 
@@ -939,7 +940,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier11")
         );
         vm.prank(deployer);
@@ -948,7 +949,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__LoanIsNotActive.selector,
+                ILoanEngine.LoanEngine__LoanIsNotActive.selector,
                 1
             )
         );
@@ -988,13 +989,13 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             ,
-            LoanEngine.LoanState stateBefore, // state (position 14) // totalRecovered (position 15)
+            ILoanEngine.LoanState stateBefore, // state (position 14) // totalRecovered (position 15)
             ,
             ,
 
         ) = loanEngine.s_loans(1);
 
-        assertEq(uint256(stateBefore), uint256(LoanEngine.LoanState.DEFAULTED));
+        assertEq(uint256(stateBefore), uint256(ILoanEngine.LoanState.DEFAULTED));
         assertGt(principalOutstandingBefore, 0);
         assertGt(interestAccruedBefore, 0);
 
@@ -1022,7 +1023,7 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             ,
-            LoanEngine.LoanState state, // state (position 14) // totalRecovered (position 15)
+            ILoanEngine.LoanState state, // state (position 14) // totalRecovered (position 15)
             ,
             ,
 
@@ -1030,7 +1031,7 @@ contract TestLoanEngineComplete is Test {
 
         assertEq(principalOutstanding, 0);
         assertEq(interestAccrued, 0);
-        assertEq(uint256(state), uint256(LoanEngine.LoanState.WRITTEN_OFF));
+        assertEq(uint256(state), uint256(ILoanEngine.LoanState.WRITTEN_OFF));
     }
 
     function test_WriteOffLoan_RevertIf_NotDefaulted() public {
@@ -1039,7 +1040,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__LoanIsNotDefaulted.selector,
+                ILoanEngine.LoanEngine__LoanIsNotDefaulted.selector,
                 1
             )
         );
@@ -1124,7 +1125,7 @@ contract TestLoanEngineComplete is Test {
         vm.prank(deployer);
         vm.expectRevert(
             abi.encodeWithSelector(
-                LoanEngine.LoanEngine__LoanNotRecoverable.selector,
+                ILoanEngine.LoanEngine__LoanNotRecoverable.selector,
                 1
             )
         );
@@ -1138,7 +1139,7 @@ contract TestLoanEngineComplete is Test {
         loanEngine.declareDefault(1, keccak256("reason"), block.timestamp);
         loanEngine.writeOffLoan(1);
 
-        vm.expectRevert(LoanEngine.LoanEngine__ZeroRecovery.selector);
+        vm.expectRevert(ILoanEngine.LoanEngine__ZeroRecovery.selector);
         loanEngine.recoverLoan(1, 0, recoveryAgent);
         vm.stopPrank();
     }
@@ -1254,7 +1255,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier12")
         );
         vm.prank(deployer);
@@ -1320,7 +1321,7 @@ contract TestLoanEngineComplete is Test {
             ,
             ,
             ,
-            LoanEngine.LoanState state,
+            ILoanEngine.LoanState state,
             ,
             ,
 
@@ -1328,7 +1329,7 @@ contract TestLoanEngineComplete is Test {
 
         assertEq(principalOutstanding, 0);
         assertEq(interestAccrued, 0);
-        assertEq(uint256(state), uint256(LoanEngine.LoanState.REPAID));
+        assertEq(uint256(state), uint256(ILoanEngine.LoanState.REPAID));
     }
 
     function test_Integration_DefaultAndRecovery() public {
@@ -1355,7 +1356,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier13")
         );
         loanEngine.createLoan(params, testProofData, testPublicInputs);
@@ -1473,7 +1474,7 @@ contract TestLoanEngineComplete is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = _buildStandardParams(
+        ILoanEngine.CreateLoanParams memory params = _buildStandardParams(
             keccak256("nullifier14")
         );
         loanEngine.createLoan(params, testProofData, testPublicInputs);
