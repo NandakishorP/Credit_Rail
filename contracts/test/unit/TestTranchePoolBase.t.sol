@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
 import {TranchePool} from "../../src/TranchePool.sol";
+import {ITranchePool} from "../../src/interfaces/ITranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {LoanEngine} from "../../src/LoanEngine.sol";
@@ -104,7 +105,7 @@ contract TestTranchePoolBase is Test {
 
     function _allocateCapital() internal {
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 totalDisbursement = 1_00_00_000 * USDT;
         uint256 fees = 10_000 * USDT;

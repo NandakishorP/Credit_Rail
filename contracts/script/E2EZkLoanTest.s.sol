@@ -6,6 +6,7 @@ import {HonkVerifier} from "../src-zk/Verifier.sol";
 import {LoanEngine} from "../src/LoanEngine.sol";
 import {ILoanEngine} from "../src/interfaces/ILoanEngine.sol";
 import {TranchePool} from "../src/TranchePool.sol";
+import {ITranchePool} from "../src/interfaces/ITranchePool.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
@@ -162,8 +163,8 @@ contract E2EZkLoanTest is Script {
         console2.log("      Policy created and frozen");
 
         // Transition pool to DEPLOYED state
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
-        tranchePool.setPoolState(TranchePool.PoolState.DEPLOYED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.DEPLOYED);
         console2.log("      TranchePool transitioned to DEPLOYED");
 
         vm.stopBroadcast();

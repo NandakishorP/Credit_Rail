@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {TestTranchePoolBase} from "./TestTranchePoolBase.t.sol";
-import {TranchePool} from "../../src/TranchePool.sol";
+import {TranchePool, ITranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
@@ -13,7 +13,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
 
         // Move to COMMITED state
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 totalDisbursement = 1_00_00_000 * USDT;
         uint256 fees = 10_000 * USDT;
@@ -45,7 +45,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         // Check pool state changed to DEPLOYED
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(TranchePool.PoolState.DEPLOYED)
+            uint256(ITranchePool.PoolState.DEPLOYED)
         );
     }
 
@@ -53,7 +53,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         _depositToAllTranches();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 totalDisbursement = 1_00_00_000 * USDT;
         address borrower_ = makeAddr("borrower");
@@ -75,7 +75,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         _depositToAllTranches();
 
         vm.prank(loanEngine);
-        vm.expectRevert(TranchePool.TranchePool__PoolIsNotCommited.selector);
+        vm.expectRevert(ITranchePool.TranchePool__PoolIsNotCommited.selector);
         tranchePool.allocateCapital(
             1_00_00_000 * USDT,
             0,
@@ -90,7 +90,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         _depositToAllTranches();
 
         vm.prank(loanEngine);
-        vm.expectRevert(TranchePool.TranchePool__PoolIsNotCommited.selector);
+        vm.expectRevert(ITranchePool.TranchePool__PoolIsNotCommited.selector);
         tranchePool.allocateCapital(
             1_00_00_000 * USDT,
             0,
@@ -103,13 +103,13 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         _depositToAllTranches();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 excessiveAmount = 100_00_00_000 * USDT;
 
         vm.prank(loanEngine);
         vm.expectRevert(
-            TranchePool.TranchePool__InsufficientLiquidity.selector
+            ITranchePool.TranchePool__InsufficientLiquidity.selector
         );
         tranchePool.allocateCapital(
             excessiveAmount,
@@ -123,12 +123,12 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         _depositToAllTranches();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         vm.prank(seniorUser1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                TranchePool.TranchePool__InvalidCaller.selector,
+                ITranchePool.TranchePool__InvalidCaller.selector,
                 seniorUser1
             )
         );
@@ -146,7 +146,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
 
         // Move to COMMITTED and then allocate (which moves to DEPLOYED)
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 firstDisbursement = 50_00_000 * USDT;
         uint256 firstFees = 5_000 * USDT;
@@ -162,7 +162,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         // Verify we're in DEPLOYED state
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(TranchePool.PoolState.DEPLOYED)
+            uint256(ITranchePool.PoolState.DEPLOYED)
         );
 
         // Record state before second allocation
@@ -195,7 +195,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         // Verify state remains DEPLOYED
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(TranchePool.PoolState.DEPLOYED),
+            uint256(ITranchePool.PoolState.DEPLOYED),
             "Pool state should remain DEPLOYED"
         );
 
@@ -263,9 +263,9 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
 
         // Move to CLOSED state
         vm.startPrank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
-        tranchePool.setPoolState(TranchePool.PoolState.DEPLOYED);
-        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.DEPLOYED);
+        tranchePool.setPoolState(ITranchePool.PoolState.CLOSED);
         vm.stopPrank();
 
         // Try to allocate when CLOSED - should revert
@@ -273,7 +273,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         uint256 fees = 5_000 * USDT;
 
         vm.prank(loanEngine);
-        vm.expectRevert(TranchePool.TranchePool__PoolIsNotCommited.selector);
+        vm.expectRevert(ITranchePool.TranchePool__PoolIsNotCommited.selector);
         tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
     }
 
@@ -284,7 +284,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         // Pool is still in OPEN state
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(TranchePool.PoolState.OPEN)
+            uint256(ITranchePool.PoolState.OPEN)
         );
 
         // Try to allocate when OPEN - should revert
@@ -292,7 +292,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         uint256 fees = 5_000 * USDT;
 
         vm.prank(loanEngine);
-        vm.expectRevert(TranchePool.TranchePool__PoolIsNotCommited.selector);
+        vm.expectRevert(ITranchePool.TranchePool__PoolIsNotCommited.selector);
         tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
     }
 
@@ -329,7 +329,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
 
         // Move pool to COMMITED
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 disbursement = 144_00_000 * USDT;
         uint256 fees = 1_00_000 * USDT;
@@ -486,7 +486,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
 
         // Move pool to COMMITED
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 disbursement = 151_00_000 * USDT;
         uint256 fees = 1_00_000 * USDT;
@@ -500,7 +500,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
 
         vm.prank(loanEngine);
         vm.expectRevert(
-            TranchePool.TranchePool__InsufficientLiquidity.selector
+            ITranchePool.TranchePool__InsufficientLiquidity.selector
         );
         tranchePool.allocateCapital(disbursement, fees, borrower, feeManager);
     }
@@ -533,7 +533,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
             tranchePool.getEquityTrancheIdleValue();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         // Allocate exactly total available
         uint256 disbursement = totalAvailable - 1_000 * USDT;
@@ -572,7 +572,7 @@ contract TestTranchePool_Allocation is TestTranchePoolBase {
         vm.stopPrank();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         // Calculate allocation that will exhaust senior exactly
         // seniorAmount = totalAmount * 0.8 = seniorDeposit
@@ -675,7 +675,7 @@ These catch off-by-one / rounding edge cases.
         vm.stopPrank();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         // Allocate 100M total
         // Target: 80M senior, 15M junior, 5M equity
@@ -756,7 +756,7 @@ These catch off-by-one / rounding edge cases.
         vm.stopPrank();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         // Allocate 100M total
         // Target: 80M senior, 15M junior, 5M equity
@@ -836,7 +836,7 @@ These catch off-by-one / rounding edge cases.
         // No equity deposit
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         // Allocate 100M total
         // Target: 80M senior, 15M junior, 5M equity
@@ -924,7 +924,7 @@ These catch off-by-one / rounding edge cases.
 
         // Move pool to COMMITED
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         // Allocation request
         uint256 totalAmount = 12_00_00_000 * USDT; // 120M
@@ -996,7 +996,7 @@ These catch off-by-one / rounding edge cases.
         vm.stopPrank();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 totalAmount = 10_00_00_000 * USDT; // 100M
         uint256 disbursement = totalAmount - 10_00_000 * USDT;
@@ -1072,7 +1072,7 @@ These catch off-by-one / rounding edge cases.
         vm.stopPrank();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 totalAmount = 10_00_00_000 * USDT; // 100M
         uint256 disbursement = totalAmount - 10_00_000 * USDT;
@@ -1131,7 +1131,7 @@ These catch off-by-one / rounding edge cases.
         vm.startPrank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorJunior(0);
         tranchePool.setTrancheCapitalAllocationFactorSenior(100);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.stopPrank();
 
         uint256 totalAmount = 1_00_00_000 * USDT;
@@ -1160,7 +1160,7 @@ These catch off-by-one / rounding edge cases.
         vm.startPrank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorSenior(0);
         tranchePool.setTrancheCapitalAllocationFactorJunior(100);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.stopPrank();
 
         uint256 totalAmount = 1_00_00_000 * USDT;
@@ -1189,7 +1189,7 @@ These catch off-by-one / rounding edge cases.
         vm.startPrank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorSenior(0);
         tranchePool.setTrancheCapitalAllocationFactorJunior(0);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.stopPrank();
 
         uint256 totalAmount = 1_00_00_000 * USDT;
@@ -1218,7 +1218,7 @@ These catch off-by-one / rounding edge cases.
         vm.startPrank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorJunior(20);
         tranchePool.setTrancheCapitalAllocationFactorSenior(70);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.stopPrank();
 
         uint256 totalAmount = 1_00_00_000 * USDT;
@@ -1252,7 +1252,7 @@ These catch off-by-one / rounding edge cases.
         vm.startPrank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorSenior(80);
         tranchePool.setTrancheCapitalAllocationFactorJunior(20);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.stopPrank();
 
         uint256 totalAmount = 1_00_00_000 * USDT;
@@ -1281,7 +1281,7 @@ These catch off-by-one / rounding edge cases.
         _depositToAllTranches();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         uint256 totalAmount = 1_00_00_000 * USDT;
 
@@ -1315,7 +1315,7 @@ These catch off-by-one / rounding edge cases.
         _depositToAllTranches();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         // First allocation (80/15/5)
         vm.prank(loanEngine);
@@ -1368,5 +1368,4 @@ These catch off-by-one / rounding edge cases.
 
     // changing the repayment and loss allocation models to take account of the allocation factor based on the info stored locally not the global allocation factors.
     // TODO: need exhaustive testing there
-
 }

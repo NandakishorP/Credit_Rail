@@ -5,6 +5,7 @@ import {LoanEngine} from "../../src/LoanEngine.sol";
 import {ILoanEngine} from "../../src/interfaces/ILoanEngine.sol";
 import {Test} from "forge-std/Test.sol";
 import {TranchePool} from "../../src/TranchePool.sol";
+import {ITranchePool} from "../../src/interfaces/ITranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
@@ -177,7 +178,7 @@ contract TestLoanEngineComplete is Test {
 
         // Set pool to COMMITED state
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
     }
 
     function _computeLoanHash(

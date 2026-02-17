@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {TestTranchePoolBase} from "./TestTranchePoolBase.t.sol";
-import {TranchePool} from "../../src/TranchePool.sol";
+import {TranchePool, ITranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
@@ -77,7 +77,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         vm.prank(loanEngine);
         vm.expectRevert(
             abi.encodeWithSelector(
-                TranchePool.TranchePool__InvalidTransferAmount.selector,
+                ITranchePool.TranchePool__InvalidTransferAmount.selector,
                 0
             )
         );
@@ -92,7 +92,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
         vm.prank(loanEngine);
         vm.expectRevert(
-            TranchePool.TranchePool__PrincipalRepaymentExceeded.selector
+            ITranchePool.TranchePool__PrincipalRepaymentExceeded.selector
         );
         tranchePool.onRepayment(excessivePrincipal, 0);
     }
@@ -182,7 +182,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         vm.prank(loanEngine);
         vm.expectRevert(
             abi.encodeWithSelector(
-                TranchePool.TranchePool__LossExceededCapital.selector,
+                ITranchePool.TranchePool__LossExceededCapital.selector,
                 1
             )
         );
@@ -231,7 +231,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
     function test_ClaimSeniorInterest_RevertIf_NoShares() public {
         vm.prank(seniorUser1);
-        vm.expectRevert(TranchePool.TranchePool__InsufficientShares.selector);
+        vm.expectRevert(ITranchePool.TranchePool__InsufficientShares.selector);
         tranchePool.claimSeniorInterest();
     }
 
@@ -242,20 +242,20 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         tranchePool.depositSeniorTranche(depositAmount);
 
         // Try to claim with no index change
-        vm.expectRevert(TranchePool.TranchePool__ZeroWithdrawal.selector);
+        vm.expectRevert(ITranchePool.TranchePool__ZeroWithdrawal.selector);
         tranchePool.claimSeniorInterest();
         vm.stopPrank();
     }
 
     function test_ClaimJuniorInterest_RevertIf_NoShares() public {
         vm.prank(juniorUser1);
-        vm.expectRevert(TranchePool.TranchePool__InsufficientShares.selector);
+        vm.expectRevert(ITranchePool.TranchePool__InsufficientShares.selector);
         tranchePool.claimJuniorInterest();
     }
 
     function test_ClaimEquityInterest_RevertIf_NoShares() public {
         vm.prank(equityUser1);
-        vm.expectRevert(TranchePool.TranchePool__InsufficientShares.selector);
+        vm.expectRevert(ITranchePool.TranchePool__InsufficientShares.selector);
         tranchePool.claimEquityInterest();
     }
 
@@ -265,23 +265,23 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
     function test_SetPoolState_ToCommited_Success() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(TranchePool.PoolState.COMMITED)
+            uint256(ITranchePool.PoolState.COMMITED)
         );
     }
 
     function test_SetPoolState_ToDeployed_Success() public {
         vm.startPrank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
-        tranchePool.setPoolState(TranchePool.PoolState.DEPLOYED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.DEPLOYED);
         vm.stopPrank();
 
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(TranchePool.PoolState.DEPLOYED)
+            uint256(ITranchePool.PoolState.DEPLOYED)
         );
     }
 
@@ -290,11 +290,11 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         // Do NOT allocate capital. Closing is only allowed if deployed == 0.
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
+        tranchePool.setPoolState(ITranchePool.PoolState.CLOSED);
 
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(TranchePool.PoolState.CLOSED)
+            uint256(ITranchePool.PoolState.CLOSED)
         );
     }
 
@@ -303,21 +303,23 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         _allocateCapital();
 
         vm.prank(deployer);
-        vm.expectRevert(TranchePool.TranchePool__DeployedCapitalExists.selector);
-        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
+        vm.expectRevert(
+            ITranchePool.TranchePool__DeployedCapitalExists.selector
+        );
+        tranchePool.setPoolState(ITranchePool.PoolState.CLOSED);
     }
 
     function test_SetPoolState_RevertIf_Backwards() public {
         vm.startPrank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                TranchePool.TranchePool__InvalidStateTransition.selector,
-                TranchePool.PoolState.OPEN
+                ITranchePool.TranchePool__InvalidStateTransition.selector,
+                ITranchePool.PoolState.OPEN
             )
         );
-        tranchePool.setPoolState(TranchePool.PoolState.OPEN);
+        tranchePool.setPoolState(ITranchePool.PoolState.OPEN);
         vm.stopPrank();
     }
 
@@ -342,7 +344,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     function test_SetAllocationFactor_RevertIf_ExceedsMax() public {
         vm.prank(deployer);
         vm.expectRevert(
-            TranchePool.TranchePool__InvalidAllocationRatio.selector
+            ITranchePool.TranchePool__InvalidAllocationRatio.selector
         );
         tranchePool.setTrancheCapitalAllocationFactorSenior(90);
     }
@@ -356,7 +358,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
     function test_SetSeniorAPR_RevertIf_Zero() public {
         vm.prank(deployer);
-        vm.expectRevert(TranchePool.TranchePool__ZeroAPRError.selector);
+        vm.expectRevert(ITranchePool.TranchePool__ZeroAPRError.selector);
         tranchePool.setSeniorAPR(0);
     }
 
@@ -369,13 +371,13 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
     function test_SetTargetJuniorAPR_RevertIf_Zero() public {
         vm.prank(deployer);
-        vm.expectRevert(TranchePool.TranchePool__ZeroAPRError.selector);
+        vm.expectRevert(ITranchePool.TranchePool__ZeroAPRError.selector);
         tranchePool.setTargetJuniorAPR(0);
     }
 
     function test_SetMaxCap_RevertIf_Zero() public {
         vm.prank(deployer);
-        vm.expectRevert(TranchePool.TranchePool__ZeroValueError.selector);
+        vm.expectRevert(ITranchePool.TranchePool__ZeroValueError.selector);
         tranchePool.setMaxAllocationCapSeniorTranche(0);
     }
 
@@ -475,9 +477,12 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         uint256 expectedSeniorInterest = (seniorDeployed * 500) / 10000;
         // Junior: 10% of deployed
         uint256 expectedJuniorInterest = (juniorDeployed * 1000) / 10000;
-        
+
         // Total interest to distribute (make it sufficient to cover both + some equity)
-        uint256 totalInterest = expectedSeniorInterest + expectedJuniorInterest + 10_000 * USDT;
+        uint256 totalInterest = expectedSeniorInterest +
+            expectedJuniorInterest +
+            10_000 *
+            USDT;
 
         uint256 seniorInterestBefore = tranchePool.seniorAccruedInterest();
         uint256 juniorInterestBefore = tranchePool.juniorAccruedInterest();
@@ -486,8 +491,20 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         vm.prank(loanEngine);
         tranchePool.onInterestAccrued(totalInterest);
 
-        assertEq(tranchePool.seniorAccruedInterest(), seniorInterestBefore + expectedSeniorInterest, "Senior interest incorrect");
-        assertEq(tranchePool.juniorAccruedInterest(), juniorInterestBefore + expectedJuniorInterest, "Junior interest incorrect");
-        assertEq(tranchePool.equityAccruedInterest(), equityInterestBefore + 10_000 * USDT, "Equity interest incorrect");
+        assertEq(
+            tranchePool.seniorAccruedInterest(),
+            seniorInterestBefore + expectedSeniorInterest,
+            "Senior interest incorrect"
+        );
+        assertEq(
+            tranchePool.juniorAccruedInterest(),
+            juniorInterestBefore + expectedJuniorInterest,
+            "Junior interest incorrect"
+        );
+        assertEq(
+            tranchePool.equityAccruedInterest(),
+            equityInterestBefore + 10_000 * USDT,
+            "Equity interest incorrect"
+        );
     }
 }

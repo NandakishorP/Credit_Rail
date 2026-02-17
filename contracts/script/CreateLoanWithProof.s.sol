@@ -7,6 +7,7 @@ import {ILoanEngine} from "../src/interfaces/ILoanEngine.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../src/interfaces/ICreditPolicy.sol";
 import {TranchePool} from "../src/TranchePool.sol";
+import {ITranchePool} from "../src/interfaces/ITranchePool.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
 
 /**
@@ -139,10 +140,10 @@ contract CreateLoanWithProof is Script {
         console2.log("Step 2: Configuring TranchePool...");
 
         // Check current state and advance if needed
-        TranchePool.PoolState currentState = tranchePool.getPoolState();
+        ITranchePool.PoolState currentState = tranchePool.getPoolState();
         console2.log("  Current pool state:", uint256(currentState));
 
-        if (currentState == TranchePool.PoolState.OPEN) {
+        if (currentState == ITranchePool.PoolState.OPEN) {
             // Need to transition to COMMITED for loan origination
             console2.log(
                 "  Pool in OPEN state - transition to COMMITED for loan origination"

@@ -300,7 +300,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     }
 
     function invariant__seniorShareToIdleOpen() public view {
-        if (tranchePool.getPoolState() == TranchePool.PoolState.OPEN) {
+        if (tranchePool.getPoolState() == ITranchePool.PoolState.OPEN) {
             assertEq(
                 tranchePool.getTotalSeniorShares(),
                 tranchePool.getSeniorTrancheIdleValue(),
@@ -369,10 +369,10 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     }
 
     function invariant__poolStateValidityDeployedCapital() public view {
-        TranchePool.PoolState state = tranchePool.getPoolState();
+        ITranchePool.PoolState state = tranchePool.getPoolState();
         if (
-            state == TranchePool.PoolState.OPEN ||
-            state == TranchePool.PoolState.CLOSED
+            state == ITranchePool.PoolState.OPEN ||
+            state == ITranchePool.PoolState.CLOSED
         ) {
             assertEq(
                 tranchePool.getTotalDeployedValue(),
@@ -382,7 +382,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         }
 
         // Cannot close with active loans (deployed > 0)
-        if (state == TranchePool.PoolState.CLOSED) {
+        if (state == ITranchePool.PoolState.CLOSED) {
             assertEq(
                 tranchePool.getTotalDeployedValue(),
                 0,

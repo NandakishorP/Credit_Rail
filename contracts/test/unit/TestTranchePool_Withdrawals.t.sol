@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {TestTranchePoolBase} from "./TestTranchePoolBase.t.sol";
-import {TranchePool} from "../../src/TranchePool.sol";
+import {TranchePool, ITranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
@@ -51,13 +51,13 @@ contract TestTranchePool_Withdrawals is TestTranchePoolBase {
         vm.stopPrank();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         vm.prank(seniorUser1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                TranchePool.TranchePool__WithdrawNotAllowed.selector,
-                TranchePool.PoolState.COMMITED
+                ITranchePool.TranchePool__WithdrawNotAllowed.selector,
+                ITranchePool.PoolState.COMMITED
             )
         );
         tranchePool.withdrawSeniorTranche(1_00_000 * USDT);
@@ -65,7 +65,7 @@ contract TestTranchePool_Withdrawals is TestTranchePoolBase {
 
     function test_WithdrawSeniorTranche_RevertIf_InsufficientShares() public {
         vm.prank(seniorUser1);
-        vm.expectRevert(TranchePool.TranchePool__InsufficientShares.selector);
+        vm.expectRevert(ITranchePool.TranchePool__InsufficientShares.selector);
         tranchePool.withdrawSeniorTranche(1_00_000 * USDT);
     }
 
@@ -77,7 +77,7 @@ contract TestTranchePool_Withdrawals is TestTranchePoolBase {
         usdt.approve(address(tranchePool), depositAmount);
         tranchePool.depositSeniorTranche(depositAmount);
 
-        vm.expectRevert(TranchePool.TranchePool__InsufficientShares.selector);
+        vm.expectRevert(ITranchePool.TranchePool__InsufficientShares.selector);
         tranchePool.withdrawSeniorTranche(depositAmount + 1);
         vm.stopPrank();
     }
@@ -103,7 +103,7 @@ contract TestTranchePool_Withdrawals is TestTranchePoolBase {
         usdt.approve(address(tranchePool), depositAmount);
         tranchePool.depositSeniorTranche(depositAmount);
 
-        vm.expectRevert(TranchePool.TranchePool__ZeroWithdrawal.selector);
+        vm.expectRevert(ITranchePool.TranchePool__ZeroWithdrawal.selector);
         tranchePool.withdrawSeniorTrancheByAmount(0);
         vm.stopPrank();
     }
@@ -213,5 +213,4 @@ contract TestTranchePool_Withdrawals is TestTranchePoolBase {
 
         assertEq(usdt.balanceOf(equityUser1), balanceBefore + withdrawAmount);
     }
-
 }

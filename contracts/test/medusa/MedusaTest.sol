@@ -160,7 +160,7 @@ contract MedusaTest {
     // =========================================================================
 
     function depositSenior(uint256 userSeed, uint256 amount) external {
-        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
 
         address user = seniorUsers[userSeed % seniorUsers.length];
         amount = _bound(
@@ -190,7 +190,7 @@ contract MedusaTest {
     }
 
     function depositJunior(uint256 userSeed, uint256 amount) external {
-        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
 
         address user = juniorUsers[userSeed % juniorUsers.length];
         amount = _bound(
@@ -220,7 +220,7 @@ contract MedusaTest {
     }
 
     function depositEquity(uint256 userSeed, uint256 amount) external {
-        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
 
         address user = equityUsers[userSeed % equityUsers.length];
         amount = _bound(
@@ -251,10 +251,10 @@ contract MedusaTest {
 
     function commitPool() external {
         if (
-            tranchePool.getPoolState() == TranchePool.PoolState.OPEN &&
+            tranchePool.getPoolState() == ITranchePool.PoolState.OPEN &&
             tranchePool.getTotalIdleValue() > 0
         ) {
-            tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+            tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
             totalDeposited = tranchePool.getTotalIdleValue();
         }
     }
@@ -266,8 +266,8 @@ contract MedusaTest {
         uint256 userIndex
     ) external {
         if (
-            tranchePool.getPoolState() != TranchePool.PoolState.COMMITED &&
-            tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED
+            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED
         ) return;
 
         // Matching Foundry handler logic
@@ -357,8 +357,8 @@ contract MedusaTest {
         if (loan.state != LoanEngine.LoanState.CREATED) return;
 
         if (
-            tranchePool.getPoolState() != TranchePool.PoolState.COMMITED &&
-            tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED
+            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED
         ) return;
 
         if (loan.principalIssued > tranchePool.getTotalIdleValue()) return;
@@ -503,10 +503,10 @@ contract MedusaTest {
     function mayClosePool() external {
         if (
             tranchePool.getTotalDeployedValue() > 0 ||
-            tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED
+            tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED
         ) return;
 
-        tranchePool.setPoolState(TranchePool.PoolState.CLOSED);
+        tranchePool.setPoolState(ITranchePool.PoolState.CLOSED);
     }
 
     // =========================================================================
@@ -581,7 +581,7 @@ contract MedusaTest {
     }
 
     function invariant_seniorShareOpen() external view returns (bool) {
-        if (tranchePool.getPoolState() == TranchePool.PoolState.OPEN) {
+        if (tranchePool.getPoolState() == ITranchePool.PoolState.OPEN) {
             return
                 tranchePool.getTotalSeniorShares() ==
                 tranchePool.getSeniorTrancheIdleValue();
@@ -624,10 +624,10 @@ contract MedusaTest {
     }
 
     function invariant_poolState() external view returns (bool) {
-        TranchePool.PoolState state = tranchePool.getPoolState();
+        ITranchePool.PoolState state = tranchePool.getPoolState();
         if (
-            state == TranchePool.PoolState.OPEN ||
-            state == TranchePool.PoolState.CLOSED
+            state == ITranchePool.PoolState.OPEN ||
+            state == ITranchePool.PoolState.CLOSED
         ) {
             if (tranchePool.getTotalDeployedValue() != 0) return false;
         }

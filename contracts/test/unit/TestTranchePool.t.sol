@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {TranchePool} from "../../src/TranchePool.sol";
+import {ITranchePool} from "../../src/interfaces/ITranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 contract TestTranchePool is Test {
@@ -69,10 +70,10 @@ contract TestTranchePool is Test {
 
     function testDepositSeniorTrancheRevertIfNotOpen() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.startPrank(seniorUser1);
         ERC20Mock(usdt).approve(address(tranchePool), 10_00_000 * USDT);
-        vm.expectRevert(TranchePool.TranchePool__PoolIsNotOpen.selector);
+        vm.expectRevert(ITranchePool.TranchePool__PoolIsNotOpen.selector);
         tranchePool.depositSeniorTranche(10_00_000 * USDT);
         vm.stopPrank();
     }
@@ -143,7 +144,7 @@ contract TestTranchePool is Test {
         vm.startPrank(seniorUser1);
         ERC20Mock(usdt).approve(address(tranchePool), seniorTrancheDeposit1);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToSeniorTranche(
+        emit ITranchePool.FundsDepositedToSeniorTranche(
             seniorUser1,
             seniorTrancheDeposit1,
             seniorTrancheDeposit1,
@@ -160,7 +161,7 @@ contract TestTranchePool is Test {
         vm.startPrank(seniorUser2);
         ERC20Mock(usdt).approve(address(tranchePool), seniorTrancheDeposit2);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToSeniorTranche(
+        emit ITranchePool.FundsDepositedToSeniorTranche(
             seniorUser2,
             seniorTrancheDeposit2,
             seniorTrancheDeposit2,
@@ -181,7 +182,7 @@ contract TestTranchePool is Test {
         vm.startPrank(seniorUser3);
         ERC20Mock(usdt).approve(address(tranchePool), seniorTrancheDeposit3);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToSeniorTranche(
+        emit ITranchePool.FundsDepositedToSeniorTranche(
             seniorUser3,
             seniorTrancheDeposit3,
             seniorTrancheDeposit3,
@@ -246,10 +247,10 @@ contract TestTranchePool is Test {
 
     function testDepositJuniorTrancheRevertIfNotOpen() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.startPrank(juniorUser1);
         ERC20Mock(usdt).approve(address(tranchePool), 10_00_000 * USDT);
-        vm.expectRevert(TranchePool.TranchePool__PoolIsNotOpen.selector);
+        vm.expectRevert(ITranchePool.TranchePool__PoolIsNotOpen.selector);
         tranchePool.depositJuniorTranche(10_00_000 * USDT);
         vm.stopPrank();
     }
@@ -320,7 +321,7 @@ contract TestTranchePool is Test {
         vm.startPrank(juniorUser1);
         ERC20Mock(usdt).approve(address(tranchePool), juniorTrancheDeposit1);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToJuniorTranche(
+        emit ITranchePool.FundsDepositedToJuniorTranche(
             juniorUser1,
             juniorTrancheDeposit1,
             juniorTrancheDeposit1,
@@ -337,7 +338,7 @@ contract TestTranchePool is Test {
         vm.startPrank(juniorUser2);
         ERC20Mock(usdt).approve(address(tranchePool), juniorTrancheDeposit2);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToJuniorTranche(
+        emit ITranchePool.FundsDepositedToJuniorTranche(
             juniorUser2,
             juniorTrancheDeposit2,
             juniorTrancheDeposit2,
@@ -358,7 +359,7 @@ contract TestTranchePool is Test {
         vm.startPrank(juniorUser3);
         ERC20Mock(usdt).approve(address(tranchePool), juniorTrancheDeposit3);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToJuniorTranche(
+        emit ITranchePool.FundsDepositedToJuniorTranche(
             juniorUser3,
             juniorTrancheDeposit3,
             juniorTrancheDeposit3,
@@ -423,10 +424,10 @@ contract TestTranchePool is Test {
 
     function testDepositEquityTrancheRevertIfNotOpen() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(TranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
         vm.startPrank(equityUser1);
         ERC20Mock(usdt).approve(address(tranchePool), 10_00_000 * USDT);
-        vm.expectRevert(TranchePool.TranchePool__PoolIsNotOpen.selector);
+        vm.expectRevert(ITranchePool.TranchePool__PoolIsNotOpen.selector);
         tranchePool.depositEquityTranche(10_00_000 * USDT);
         vm.stopPrank();
     }
@@ -489,7 +490,7 @@ contract TestTranchePool is Test {
         vm.startPrank(equityUser1);
         ERC20Mock(usdt).approve(address(tranchePool), equityTrancheDeposit1);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToEquityTranche(
+        emit ITranchePool.FundsDepositedToEquityTranche(
             equityUser1,
             equityTrancheDeposit1,
             equityTrancheDeposit1,
@@ -506,7 +507,7 @@ contract TestTranchePool is Test {
         vm.startPrank(equityUser2);
         ERC20Mock(usdt).approve(address(tranchePool), equityTrancheDeposit2);
         vm.expectEmit(true, false, false, true);
-        emit TranchePool.FundsDepositedToEquityTranche(
+        emit ITranchePool.FundsDepositedToEquityTranche(
             equityUser2,
             equityTrancheDeposit2,
             equityTrancheDeposit2,

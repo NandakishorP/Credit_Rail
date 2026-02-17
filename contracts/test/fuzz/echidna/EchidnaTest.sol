@@ -194,7 +194,7 @@ contract EchidnaTest {
     function _invariant_seniorShareToIdleOpen() internal view {
         TranchePool tp = handler.tranchePool();
         
-        if (tp.getPoolState() == TranchePool.PoolState.OPEN) {
+        if (tp.getPoolState() == ITranchePool.PoolState.OPEN) {
             assert(tp.getTotalSeniorShares() == tp.getSeniorTrancheIdleValue());
         }
     }
@@ -245,10 +245,10 @@ contract EchidnaTest {
     // =========================================================================
     function _invariant_poolStateValidityDeployedCapital() internal view {
         TranchePool tp = handler.tranchePool();
-        TranchePool.PoolState state = tp.getPoolState();
+        ITranchePool.PoolState state = tp.getPoolState();
         
-        if (state == TranchePool.PoolState.OPEN || 
-            state == TranchePool.PoolState.CLOSED) {
+        if (state == ITranchePool.PoolState.OPEN || 
+            state == ITranchePool.PoolState.CLOSED) {
             assert(tp.getTotalDeployedValue() == 0);
         }
     }

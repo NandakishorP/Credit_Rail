@@ -228,7 +228,7 @@ contract EchidnaHandler {
     // =========================================================================
 
     function depositSeniorTranche(uint256 amount) public {
-        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
 
         uint256 minDeposit = tranchePool.getSeniorTrancheMinimumDepositAmount();
         uint256 maxDeposit = tranchePool.getSeniorTrancheMaxDepositCap();
@@ -249,7 +249,7 @@ contract EchidnaHandler {
     }
 
     function depositJuniorTranche(uint256 amount) public {
-        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
 
         uint256 minDeposit = tranchePool.getJuniorTrancheMinimumDepositAmount();
         uint256 maxDeposit = tranchePool.getJuniorTrancheMaxDepositCap();
@@ -270,7 +270,7 @@ contract EchidnaHandler {
     }
 
     function depositEquityTranche(uint256 amount) public {
-        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
 
         uint256 minDeposit = tranchePool.getEquityTrancheMinimumDepositAmount();
         uint256 maxDeposit = tranchePool.getEquityTrancheMaxDepositCap();
@@ -295,20 +295,20 @@ contract EchidnaHandler {
     // =========================================================================
 
     function commitPool() public {
-        if (tranchePool.getPoolState() != TranchePool.PoolState.OPEN) return;
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
         if (tranchePool.getTotalIdleValue() == 0) return;
 
-        try tranchePool.setPoolState(TranchePool.PoolState.COMMITED) {
+        try tranchePool.setPoolState(ITranchePool.PoolState.COMMITED) {
             totalDeposited = tranchePool.getTotalIdleValue();
         } catch {}
     }
 
     function closePool() public {
         if (tranchePool.getTotalDeployedValue() > 0) return;
-        if (tranchePool.getPoolState() != TranchePool.PoolState.DEPLOYED)
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED)
             return;
 
-        try tranchePool.setPoolState(TranchePool.PoolState.CLOSED) {} catch {}
+        try tranchePool.setPoolState(ITranchePool.PoolState.CLOSED) {} catch {}
     }
 
     // =========================================================================
@@ -320,10 +320,10 @@ contract EchidnaHandler {
         uint256 originationFeeBps,
         uint256 termDays
     ) public {
-        TranchePool.PoolState state = tranchePool.getPoolState();
+        ITranchePool.PoolState state = tranchePool.getPoolState();
         if (
-            state != TranchePool.PoolState.COMMITED &&
-            state != TranchePool.PoolState.DEPLOYED
+            state != ITranchePool.PoolState.COMMITED &&
+            state != ITranchePool.PoolState.DEPLOYED
         ) return;
 
         // Matching Foundry handler logic EXACTLY
@@ -402,10 +402,10 @@ contract EchidnaHandler {
         LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
         if (loan.state != LoanEngine.LoanState.CREATED) return;
 
-        TranchePool.PoolState poolState = tranchePool.getPoolState();
+        ITranchePool.PoolState poolState = tranchePool.getPoolState();
         if (
-            poolState != TranchePool.PoolState.COMMITED &&
-            poolState != TranchePool.PoolState.DEPLOYED
+            poolState != ITranchePool.PoolState.COMMITED &&
+            poolState != ITranchePool.PoolState.DEPLOYED
         ) return;
 
         if (loan.principalIssued > tranchePool.getTotalIdleValue()) return;

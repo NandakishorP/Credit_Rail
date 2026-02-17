@@ -5,101 +5,12 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ITranchePool} from "./interfaces/ITranchePool.sol";
 
-contract TranchePool is Ownable, Pausable, ReentrancyGuard {
+contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // Errors
-    error TranchePool__NotWhiteListed(address user);
-    error TranchePool__LessThanDepositThreshold(uint256 amount);
-    error TranchePool__InvalidAllocationRatio();
-    error TranchePool__InsufficientLiquidity();
-    error TranchePool__InsufficientShares();
-    error TranchePool__ZeroWithdrawal();
-    error TranchePool__NotWhiteListedForEquityTranche(address user);
-    error TranchePool__InvalidTransferAmount(uint256 amount);
-    error TranchePool__InvalidCaller(address user);
-    error TranchePool__ZeroAPRError();
-    error TranchePool__LossExceededCapital(uint256 remaining);
-    error TranchePool__ZeroSharesMinted();
-    error TranchePool__PoolIsNotOpen();
-    error TranchePool__InvalidStateTransition(PoolState state);
-    error TranchePool__WithdrawNotAllowed(PoolState state);
-    error TranchePool__ZeroValueError();
-    error TranchePool__MaxDepositCapExceeded(uint256 maxCap, uint256 amount);
-    error TranchePool__PoolIsNotCommited();
-    error TranchePool__PrincipalRepaymentExceeded();
-    error TranchePool__ZeroAddressError();
-    error TranchePool__DeployedCapitalExists();
-    error TranchePool__InvalidMaxCapAmount();
-    error TranchePool__InvalidMinDepositAmount();
-    error TranchePool__InterestNotClaimed();
-    // Events
-
-    event PoolStateUpdated(PoolState newState);
-
-    event LossAllocated(
-        uint256 seniorLoss,
-        uint256 juniorLoss,
-        uint256 equityLoss
-    );
-    event WithdrawnFromSeniorTranche(
-        address indexed user,
-        uint256 amount,
-        uint256 sharesBurned,
-        uint256 time
-    );
-    event WithdrawnFromJuniorTranche(
-        address indexed user,
-        uint256 amount,
-        uint256 sharesBurned,
-        uint256 time
-    );
-    event WithdrawnFromEquityTranche(
-        address indexed user,
-        uint256 amount,
-        uint256 sharesBurned,
-        uint256 time
-    );
-
-    event FundsDepositedToSeniorTranche(
-        address indexed user,
-        uint256 amount,
-        uint256 shares,
-        uint256 time
-    );
-    event FundsDepositedToJuniorTranche(
-        address indexed user,
-        uint256 amount,
-        uint256 shares,
-        uint256 time
-    );
-    event FundsDepositedToEquityTranche(
-        address indexed user,
-        uint256 amount,
-        uint256 shares,
-        uint256 time
-    );
-    event CapitalAllocated(
-        uint256 seniorAmount,
-        uint256 juniorAmount,
-        uint256 equityAmount,
-        uint256 time
-    );
-    event RecoverAmountTransferredToTranchePool(
-        uint256 amount,
-        uint256 timeStamp
-    );
-    event ProfitTransferredToTranchePool(uint256 amount, uint256 timeStamp);
-    event CapitalAllocationFactorUpdatedSenior(uint256 newFactor);
-    event CapitalAllocationFactorUpdatedJunior(uint256 newFactor);
-
-    enum PoolState {
-        OPEN, // deposits allowed
-        COMMITED,
-        DEPLOYED, // capital deployed, deposits paused
-        CLOSED // withdrawals only
-    }
 
     // Whitelist
     mapping(address => bool) public whiteListedLps;

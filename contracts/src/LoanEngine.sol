@@ -160,10 +160,10 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         if (publicInputs.length != TOTAL_PUBLIC_INPUTS) {
             revert LoanEngine__InvalidPublicInputsLength();
         }
-        TranchePool.PoolState poolState = i_tranchePool.getPoolState();
+        ITranchePool.PoolState poolState = i_tranchePool.getPoolState();
         if (
-            poolState != TranchePool.PoolState.DEPLOYED &&
-            poolState != TranchePool.PoolState.COMMITED
+            poolState != ITranchePool.PoolState.DEPLOYED &&
+            poolState != ITranchePool.PoolState.COMMITED
         ) {
             revert LoanEngine__PoolNotDeployed();
         }
