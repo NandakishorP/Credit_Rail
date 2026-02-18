@@ -2,7 +2,9 @@
 pragma solidity ^0.8.27;
 
 import {LoanEngine} from "../../../src/LoanEngine.sol";
+import {ILoanEngine} from "../../../src/interfaces/ILoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
+import {ITranchePool} from "../../../src/interfaces/ITranchePool.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
@@ -254,7 +256,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         // nextLoanId is 1-indexed, loop from 1 to nextLoanId - 1
         uint256 nextId = loanEngine.getNextLoanId();
         for (uint256 i = 1; i < nextId; i++) {
-            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
             // Only count active principal. Theoretically, REPAID/DEFAULTED could have 0,
             // but we sum whatever is in the principalOutstanding field to be safe.
             totalOutstandingPrincipal += loan.principalOutstanding;
@@ -312,12 +314,12 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     function invariant__loanStateConsistency() public view {
         uint256 nextId = loanEngine.getNextLoanId();
         for (uint256 i = 1; i < nextId; i++) {
-            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
 
             // NONE and CREATED should have 0 principal outstanding
             if (
-                loan.state == LoanEngine.LoanState.NONE ||
-                loan.state == LoanEngine.LoanState.CREATED
+                loan.state == ILoanEngine.LoanState.NONE ||
+                loan.state == ILoanEngine.LoanState.CREATED
             ) {
                 assertEq(
                     loan.principalOutstanding,
@@ -328,8 +330,8 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
 
             // REPAID and WRITTEN_OFF must have 0 outstanding
             if (
-                loan.state == LoanEngine.LoanState.REPAID ||
-                loan.state == LoanEngine.LoanState.WRITTEN_OFF
+                loan.state == ILoanEngine.LoanState.REPAID ||
+                loan.state == ILoanEngine.LoanState.WRITTEN_OFF
             ) {
                 assertEq(
                     loan.principalOutstanding,
@@ -339,7 +341,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             }
 
             // ACTIVE loans must have principalOutstanding <= principalIssued
-            if (loan.state == LoanEngine.LoanState.ACTIVE) {
+            if (loan.state == ILoanEngine.LoanState.ACTIVE) {
                 assertLe(
                     loan.principalOutstanding,
                     loan.principalIssued,
@@ -395,15 +397,15 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         uint256 nextId = loanEngine.getNextLoanId();
 
         for (uint256 i = 1; i < nextId; i++) {
-            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
-            if (loan.state == LoanEngine.LoanState.REPAID) {
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            if (loan.state == ILoanEngine.LoanState.REPAID) {
                 assertEq(
                     loan.interestAccrued,
                     0,
                     "REPAID loan has remaining accrued interest"
                 );
             }
-            if (loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
+            if (loan.state == ILoanEngine.LoanState.WRITTEN_OFF) {
                 assertEq(
                     loan.interestAccrued,
                     0,

@@ -5,7 +5,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ITranchePool} from "./interfaces/ITranchePool.sol";
+import {InterestMath} from "./libraries/InterestMath.sol";
 
 contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -298,11 +300,11 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         uint256 targetEquity = totalAmount - targetSenior - targetJunior;
 
-        uint256 seniorAmount = _minimum(targetSenior, s_seniorTrancheIdleValue);
+        uint256 seniorAmount = Math.min(targetSenior, s_seniorTrancheIdleValue);
 
-        uint256 juniorAmount = _minimum(targetJunior, s_juniorTrancheIdleValue);
+        uint256 juniorAmount = Math.min(targetJunior, s_juniorTrancheIdleValue);
 
-        uint256 equityAmount = _minimum(targetEquity, s_equityTrancheIdleValue);
+        uint256 equityAmount = Math.min(targetEquity, s_equityTrancheIdleValue);
 
         uint256 allocated = seniorAmount + juniorAmount + equityAmount;
 
@@ -310,7 +312,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Equity absorbs first
         if (remaining > 0 && s_equityTrancheIdleValue > equityAmount) {
-            uint256 extra = _minimum(
+            uint256 extra = Math.min(
                 remaining,
                 s_equityTrancheIdleValue - equityAmount
             );
@@ -320,7 +322,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Junior absorbs next
         if (remaining > 0 && s_juniorTrancheIdleValue > juniorAmount) {
-            uint256 extra = _minimum(
+            uint256 extra = Math.min(
                 remaining,
                 s_juniorTrancheIdleValue - juniorAmount
             );
@@ -330,7 +332,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Senior absorbs last
         if (remaining > 0 && s_seniorTrancheIdleValue > seniorAmount) {
-            uint256 extra = _minimum(
+            uint256 extra = Math.min(
                 remaining,
                 s_seniorTrancheIdleValue - seniorAmount
             );
@@ -437,13 +439,13 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
             seniorAccruedInterest > 0 &&
             s_totalSeniorShares > 0
         ) {
-            uint256 seniorPaid = _minimum(
+            uint256 seniorPaid = Math.min(
                 remainingInterest,
                 seniorAccruedInterest
             );
             seniorAccruedInterest -= seniorPaid;
-            seniorTargetInterest -= _minimum(seniorTargetInterest, seniorPaid);
-            seniorInterestIndex += (seniorPaid * 1e18) / s_totalSeniorShares;
+            seniorTargetInterest -= Math.min(seniorTargetInterest, seniorPaid);
+            seniorInterestIndex += InterestMath.computeIndexDelta(seniorPaid, s_totalSeniorShares);
             remainingInterest -= seniorPaid;
         }
 
@@ -453,31 +455,33 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
             juniorAccruedInterest > 0 &&
             s_totalJuniorShares > 0
         ) {
-            uint256 juniorPaid = _minimum(
+            uint256 juniorPaid = Math.min(
                 remainingInterest,
                 juniorAccruedInterest
             );
             juniorAccruedInterest -= juniorPaid;
-            juniorTargetInterest -= _minimum(juniorTargetInterest, juniorPaid);
-            juniorInterestIndex += (juniorPaid * 1e18) / s_totalJuniorShares;
+            juniorTargetInterest -= Math.min(juniorTargetInterest, juniorPaid);
+            juniorInterestIndex += InterestMath.computeIndexDelta(juniorPaid, s_totalJuniorShares);
             remainingInterest -= juniorPaid;
         }
 
         // 3️⃣ Equity / overflow interest
         if (remainingInterest > 0) {
             if (s_totalEquityShares > 0) {
-                equityInterestIndex +=
-                    (remainingInterest * 1e18) /
-                    s_totalEquityShares;
-                equityAccruedInterest -= _minimum(
+                equityInterestIndex += InterestMath.computeIndexDelta(
+                    remainingInterest,
+                    s_totalEquityShares
+                );
+                equityAccruedInterest -= Math.min(
                     equityAccruedInterest,
                     remainingInterest
                 );
             } else if (s_totalJuniorShares > 0) {
                 // no equity → junior gets excess
-                juniorInterestIndex +=
-                    (remainingInterest * 1e18) /
-                    s_totalJuniorShares;
+                juniorInterestIndex += InterestMath.computeIndexDelta(
+                    remainingInterest,
+                    s_totalJuniorShares
+                );
             } else {
                 // no LPs left → protocol revenue
                 s_protocolRevenue += remainingInterest;
@@ -494,7 +498,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
             // Senior first (restore safest capital)
             if (remaining > 0 && s_seniorTrancheDeployedValue > 0) {
-                uint256 seniorPay = _minimum(
+                uint256 seniorPay = Math.min(
                     remaining,
                     s_seniorTrancheDeployedValue
                 );
@@ -505,7 +509,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
             // Junior next
             if (remaining > 0 && s_juniorTrancheDeployedValue > 0) {
-                uint256 juniorPay = _minimum(
+                uint256 juniorPay = Math.min(
                     remaining,
                     s_juniorTrancheDeployedValue
                 );
@@ -516,7 +520,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
             // Equity last
             if (remaining > 0 && s_equityTrancheDeployedValue > 0) {
-                uint256 equityPay = _minimum(
+                uint256 equityPay = Math.min(
                     remaining,
                     s_equityTrancheDeployedValue
                 );
@@ -556,13 +560,13 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Cancel senior accrued interest first
         if (remainingInterest > 0 && seniorAccruedInterest > 0) {
-            uint256 seniorCancel = _minimum(
+            uint256 seniorCancel = Math.min(
                 remainingInterest,
                 seniorAccruedInterest
             );
             seniorAccruedInterest -= seniorCancel;
             remainingInterest -= seniorCancel;
-            seniorTargetInterest -= _minimum(
+            seniorTargetInterest -= Math.min(
                 seniorTargetInterest,
                 seniorCancel
             );
@@ -570,13 +574,13 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Then junior
         if (remainingInterest > 0 && juniorAccruedInterest > 0) {
-            uint256 juniorCancel = _minimum(
+            uint256 juniorCancel = Math.min(
                 remainingInterest,
                 juniorAccruedInterest
             );
             juniorAccruedInterest -= juniorCancel;
             remainingInterest -= juniorCancel;
-            juniorTargetInterest -= _minimum(
+            juniorTargetInterest -= Math.min(
                 juniorTargetInterest,
                 juniorCancel
             );
@@ -598,7 +602,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Equity absorbs first
         if (remaining > 0 && s_equityTrancheDeployedValue > 0) {
-            equityLoss = _minimum(remaining, s_equityTrancheDeployedValue);
+            equityLoss = Math.min(remaining, s_equityTrancheDeployedValue);
             s_equityTrancheDeployedValue -= equityLoss;
             equityPrincipalShortfall += equityLoss;
             remaining -= equityLoss;
@@ -606,7 +610,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Junior next
         if (remaining > 0 && s_juniorTrancheDeployedValue > 0) {
-            juniorLoss = _minimum(remaining, s_juniorTrancheDeployedValue);
+            juniorLoss = Math.min(remaining, s_juniorTrancheDeployedValue);
             s_juniorTrancheDeployedValue -= juniorLoss;
             juniorPrincipalShortfall += juniorLoss;
             remaining -= juniorLoss;
@@ -614,7 +618,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Senior last
         if (remaining > 0 && s_seniorTrancheDeployedValue > 0) {
-            seniorLoss = _minimum(remaining, s_seniorTrancheDeployedValue);
+            seniorLoss = Math.min(remaining, s_seniorTrancheDeployedValue);
             s_seniorTrancheDeployedValue -= seniorLoss;
             seniorPrincipalShortfall += seniorLoss;
             remaining -= seniorLoss;
@@ -641,7 +645,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Senior first
         if (remaining > 0 && seniorPrincipalShortfall > 0) {
-            uint256 seniorPay = _minimum(remaining, seniorPrincipalShortfall);
+            uint256 seniorPay = Math.min(remaining, seniorPrincipalShortfall);
             seniorPrincipalShortfall -= seniorPay;
             s_seniorTrancheIdleValue += seniorPay;
             remaining -= seniorPay;
@@ -649,7 +653,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Junior next
         if (remaining > 0 && juniorPrincipalShortfall > 0) {
-            uint256 juniorPay = _minimum(remaining, juniorPrincipalShortfall);
+            uint256 juniorPay = Math.min(remaining, juniorPrincipalShortfall);
             juniorPrincipalShortfall -= juniorPay;
             s_juniorTrancheIdleValue += juniorPay;
             remaining -= juniorPay;
@@ -657,7 +661,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         // Equity last
         if (remaining > 0 && equityPrincipalShortfall > 0) {
-            uint256 equityPay = _minimum(remaining, equityPrincipalShortfall);
+            uint256 equityPay = Math.min(remaining, equityPrincipalShortfall);
             equityPrincipalShortfall -= equityPay;
             s_equityTrancheIdleValue += equityPay;
             remaining -= equityPay;
@@ -676,13 +680,14 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         uint256 userShares = s_seniorTrancheShares[msg.sender];
         if (userShares == 0) revert TranchePool__InsufficientShares();
 
-        uint256 indexDelta = seniorInterestIndex - seniorUserIndex[msg.sender];
+        uint256 claimable = InterestMath.calculateClaimable(
+            userShares,
+            seniorInterestIndex,
+            seniorUserIndex[msg.sender]
+        );
+        if (claimable == 0) revert TranchePool__ZeroWithdrawal();
 
-        if (indexDelta == 0) revert TranchePool__ZeroWithdrawal();
-
-        uint256 claimable = (userShares * indexDelta) / 1e18;
-
-        // CHANGED: update user index BEFORE transfer
+        // Update user index BEFORE transfer
         seniorUserIndex[msg.sender] = seniorInterestIndex;
         s_totalUnclaimedInterest -= claimable;
 
@@ -693,13 +698,14 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         uint256 userShares = s_juniorTrancheShares[msg.sender];
         if (userShares == 0) revert TranchePool__InsufficientShares();
 
-        uint256 indexDelta = juniorInterestIndex - juniorUserIndex[msg.sender];
+        uint256 claimable = InterestMath.calculateClaimable(
+            userShares,
+            juniorInterestIndex,
+            juniorUserIndex[msg.sender]
+        );
+        if (claimable == 0) revert TranchePool__ZeroWithdrawal();
 
-        if (indexDelta == 0) revert TranchePool__ZeroWithdrawal();
-
-        uint256 claimable = (userShares * indexDelta) / 1e18;
-
-        // CHANGED: update user index BEFORE transfer
+        // Update user index BEFORE transfer
         juniorUserIndex[msg.sender] = juniorInterestIndex;
         s_totalUnclaimedInterest -= claimable;
 
@@ -714,14 +720,16 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         uint256 userShares = s_equityTrancheShares[msg.sender];
         if (userShares == 0) revert TranchePool__InsufficientShares();
 
-        uint256 indexDelta = equityInterestIndex - equityUserIndex[msg.sender];
+        uint256 claimable = InterestMath.calculateClaimable(
+            userShares,
+            equityInterestIndex,
+            equityUserIndex[msg.sender]
+        );
+        if (claimable == 0) revert TranchePool__ZeroWithdrawal();
 
-        if (indexDelta == 0) revert TranchePool__ZeroWithdrawal();
-
-        uint256 claimable = (userShares * indexDelta) / 1e18;
         s_totalUnclaimedInterest -= claimable;
 
-        // CHANGED: update user index BEFORE transfer
+        // Update user index BEFORE transfer
         equityUserIndex[msg.sender] = equityInterestIndex;
 
         IERC20(i_stableCoin).safeTransfer(msg.sender, claimable);
@@ -1034,21 +1042,17 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
         if (timeElapsed == 0) return;
 
-        if (s_seniorTrancheDeployedValue > 0) {
-            seniorTargetInterest +=
-                (s_seniorTrancheDeployedValue *
-                    s_senior_apr_bps *
-                    timeElapsed) /
-                (365 days * 10_000);
-        }
+        seniorTargetInterest += InterestMath.accrueTargetInterest(
+            s_seniorTrancheDeployedValue,
+            s_senior_apr_bps,
+            timeElapsed
+        );
 
-        if (s_juniorTrancheDeployedValue > 0) {
-            juniorTargetInterest +=
-                (s_juniorTrancheDeployedValue *
-                    s_target_junior_apr_bps *
-                    timeElapsed) /
-                (365 days * 10_000);
-        }
+        juniorTargetInterest += InterestMath.accrueTargetInterest(
+            s_juniorTrancheDeployedValue,
+            s_target_junior_apr_bps,
+            timeElapsed
+        );
 
         lastTrancheAccrualTimestamp = currentTimestamp;
     }
@@ -1216,14 +1220,6 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         bool status
     ) external onlyOwner {
         whiteListedForEquityTranche[user] = status;
-    }
-
-    function _minimum(uint256 a, uint256 b) internal pure returns (uint256) {
-        if (a > b) {
-            return b;
-        } else {
-            return a;
-        }
     }
 
     // getters

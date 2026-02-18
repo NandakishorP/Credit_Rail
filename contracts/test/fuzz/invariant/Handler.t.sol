@@ -3,7 +3,9 @@ pragma solidity ^0.8.27;
 
 import {Test, console} from "forge-std/Test.sol";
 import {LoanEngine} from "../../../src/LoanEngine.sol";
+import {ILoanEngine} from "../../../src/interfaces/ILoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
+import {ITranchePool} from "../../../src/interfaces/ITranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
@@ -364,7 +366,7 @@ contract Handler is Test {
             )
         );
 
-        LoanEngine.CreateLoanParams memory params = LoanEngine
+        ILoanEngine.CreateLoanParams memory params = ILoanEngine
             .CreateLoanParams({
                 borrowerCommitment: borrowerCommitment,
                 nullifierHash: nullifierHash,
@@ -391,7 +393,7 @@ contract Handler is Test {
 
         if (
             loanEngine.getLoanDetails(loanId).state !=
-            LoanEngine.LoanState.CREATED
+            ILoanEngine.LoanState.CREATED
         ) {
             return;
         }
@@ -433,8 +435,8 @@ contract Handler is Test {
             return;
         }
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
-        LoanEngine.Loan memory loanDetails = loanEngine.getLoanDetails(loanId);
-        if (loanDetails.state != LoanEngine.LoanState.ACTIVE) {
+        ILoanEngine.Loan memory loanDetails = loanEngine.getLoanDetails(loanId);
+        if (loanDetails.state != ILoanEngine.LoanState.ACTIVE) {
             return;
         }
         console.log("here");
@@ -501,9 +503,9 @@ contract Handler is Test {
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
 
-        if (loan.state != LoanEngine.LoanState.ACTIVE) {
+        if (loan.state != ILoanEngine.LoanState.ACTIVE) {
             return;
         }
 
@@ -522,7 +524,7 @@ contract Handler is Test {
 
         if (
             loanEngine.getLoanDetails(loanId).state !=
-            LoanEngine.LoanState.DEFAULTED
+            ILoanEngine.LoanState.DEFAULTED
         ) {
             return;
         }
@@ -558,8 +560,8 @@ contract Handler is Test {
 
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.WRITTEN_OFF) {
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.WRITTEN_OFF) {
             return;
         }
 
@@ -866,7 +868,7 @@ contract Handler is Test {
     function _accrueInterest(uint256 loanId) internal view returns (uint256) {
         // Implementation goes here
         loanId = bound(loanId, 1, loanEngine.getNextLoanId() - 1);
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
 
         uint256 timeElapsed = block.timestamp - loan.lastAccrualTimestamp;
         if (loan.principalOutstanding == 0) {

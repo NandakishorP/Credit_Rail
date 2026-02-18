@@ -16,9 +16,8 @@ remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts",
     "@poseidon2-evm/=lib/poseidon2-evm/src/"
 ]
-test = "test/unit"
-# Exclude scripts from default profile (they reference Verifier.sol which needs zksolc)
-ignore = ["script/*", "test/fuzz/*", "test/medusa/*", "tests/*"]
+# Exclude scripts and non-foundry fuzz tests from default profile
+ignore = ["script/*", "test/medusa/*", "test/fuzz/echidna/*", "tests/*"]
 
 [fuzz]
 runs = 1000
@@ -30,9 +29,11 @@ depth = 128
 fail_on_revert = true
 
 [profile.zksync]
-src = ["src", "src-zk"]
+src = "src"
 out = "zkout"
 libs = ["lib"]
+test = "test-zk-disabled"
+script = "script-zk-disabled"
 solc = "0.8.30"
 via_ir = true
 optimizer = true

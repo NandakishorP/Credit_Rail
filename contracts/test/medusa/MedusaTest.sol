@@ -2,7 +2,9 @@
 pragma solidity ^0.8.27;
 
 import {LoanEngine} from "../../src/LoanEngine.sol";
+import {ILoanEngine} from "../../src/interfaces/ILoanEngine.sol";
 import {TranchePool} from "../../src/TranchePool.sol";
+import {ITranchePool} from "../../src/interfaces/ITranchePool.sol";
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../mocks/MockLoanProofVerifier.sol";
@@ -329,7 +331,7 @@ contract MedusaTest {
                 block.timestamp
             )
         );
-        LoanEngine.CreateLoanParams memory params = LoanEngine
+        ILoanEngine.CreateLoanParams memory params = ILoanEngine
             .CreateLoanParams({
                 borrowerCommitment: borrowerCommitment,
                 nullifierHash: nullifierHash,
@@ -353,8 +355,8 @@ contract MedusaTest {
 
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.CREATED) return;
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.CREATED) return;
 
         if (
             tranchePool.getPoolState() != ITranchePool.PoolState.COMMITED &&
@@ -379,8 +381,8 @@ contract MedusaTest {
 
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loanDetails = loanEngine.getLoanDetails(loanId);
-        if (loanDetails.state != LoanEngine.LoanState.ACTIVE) return;
+        ILoanEngine.Loan memory loanDetails = loanEngine.getLoanDetails(loanId);
+        if (loanDetails.state != ILoanEngine.LoanState.ACTIVE) return;
 
         principalAmount = _bound(
             principalAmount,
@@ -444,8 +446,8 @@ contract MedusaTest {
 
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.ACTIVE) return;
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.ACTIVE) return;
 
         loanEngine.declareDefault(loanId, reasonHash, block.timestamp);
     }
@@ -459,7 +461,7 @@ contract MedusaTest {
 
         if (
             loanEngine.getLoanDetails(loanId).state !=
-            LoanEngine.LoanState.DEFAULTED
+            ILoanEngine.LoanState.DEFAULTED
         ) return;
 
         // Read principal before writeoff
@@ -485,8 +487,8 @@ contract MedusaTest {
 
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.WRITTEN_OFF) return;
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.WRITTEN_OFF) return;
 
         amount = _bound(amount, 1, loan.principalIssued);
 
@@ -535,7 +537,7 @@ contract MedusaTest {
         uint256 nextId = loanEngine.getNextLoanId();
 
         for (uint256 i = 1; i < nextId; i++) {
-            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
             totalPrincipal += loan.principalOutstanding;
         }
 
@@ -592,23 +594,23 @@ contract MedusaTest {
     function invariant_loanState() external view returns (bool) {
         uint256 nextId = loanEngine.getNextLoanId();
         for (uint256 i = 1; i < nextId; i++) {
-            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
 
             if (
-                loan.state == LoanEngine.LoanState.NONE ||
-                loan.state == LoanEngine.LoanState.CREATED
+                loan.state == ILoanEngine.LoanState.NONE ||
+                loan.state == ILoanEngine.LoanState.CREATED
             ) {
                 if (loan.principalOutstanding != 0) return false;
             }
 
             if (
-                loan.state == LoanEngine.LoanState.REPAID ||
-                loan.state == LoanEngine.LoanState.WRITTEN_OFF
+                loan.state == ILoanEngine.LoanState.REPAID ||
+                loan.state == ILoanEngine.LoanState.WRITTEN_OFF
             ) {
                 if (loan.principalOutstanding != 0) return false;
             }
 
-            if (loan.state == LoanEngine.LoanState.ACTIVE) {
+            if (loan.state == ILoanEngine.LoanState.ACTIVE) {
                 if (loan.principalOutstanding > loan.principalIssued)
                     return false;
             }
@@ -637,11 +639,11 @@ contract MedusaTest {
     function invariant_interestAccounting() external view returns (bool) {
         uint256 nextId = loanEngine.getNextLoanId();
         for (uint256 i = 1; i < nextId; i++) {
-            LoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
-            if (loan.state == LoanEngine.LoanState.REPAID) {
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            if (loan.state == ILoanEngine.LoanState.REPAID) {
                 if (loan.interestAccrued != 0) return false;
             }
-            if (loan.state == LoanEngine.LoanState.WRITTEN_OFF) {
+            if (loan.state == ILoanEngine.LoanState.WRITTEN_OFF) {
                 if (loan.interestAccrued != 0) return false;
             }
         }
@@ -653,7 +655,7 @@ contract MedusaTest {
     // =========================================================================
 
     function _accrueInterest(uint256 loanId) internal view returns (uint256) {
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
 
         uint256 timeElapsed = block.timestamp - loan.lastAccrualTimestamp;
         if (loan.principalOutstanding == 0) return 0;

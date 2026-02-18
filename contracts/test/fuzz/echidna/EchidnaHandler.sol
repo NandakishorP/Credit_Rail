@@ -2,10 +2,13 @@
 pragma solidity ^0.8.27;
 
 import {LoanEngine} from "../../../src/LoanEngine.sol";
+import {ILoanEngine} from "../../../src/interfaces/ILoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
+import {ITranchePool} from "../../../src/interfaces/ITranchePool.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../../src/interfaces/ICreditPolicy.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../../mocks/MockPoseidon2.sol";
 
@@ -374,7 +377,7 @@ contract EchidnaHandler {
             termDays
         );
 
-        LoanEngine.CreateLoanParams memory params = LoanEngine
+        ILoanEngine.CreateLoanParams memory params = ILoanEngine
             .CreateLoanParams({
                 borrowerCommitment: borrowerCommitment,
                 nullifierHash: nullifierHash,
@@ -399,8 +402,8 @@ contract EchidnaHandler {
         if (loanEngine.getNextLoanId() <= 1) return;
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.CREATED) return;
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.CREATED) return;
 
         ITranchePool.PoolState poolState = tranchePool.getPoolState();
         if (
@@ -425,8 +428,8 @@ contract EchidnaHandler {
         if (loanEngine.getNextLoanId() <= 1) return;
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loanBefore = loanEngine.getLoanDetails(loanId);
-        if (loanBefore.state != LoanEngine.LoanState.ACTIVE) return;
+        ILoanEngine.Loan memory loanBefore = loanEngine.getLoanDetails(loanId);
+        if (loanBefore.state != ILoanEngine.LoanState.ACTIVE) return;
 
         // DUST PAYMENT FIX: Minimum $10K payment
         uint256 MIN_PAYMENT = 10_000 * USDT;
@@ -491,8 +494,8 @@ contract EchidnaHandler {
 
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.ACTIVE) return;
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.ACTIVE) return;
 
         try
             loanEngine.declareDefault(loanId, bytes32(0), block.timestamp)
@@ -506,8 +509,8 @@ contract EchidnaHandler {
 
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.DEFAULTED) return;
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.DEFAULTED) return;
 
         uint256 principal = loan.principalOutstanding;
 
@@ -525,8 +528,8 @@ contract EchidnaHandler {
 
         loanId = _bound(loanId, 1, loanEngine.getNextLoanId() - 1);
 
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
-        if (loan.state != LoanEngine.LoanState.WRITTEN_OFF) return;
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        if (loan.state != ILoanEngine.LoanState.WRITTEN_OFF) return;
 
         // Recovery bounded to principal issued (no over-recovery)
         uint256 maxRecovery = loan.principalIssued - loan.totalRecovered;
@@ -551,7 +554,7 @@ contract EchidnaHandler {
     // =========================================================================
 
     function _accrueInterest(uint256 loanId) internal view returns (uint256) {
-        LoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
+        ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(loanId);
 
         uint256 timeElapsed = block.timestamp - loan.lastAccrualTimestamp;
         if (loan.principalOutstanding == 0) return 0;
