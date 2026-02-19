@@ -11,6 +11,7 @@ import { Noir } from "@noir-lang/noir_js";
 import { ethers } from "ethers";
 import fs from "fs";
 import path from "path";
+import { generateDeterministicKeypair, schnorrSign, toHex32 } from "./grumpkin";
 
 // Configuration
 const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8546";
@@ -224,26 +225,13 @@ async function main() {
   const industry_hash = await poseidonHash([industryValue]);
   const industryBytes32 = "0x" + industry_hash.toString().slice(2).padStart(64, '0');
 
-  // --- Generate Key ---
-  console.log("Generating underwriter key...");
-  const BN254_MODULUS = BigInt("21888242871839275222246405745257275088548364400416034343698204186575808495617");
-  
-  let wallet: ethers.Wallet;
-  let pubKeyX: bigint;
-  let pubKeyY: bigint;
-  let counter = 0;
-  
-  while (true) {
-    counter++;
-    const seed = ethers.keccak256(ethers.toUtf8Bytes(`deterministic_seed_${counter}`));
-    wallet = new ethers.Wallet(seed);
-    const uncompressed = wallet.signingKey.publicKey;
-    pubKeyX = BigInt("0x" + uncompressed.slice(4, 68));
-    pubKeyY = BigInt("0x" + uncompressed.slice(68, 132));
-    if (pubKeyX < BN254_MODULUS && pubKeyY < BN254_MODULUS) break;
-  }
-  
-  console.log(`  Key found after ${counter} iterations`);
+  // --- Generate Grumpkin Key ---
+  console.log("Generating Grumpkin underwriter key...");
+  const { privateKey: underwriterSk, publicKey: underwriterPk } =
+    generateDeterministicKeypair("deterministic_seed");
+  const pubKeyX = underwriterPk.x;
+  const pubKeyY = underwriterPk.y;
+  console.log(`  Generated Grumpkin keypair`);
 
   // --- Compute Hashes ---
   console.log("Computing hashes...");
@@ -281,7 +269,9 @@ async function main() {
     industry_hash: industry_hash.toString(),
     current_timestamp: timestamp,
     loanId: loanId,
-    underwriter_signature: [] as number[],
+    underwriter_sig_s_low: "0" as string,
+    underwriter_sig_s_high: "0" as string,
+    underwriter_sig_e: "0" as string,
     borrower_secret: borrower_data.secret,
     borrower_annual_revenue: borrower_data.revenue,
     borrower_ebitda: borrower_data.ebitda,
@@ -316,8 +306,8 @@ async function main() {
     tier_active: tier.active
   };
 
-  // --- Sign Data ---
-  console.log("Signing attestation data...");
+  // --- Schnorr Sign Data ---
+  console.log("Signing attestation data with Schnorr (Grumpkin)...");
   const data_to_sign_hash = await poseidonHash([
     borrower_data.revenue, borrower_data.ebitda, borrower_data.net_worth,
     borrower_data.age_days, borrower_data.defaults, Number(borrower_data.bankruptcy),
@@ -326,18 +316,19 @@ async function main() {
     industry_hash, attestation_timestamp
   ]);
 
-  const hashHex = data_to_sign_hash.toString();
-  const msgHashBytes = ethers.getBytes(hashHex);
-  const paddedMsgHash = new Uint8Array(32);
-  paddedMsgHash.set(msgHashBytes, 32 - msgHashBytes.length);
+  // Poseidon2 hash wrapper for Schnorr signing
+  async function poseidon2ForSchnorr(vals: bigint[]): Promise<bigint> {
+    const frInputs = vals.map(i => toFr(i));
+    const result = await bb.poseidon2Hash(frInputs);
+    return BigInt(result.toString());
+  }
 
-  const sig = wallet.signingKey.sign(paddedMsgHash);
-  const sigR = ethers.getBytes(sig.r);
-  const sigS = ethers.getBytes(sig.s);
-  const signature = new Uint8Array(64);
-  signature.set(sigR, 0);
-  signature.set(sigS, 32);
-  inputs.underwriter_signature = Array.from(signature);
+  const msgHashBigint = BigInt(data_to_sign_hash.toString());
+  const schnorrSig = await schnorrSign(underwriterSk, msgHashBigint, poseidon2ForSchnorr);
+
+  inputs.underwriter_sig_s_low = toFr(schnorrSig.sLow).toString();
+  inputs.underwriter_sig_s_high = toFr(schnorrSig.sHigh).toString();
+  inputs.underwriter_sig_e = toFr(schnorrSig.e).toString();
 
   // --- Generate Proof ---
   console.log("\nGenerating ZK Proof...");

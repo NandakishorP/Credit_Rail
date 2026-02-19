@@ -1,4 +1,7 @@
 use poseidon::poseidon2;
+use std::embedded_curve_ops::EmbeddedCurvePoint;
+use std::embedded_curve_ops::EmbeddedCurveScalar;
+use std::embedded_curve_ops::multi_scalar_mul;
 
 /// Credit Policy Compliance Circuit
 ///
@@ -9,28 +12,27 @@ use poseidon::poseidon2;
 /// 3. Loan terms match the specified tier
 /// 4. Industry is not excluded
 /// 5. Borrower commitment binds private data to the proof
-/// 6. Underwriter signature validates the borrower data
+/// 6. Underwriter Schnorr signature (Grumpkin curve) validates the borrower data
 ///
 /// Public Inputs (visible on-chain):
 /// - policy_version_hash: Hash of the frozen policy (links proof to immutable policy)
-/// - borrower_commitment: Hash(borrower_secret, borrower_data) - privacy-preserving borrower binding
-/// - underwriter_public_key_x: X coordinate of underwriter's public key
-/// - underwriter_public_key_y: Y coordinate of underwriter's public key
-/// - tier_id: The loan tier being used
-/// - loan_principal: Requested principal amount
-/// - loan_apr_bps: Annual interest rate in basis points
-/// - loan_origination_fee_bps: Origination fee in basis points
-/// - loan_term_days: Loan term in days
-/// - industry_hash: Hash of borrower's industry code
+/// - loan_hash: Hash binding all loan parameters to the proof
+/// - nullifierHash: Prevents double-spending of proofs
 ///
 /// Private Inputs (hidden in proof):
-/// - underwriter_signature: Schnorr signature over borrower data
+/// - underwriter Schnorr signature (s_low, s_high, e) over Grumpkin curve
+/// - underwriter public key (Grumpkin point: x, y as Fields)
 /// - borrower_secret: Secret known only to borrower (for commitment)
 /// - eligibility criteria values (borrower's actual metrics)
 /// - financial ratio values (borrower's actual ratios)
 /// - policy tier constraints (from the frozen policy)
 /// - policy eligibility constraints (from the frozen policy)
 /// - policy ratio constraints (from the frozen policy)
+///
+/// Signature Scheme: Schnorr over Grumpkin (BN254 embedded curve)
+///   - Native to Noir's backend => ~10x fewer constraints vs ECDSA secp256k1
+///   - Verification: R = s*G + e*PK, check hash(R.x, R.y, msg_hash) == e
+///   - Uses std::embedded_curve_ops (multi_scalar_mul) as a blackbox opcode
 
 //==============================================================
 //                       MAIN CIRCUIT
@@ -53,8 +55,10 @@ fn main(
     current_timestamp: u64, // Current block time (approx)
     loanId: u64,
     // === Private Inputs (hidden from verifier) ===
-    // Underwriter signature
-    underwriter_signature: [u8; 64],
+    // Underwriter Schnorr signature (Grumpkin curve)
+    underwriter_sig_s_low: Field,   // s scalar low 128 bits
+    underwriter_sig_s_high: Field,  // s scalar high 128 bits
+    underwriter_sig_e: Field,       // e challenge hash
     // Borrower secret for commitment
     borrower_secret: Field,
     // Borrower eligibility data (private - actual values)
@@ -141,14 +145,17 @@ fn main(
     );
 
     //==============================================================
-    //             1c. VERIFY UNDERWRITER SIGNATURE
+    //             1c. VERIFY UNDERWRITER SIGNATURE (Schnorr / Grumpkin)
     //==============================================================
     // The underwriter signs the raw data (without the borrower's secret).
     // This ensures that the data being proven (revenue, ebitda, etc.) was
     // explicitly authorized by the underwriter's private key.
+    //
+    // Schnorr over Grumpkin (BN254 embedded curve) is ~10x cheaper than
+    // ECDSA secp256k1 in constraints because Grumpkin arithmetic is native
+    // to the BN254 proving backend.
 
     // 1. Hash the data (must match what was signed off-chain)
-    // Note: We cast to Field for Poseidon. The signer must sign this exact sequence.
     let data_to_sign_hash = poseidon2::Poseidon2::hash(
         [
             borrower_annual_revenue as Field,
@@ -167,22 +174,15 @@ fn main(
         12,
     );
 
-    // 2. Convert hash to bytes for Schnorr verification (standard practice)
-    // Field elements are 32 bytes (254 bits).
-    let message_bytes: [u8; 32] = data_to_sign_hash.to_be_bytes();
-
-    // 3. Verify Signature (ECDSA Secp256k1)
-    // Convert Field public keys to bytes for ECDSA
-    let pk_x_bytes = underwriter_public_key_x.to_be_bytes();
-    let pk_y_bytes = underwriter_public_key_y.to_be_bytes();
-
-    let is_valid_sig = std::ecdsa_secp256k1::verify_signature(
-        pk_x_bytes,
-        pk_y_bytes,
-        underwriter_signature,
-        message_bytes,
+    // 2. Verify Schnorr signature over Grumpkin embedded curve
+    verify_schnorr_signature(
+        underwriter_public_key_x,
+        underwriter_public_key_y,
+        underwriter_sig_s_low,
+        underwriter_sig_s_high,
+        underwriter_sig_e,
+        data_to_sign_hash,
     );
-    assert(is_valid_sig, "Invalid underwriter signature");
 
     //==============================================================
     //             2. VERIFY POLICY VERSION HASH
@@ -326,6 +326,70 @@ fn verify_attestation_age(
     assert(attestation_timestamp <= 18446744073709551615 - max_age_seconds, "Timestamp overflow");
 
     assert(current_timestamp <= attestation_timestamp + max_age_seconds, "Attestation expired");
+}
+
+/// Verify a Schnorr signature over the Grumpkin embedded curve.
+///
+/// Schnorr signature scheme:
+///   Sign(sk, m):
+///     k = random nonce
+///     R = k*G
+///     e = H(R.x, R.y, m)
+///     s = k - e*sk   (mod curve order)
+///     signature = (s, e)
+///
+///   Verify(PK, (s, e), m):
+///     R' = s*G + e*PK
+///     e' = H(R'.x, R'.y, m)
+///     accept if e' == e
+///
+/// The scalar `s` is split into (s_low, s_high) for the 128-bit limb
+/// representation required by EmbeddedCurveScalar.
+fn verify_schnorr_signature(
+    pk_x: Field,
+    pk_y: Field,
+    sig_s_low: Field,
+    sig_s_high: Field,
+    sig_e: Field,
+    msg_hash: Field,
+) {
+    // Reconstruct R' = s*G + e*PK via multi_scalar_mul
+    // multi_scalar_mul takes arrays of points and scalars
+    let pk = EmbeddedCurvePoint { x: pk_x, y: pk_y, is_infinite: false };
+
+    // s scalar (split into 128-bit limbs)
+    let s_scalar = EmbeddedCurveScalar { lo: sig_s_low, hi: sig_s_high };
+
+    // e scalar - fits in low limb (it's a Poseidon hash, < Field modulus, but we
+    // need it as a scalar). Since e < 2^254 we put it entirely in lo with hi=0.
+    // However, EmbeddedCurveScalar lo/hi are 128-bit limbs, so we must decompose e.
+    let e_bytes: [u8; 32] = sig_e.to_be_bytes();
+    // High 128 bits = bytes [0..16], low 128 bits = bytes [16..32]
+    let mut e_hi_acc: Field = 0;
+    for i in 0..16 {
+        e_hi_acc = e_hi_acc * 256 + e_bytes[i] as Field;
+    }
+    let mut e_lo_acc: Field = 0;
+    for i in 16..32 {
+        e_lo_acc = e_lo_acc * 256 + e_bytes[i] as Field;
+    }
+    let e_scalar = EmbeddedCurveScalar { lo: e_lo_acc, hi: e_hi_acc };
+
+    // R' = s*G + e*PK  (G is the Grumpkin generator, implicit in multi_scalar_mul
+    // when used with fixed_base_scalar_mul - but multi_scalar_mul needs explicit points)
+    //
+    // We get G by using fixed_base_scalar_mul(1):
+    let generator = std::embedded_curve_ops::fixed_base_scalar_mul(
+        EmbeddedCurveScalar { lo: 1, hi: 0 },
+    );
+
+    // multi_scalar_mul: takes [Point; N], [Scalar; N] -> Point
+    let r_prime = multi_scalar_mul([generator, pk], [s_scalar, e_scalar]);
+
+    // Recompute challenge: e' = H(R'.x, R'.y, msg_hash)
+    let e_prime = poseidon2::Poseidon2::hash([r_prime.x, r_prime.y, msg_hash], 3);
+
+    assert(e_prime == sig_e, "Invalid underwriter Schnorr signature");
 }
 
 fn compute_policy_hash(
@@ -2444,4 +2508,20 @@ fn test_compute_policy_hash_deterministic() {
     );
     assert(h1 == h2);
     assert(h1 != 0);
+}
+
+#[test]
+fn test_grumpkin_generator_coords() {
+    let g = std::embedded_curve_ops::fixed_base_scalar_mul(
+        EmbeddedCurveScalar { lo: 1, hi: 0 },
+    );
+    std::println(g.x);
+    std::println(g.y);
+
+    // Also test sk=42 to cross-check with TS
+    let pk42 = std::embedded_curve_ops::fixed_base_scalar_mul(
+        EmbeddedCurveScalar { lo: 42, hi: 0 },
+    );
+    std::println(pk42.x);
+    std::println(pk42.y);
 }

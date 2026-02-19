@@ -335,28 +335,32 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         nonReentrant
         whenNotPaused
     {
-        // Implementation goes here
         Loan storage loan = s_loans[loanId];
 
         if (loan.state != LoanState.CREATED) {
             revert LoanEngine__LoanIsNotInCreatedState(loanId);
         }
-        loan.principalOutstanding = loan.principalIssued;
-        loan.lastAccrualTimestamp = block.timestamp;
-        loan.startTimestamp = block.timestamp;
-        loan.maturityTimestamp = block.timestamp + (loan.termDays * 1 days);
+
+        // Cache storage reads
+        uint256 principal = loan.principalIssued; // SLOAD once instead of 4x
+        uint256 ts = block.timestamp;
+
+        loan.principalOutstanding = principal;
+        loan.lastAccrualTimestamp = ts;
+        loan.startTimestamp = ts;
+        uint256 maturity = ts + (loan.termDays * 1 days);
+        loan.maturityTimestamp = maturity;
         loan.state = LoanState.ACTIVE;
 
-        uint256 originationFee = (loan.principalIssued *
-            loan.originationFeeBps) / 10000;
+        uint256 originationFee = (principal * loan.originationFeeBps) / 10000;
 
         s_originationFees[loanId] = originationFee;
 
-        if (loan.principalIssued > i_tranchePool.getTotalIdleValue()) {
+        if (principal > i_tranchePool.getTotalIdleValue()) {
             revert LoanEngine__InsufficientPoolLiquidity();
         }
 
-        uint256 totalDisbursement = loan.principalIssued - originationFee;
+        uint256 totalDisbursement = principal - originationFee;
         (uint256 seniorAmount, uint256 juniorAmount, ) = i_tranchePool
             .allocateCapital(
                 totalDisbursement,
@@ -365,15 +369,14 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
                 feeManager
             );
         loan.seniorPrincipalAllocated = seniorAmount;
-
         loan.juniorPrincipalAllocated = juniorAmount;
 
         emit LoanActivated(
             loan.loanId,
-            loan.principalIssued,
-            block.timestamp,
-            loan.startTimestamp,
-            loan.maturityTimestamp
+            principal,
+            ts,
+            ts,
+            maturity
         );
     }
 
@@ -401,34 +404,37 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
 
         _accrueInterest(loanId, timestamp);
 
-        // 1️⃣ Transfer funds to pool (settlement layer)
+        // 1. Transfer funds to pool (settlement layer)
         IERC20(i_stableCoin).safeTransferFrom(
             repaymentAgent,
             address(i_tranchePool),
             totalPayment
         );
 
-        // 2️⃣ Interest first
-        uint256 interestDue = loan.interestAccrued;
+        // Cache storage reads — avoid re-reading after writes
+        uint256 interestDue = loan.interestAccrued;       // SLOAD once
+        uint256 principalDue = loan.principalOutstanding;  // SLOAD once
+
+        // 2. Interest first
         uint256 interestPaid = totalPayment > interestDue
             ? interestDue
             : totalPayment;
 
-        // 3️⃣ Principal second
+        // 3. Principal second
         uint256 remainingForPrincipal = totalPayment - interestPaid;
-        uint256 principalDue = loan.principalOutstanding;
-
         uint256 principalPaid = remainingForPrincipal > principalDue
             ? principalDue
             : remainingForPrincipal;
 
-        // 4️⃣ Update loan accounting
-        loan.interestAccrued -= interestPaid;
-        loan.interestPaid += interestPaid;
-        loan.principalOutstanding -= principalPaid;
+        // 4. Update loan accounting — compute locally, write once
+        uint256 newAccrued = interestDue - interestPaid;
+        uint256 newOutstanding = principalDue - principalPaid;
 
-        bool fullyRepaid = loan.principalOutstanding == 0 &&
-            loan.interestAccrued == 0;
+        loan.interestAccrued = newAccrued;
+        loan.interestPaid += interestPaid;
+        loan.principalOutstanding = newOutstanding;
+
+        bool fullyRepaid = newOutstanding == 0 && newAccrued == 0;
 
         if (fullyRepaid) {
             loan.state = LoanState.REPAID;
@@ -506,20 +512,21 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     }
 
     function _accrueInterest(uint256 loanId, uint256 timestamp) internal {
-        // Implementation goes here
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.ACTIVE) {
             revert LoanEngine__LoanIsNotActive(loanId);
         }
+
         uint256 timeElapsed = timestamp - loan.lastAccrualTimestamp;
-        if (loan.principalOutstanding == 0) {
+        uint256 outstanding = loan.principalOutstanding; // SLOAD once instead of 2x
+
+        if (outstanding == 0) {
             loan.lastAccrualTimestamp = block.timestamp;
             return;
         }
 
-        uint256 interest = (loan.principalOutstanding *
-            loan.aprBps *
-            timeElapsed) / (365 days * 10_000);
+        uint256 interest = (outstanding * loan.aprBps * timeElapsed) /
+            (365 days * 10_000);
         loan.lastAccrualTimestamp = block.timestamp;
         if (interest > 0) {
             loan.interestAccrued += interest;
