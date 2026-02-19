@@ -540,6 +540,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         uint256 _maxOriginationFeeBps
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         s_maxOriginationFeeBps = _maxOriginationFeeBps;
+        emit MaxOriginationFeeBpsUpdated(_maxOriginationFeeBps);
     }
 
     function pause() external onlyRole(EMERGENCY_ADMIN_ROLE) {
@@ -556,6 +557,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (entity == address(0)) revert LoanEngine__ZeroAddress();
         whitelistedOffRampingEntities[entity] = isWhitelisted;
+        emit WhitelistedOffRampingEntityUpdated(entity, isWhitelisted);
     }
 
     function setWhitelistedRecoveryAgent(
@@ -564,6 +566,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (agent == address(0)) revert LoanEngine__ZeroAddress();
         whitelistedRecoveryAgents[agent] = isWhitelisted;
+        emit WhitelistedRecoveryAgentUpdated(agent, isWhitelisted);
     }
 
     function setWhitelistedRepaymentAgent(
@@ -572,6 +575,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (agent == address(0)) revert LoanEngine__ZeroAddress();
         whitelistedRepaymentAgents[agent] = isWhitelisted;
+        emit WhitelistedRepaymentAgentUpdated(agent, isWhitelisted);
     }
 
     function setWhitelistedFeeManager(
@@ -580,6 +584,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (manager == address(0)) revert LoanEngine__ZeroAddress();
         whitelistedFeeManagers[manager] = isWhitelisted;
+        emit WhitelistedFeeManagerUpdated(manager, isWhitelisted);
     }
 
     function getMaxOriginationFeeBps() external view returns (uint256) {

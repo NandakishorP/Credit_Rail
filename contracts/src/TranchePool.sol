@@ -717,6 +717,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         t.userIndex[msg.sender] = t.interestIndex;
         s_totalUnclaimedInterest -= claimable;
 
+        emit InterestClaimed(tid, msg.sender, claimable);
         IERC20(i_stableCoin).safeTransfer(msg.sender, claimable);
     }
 
@@ -764,6 +765,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         if (amount > tranches[SENIOR].maxCap)
             revert TranchePool__InvalidMinDepositAmount();
         tranches[SENIOR].minDeposit = amount;
+        emit MinimumDepositAmountUpdated(SENIOR, amount);
     }
 
     function setMinimumDepositAmountJuniorTranche(
@@ -772,6 +774,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         if (amount > tranches[JUNIOR].maxCap)
             revert TranchePool__InvalidMinDepositAmount();
         tranches[JUNIOR].minDeposit = amount;
+        emit MinimumDepositAmountUpdated(JUNIOR, amount);
     }
 
     function setMinimumDepositAmountEquityTranche(
@@ -780,6 +783,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         if (amount > tranches[EQUITY].maxCap)
             revert TranchePool__InvalidMinDepositAmount();
         tranches[EQUITY].minDeposit = amount;
+        emit MinimumDepositAmountUpdated(EQUITY, amount);
     }
 
     function setTrancheCapitalAllocationFactorSenior(
@@ -804,12 +808,14 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         if (aprbps == 0) revert TranchePool__ZeroAPRError();
         _accrueTrancheTargets();
         tranches[SENIOR].aprBps = aprbps;
+        emit TrancheAPRUpdated(SENIOR, aprbps);
     }
 
     function setTargetJuniorAPR(uint256 aprbps) external onlyOwner {
         if (aprbps == 0) revert TranchePool__ZeroAPRError();
         _accrueTrancheTargets();
         tranches[JUNIOR].aprBps = aprbps;
+        emit TrancheAPRUpdated(JUNIOR, aprbps);
     }
 
     function setPoolState(PoolState newState) external onlyOwner {
@@ -828,6 +834,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     function setLoanEngine(address _loanEngine) external onlyOwner {
         if (_loanEngine == address(0)) revert TranchePool__ZeroAddressError();
         loanEngine = _loanEngine;
+        emit LoanEngineUpdated(_loanEngine);
     }
 
     function setMaxAllocationCapSeniorTranche(
@@ -837,6 +844,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         if (amount < tranches[SENIOR].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
         tranches[SENIOR].maxCap = amount;
+        emit MaxAllocationCapUpdated(SENIOR, amount);
     }
 
     function setMaxAllocationCapJuniorTranche(
@@ -846,6 +854,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         if (amount < tranches[JUNIOR].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
         tranches[JUNIOR].maxCap = amount;
+        emit MaxAllocationCapUpdated(JUNIOR, amount);
     }
 
     function setMaxAllocationCapEquityTranche(
@@ -855,10 +864,12 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         if (amount < tranches[EQUITY].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
         tranches[EQUITY].maxCap = amount;
+        emit MaxAllocationCapUpdated(EQUITY, amount);
     }
 
     function updateWhitelist(address user, bool status) external onlyOwner {
         whiteListedLps[user] = status;
+        emit WhitelistUpdated(user, status);
     }
 
     function updateEquityTrancheWhiteList(
@@ -866,6 +877,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         bool status
     ) external onlyOwner {
         whiteListedForEquityTranche[user] = status;
+        emit EquityWhitelistUpdated(user, status);
     }
 
     function pause() external onlyOwner {

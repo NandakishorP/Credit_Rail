@@ -107,6 +107,12 @@ interface ILoanEngine {
         uint256 timestamp
     );
 
+    event MaxOriginationFeeBpsUpdated(uint256 newMaxFeeBps);
+    event WhitelistedOffRampingEntityUpdated(address indexed entity, bool isWhitelisted);
+    event WhitelistedRecoveryAgentUpdated(address indexed agent, bool isWhitelisted);
+    event WhitelistedRepaymentAgentUpdated(address indexed agent, bool isWhitelisted);
+    event WhitelistedFeeManagerUpdated(address indexed manager, bool isWhitelisted);
+
     enum LoanState {
         NONE,
         CREATED,
