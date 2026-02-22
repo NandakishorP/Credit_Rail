@@ -85,13 +85,20 @@ interface ITranchePool {
     event ProfitTransferredToTranchePool(uint256 amount, uint256 timeStamp);
     event CapitalAllocationFactorUpdatedSenior(uint256 newFactor);
     event CapitalAllocationFactorUpdatedJunior(uint256 newFactor);
-    event MinimumDepositAmountUpdated(uint256 indexed trancheId, uint256 newAmount);
+    event MinimumDepositAmountUpdated(
+        uint256 indexed trancheId,
+        uint256 newAmount
+    );
     event TrancheAPRUpdated(uint256 indexed trancheId, uint256 newAprBps);
     event LoanEngineUpdated(address indexed newLoanEngine);
     event MaxAllocationCapUpdated(uint256 indexed trancheId, uint256 newCap);
     event WhitelistUpdated(address indexed user, bool status);
     event EquityWhitelistUpdated(address indexed user, bool status);
-    event InterestClaimed(uint256 indexed trancheId, address indexed user, uint256 amount);
+    event InterestClaimed(
+        uint256 indexed trancheId,
+        address indexed user,
+        uint256 amount
+    );
 
     enum PoolState {
         OPEN, // deposits allowed
@@ -148,6 +155,7 @@ interface ITranchePool {
     function updateWhitelist(address user, bool status) external;
 
     // setters
+    function sweepProtocolRevenue(address to, uint256 amount) external;
 
     function onLoss(uint256 principalLoss, uint256 interestAccrued) external;
 

@@ -1026,6 +1026,22 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         _unpause();
     }
 
+    /// @notice Sweep protocol revenue (unclaimed leftover interest) to a treasury address.
+    /// @param to Address to receive the revenue.
+    /// @param amount Amount to sweep (must be <= s_protocolRevenue).
+    function sweepProtocolRevenue(
+        address to,
+        uint256 amount
+    ) external onlyOwner nonReentrant {
+        if (to == address(0)) revert TranchePool__ZeroAddressError();
+        if (amount == 0 || amount > s_protocolRevenue)
+            revert TranchePool__InvalidTransferAmount(amount);
+
+        s_protocolRevenue -= amount;
+        IERC20(i_stableCoin).safeTransfer(to, amount);
+        emit ProfitTransferredToTranchePool(amount, block.timestamp); // Repurposing or could emit a new event
+    }
+
     // =========================================================================
     //                  VIEW / GETTER  FUNCTIONS
     //  (backward-compatible with existing tests and external callers)
