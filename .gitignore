@@ -1,17 +1,38 @@
+# OS
+.DS_Store
 
-# Ignore wake build artifacts
-contracts/.wake/
+# Ecosystem
+__pycache__/
+*.pyc
+node_modules/
+.pytest_cache/
+venv/
+.env
 
-# Fuzzer corpus and coverage reports
+# Contracts (Foundry & Fuzzers)
+contracts/out/
+contracts/cache/
+contracts/zkout/
+contracts/broadcast/
 contracts/corpus/
 contracts/corpus_echidna/
 contracts/medusa-corpus/
-economic-modelling/notes.md
-# ZK Scripts
-zk-scripts/node_modules/
+contracts/medusa-logs/
+contracts/crytic-export/
+contracts/pytypes/
+contracts/.wake/
+contracts/slither_results.json
+contracts/*.txt
 anvil-zksync.log
 
-# Compiled artifacts that can be regenerated
-contracts/zkout/
-__pycache__/
-*.pyc
+# Circuits (Noir)
+circuits/target/
+circuits/out/
+
+# ZK Scripts
+zk-scripts/node_modules/
+zk-scripts/dist/
+zk-scripts/build/
+
+# Economic Modelling
+economic-modelling/notes.md

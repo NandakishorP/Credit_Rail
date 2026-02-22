@@ -1,3 +1,0 @@
-## THREAT MODEL 
-
-
