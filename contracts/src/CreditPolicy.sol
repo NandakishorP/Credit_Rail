@@ -4,7 +4,24 @@ import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
 
 /**
  * @title CreditPolicy
- * @notice Immutable-by-version credit constitution for private credit funds
+ * @notice Immutable-by-version credit constitution for private credit funds.
+ * @dev Each policy version goes through a lifecycle: Created → Editable → Frozen.
+ *      Once frozen, a policy version can never be modified, ensuring that ZK proofs
+ *      generated against a specific version remain valid forever.
+ *
+ *      A policy version contains:
+ *        - Eligibility criteria (minimum revenue, EBITDA, net worth, etc.)
+ *        - Financial ratio requirements (debt/EBITDA, coverage, etc.)
+ *        - Loan tiers with pricing parameters (APR, fees, term)
+ *        - Concentration limits (single borrower, industry caps)
+ *        - Attestation requirements (CPA attestation age, frequency)
+ *        - Maintenance covenants (leverage, coverage, reporting)
+ *        - Industry exclusion list
+ *        - Document hash and URI for legal anchoring
+ *        - Policy scope hash (binds all parameters for ZK circuit verification)
+ *
+ *      Access is controlled by a single `policyAdmin` address which should
+ *      be set to a ProtocolController (timelock + multisig) in production.
  */
 contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
@@ -61,8 +78,8 @@ contract CreditPolicy is ICreditPolicy {
                             POLICY LIFECYCLE
     //////////////////////////////////////////////////////////////*/
     mapping(uint256 => bool) public policyCreated;
-    mapping(uint256 => bool) public policyFrozen;
-    mapping(uint256 => bool) public policyActive;
+    mapping(uint256 => bool) internal policyFrozen;
+    mapping(uint256 => bool) internal policyActive;
     mapping(uint256 => uint256) public lastUpdated;
 
     /*//////////////////////////////////////////////////////////////
@@ -86,7 +103,7 @@ contract CreditPolicy is ICreditPolicy {
 
     mapping(uint256 => mapping(uint8 => LoanTier)) public loanTiers;
     mapping(uint256 => uint8) public totalTiers;
-    mapping(uint256 => mapping(uint8 => bool)) public tierExists;
+    mapping(uint256 => mapping(uint8 => bool)) internal tierExists;
 
     /*//////////////////////////////////////////////////////////////
                         CONCENTRATION LIMITS
@@ -98,7 +115,7 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         INDUSTRY EXCLUSIONS
     //////////////////////////////////////////////////////////////*/
-    mapping(uint256 => mapping(bytes32 => bool)) public excludedIndustries;
+    mapping(uint256 => mapping(bytes32 => bool)) internal excludedIndustries;
 
     /*//////////////////////////////////////////////////////////////
                         ATTESTATION REQUIREMENTS
@@ -167,6 +184,8 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Deploy a new CreditPolicy, setting `msg.sender` as the initial admin.
     constructor() {
         policyAdmin = msg.sender;
     }
@@ -175,6 +194,10 @@ contract CreditPolicy is ICreditPolicy {
                         POLICY CREATION
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Create a new policy version.
+    /// @dev The version is created in an active, editable (unfrozen) state.
+    ///      All required sections must be populated before the policy can be frozen.
+    /// @param version The version number to create (must be > 0 and not already exist).
     function createPolicy(uint256 version) external onlyAdmin {
         if (version == 0) {
             revert CreditPolicy__InvalidVersion();
@@ -189,6 +212,12 @@ contract CreditPolicy is ICreditPolicy {
         emit PolicyCreated(version, block.timestamp);
     }
 
+    /// @notice Freeze a policy version, making it permanently immutable.
+    /// @dev Requires all sections to be set: eligibility, ratios, concentration,
+    ///      attestation, covenants, at least one tier, document hash, and scope hash.
+    ///      Once frozen, the policy can never be edited again. This is the state
+    ///      required for `LoanEngine.createLoan()` to accept proofs against it.
+    /// @param version The version number to freeze.
     function freezePolicy(
         uint256 version
     ) external onlyAdmin policyExists(version) {
@@ -220,6 +249,10 @@ contract CreditPolicy is ICreditPolicy {
         emit PolicyFrozen(version, block.timestamp);
     }
 
+    /// @notice Deactivate a policy version (prevents new loans, but existing loans are unaffected).
+    /// @dev A deactivated policy cannot be used for new loan creation.
+    ///      Unlike freezing, deactivation does not require all sections to be set.
+    /// @param version The version number to deactivate.
     function deActivatePolicy(
         uint256 version
     ) external onlyAdmin policyExists(version) {
@@ -231,6 +264,11 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         ELIGIBILITY UPDATE
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set or update the borrower eligibility criteria for a policy version.
+    /// @dev Can only be called while the policy is active and not frozen.
+    /// @param version The policy version to update.
+    /// @param data    The eligibility criteria struct (min revenue, EBITDA, net worth, etc.).
     function updateEligibility(
         uint256 version,
         EligibilityCriteria calldata data
@@ -244,6 +282,10 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         RATIOS UPDATE
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set or update the financial ratio requirements for a policy version.
+    /// @param version The policy version to update.
+    /// @param data    The financial ratios struct (max debt/EBITDA, min coverage, etc.).
     function updateRatios(
         uint256 version,
         FinancialRatios calldata data
@@ -257,6 +299,10 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         CONCENTRATION UPDATE
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set or update the concentration limits for a policy version.
+    /// @param version The policy version to update.
+    /// @param data    The concentration limits struct (max single borrower, max industry %).
     function updateConcentration(
         uint256 version,
         ConcentrationLimits calldata data
@@ -270,6 +316,10 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         ATTESTATION UPDATE
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set or update the attestation requirements for a policy version.
+    /// @param version The policy version to update.
+    /// @param data    The attestation requirements struct (max age, frequency, CPA required).
     function updateAttestation(
         uint256 version,
         AttestationRequirements calldata data
@@ -283,6 +333,10 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         COVENANT UPDATE
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set or update the maintenance covenants for a policy version.
+    /// @param version The policy version to update.
+    /// @param data    The covenants struct (leverage, coverage, liquidity, dividends, reporting).
     function updateCovenants(
         uint256 version,
         MaintenanceCovenants calldata data
@@ -296,6 +350,14 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         LOAN TIERS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set or update a loan tier within a policy version.
+    /// @dev Tiers define pricing bands (APR, fees, term) based on borrower metrics.
+    ///      The tier ID must be less than `maxTiers`. Setting the first tier
+    ///      automatically marks the policy as having at least one tier.
+    /// @param version The policy version to update.
+    /// @param tierId  The tier index (0-based, must be < maxTiers).
+    /// @param tier    The LoanTier struct with pricing and eligibility bounds.
     function setLoanTier(
         uint256 version,
         uint8 tierId,
@@ -317,6 +379,10 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         INDUSTRY CONTROLS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Exclude an industry from a policy version (loans in this industry will be rejected).
+    /// @param version  The policy version to update.
+    /// @param industry Keccak256 hash of the industry code (must be non-zero).
     function excludeIndustry(
         uint256 version,
         bytes32 industry
@@ -329,6 +395,9 @@ contract CreditPolicy is ICreditPolicy {
         emit IndustryExcluded(version, industry, block.timestamp);
     }
 
+    /// @notice Re-include a previously excluded industry.
+    /// @param version  The policy version to update.
+    /// @param industry Keccak256 hash of the industry code to re-include.
     function includeIndustry(
         uint256 version,
         bytes32 industry
@@ -344,6 +413,13 @@ contract CreditPolicy is ICreditPolicy {
     /*//////////////////////////////////////////////////////////////
                         DOCUMENT UPDATE
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Anchor a legal document to a policy version.
+    /// @dev Both the hash and URI are stored. The hash ensures document integrity;
+    ///      the URI provides retrieval (e.g. IPFS). Required before freezing.
+    /// @param version The policy version to update.
+    /// @param hash    Keccak256 hash of the policy document content.
+    /// @param uri     URI where the document can be retrieved (e.g. "ipfs://...").
     function setPolicyDocument(
         uint256 version,
         bytes32 hash,
@@ -356,6 +432,13 @@ contract CreditPolicy is ICreditPolicy {
         emit PolicyDocumentSet(version, hash, uri, block.timestamp);
     }
 
+    /// @notice Set the policy scope hash — a Poseidon2 hash of all policy parameters.
+    /// @dev This hash is what the Noir ZK circuit uses to verify that the proof
+    ///      was generated against the correct frozen policy. It must be computed
+    ///      off-chain (matching the circuit's `compute_policy_hash()`) and set
+    ///      before the policy can be frozen.
+    /// @param version The policy version to update.
+    /// @param hash    The Poseidon2 hash of all policy parameters (computed off-chain).
     function setPolicyScopeHash(
         uint256 version,
         bytes32 hash
@@ -366,6 +449,9 @@ contract CreditPolicy is ICreditPolicy {
         emit PolicyScopeHashSet(version, hash, block.timestamp);
     }
 
+    /// @notice Transfer policy admin rights to a new address.
+    /// @dev In production, this should be a ProtocolController address.
+    /// @param newAdmin The address to become the new policy admin (must be non-zero).
     function changePolicyAdmin(address newAdmin) external onlyAdmin {
         if (newAdmin == address(0)) {
             revert CreditPolicy__InvalidAdmin();
@@ -375,16 +461,28 @@ contract CreditPolicy is ICreditPolicy {
         emit PolicyAdminChanged(newAdmin);
     }
 
-    // getters for interface compliance
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
+    /// @notice Check if a policy version is currently active.
+    /// @param version The policy version to query.
+    /// @return True if the policy is active (can be used or edited).
     function isPolicyActive(uint256 version) external view returns (bool) {
         return policyActive[version];
     }
 
+    /// @notice Check if a policy version has been permanently frozen.
+    /// @param version The policy version to query.
+    /// @return True if the policy is frozen (immutable, usable for loan creation).
     function isPolicyFrozen(uint256 version) external view returns (bool) {
         return policyFrozen[version];
     }
 
+    /// @notice Check if a specific tier exists within a policy version.
+    /// @param version The policy version to query.
+    /// @param tierId  The tier index to check.
+    /// @return True if the tier has been set for this policy version.
     function tierExistsInPolicy(
         uint256 version,
         uint8 tierId
@@ -392,6 +490,8 @@ contract CreditPolicy is ICreditPolicy {
         return tierExists[version][tierId];
     }
 
+    /// @notice Set the global maximum number of tiers allowed per policy.
+    /// @param _maxTiers The new max tier count (must be < 255).
     function setMaxTiers(uint8 _maxTiers) external onlyAdmin {
         if (_maxTiers == 255) {
             revert CreditPolicy__InvalidTierCount(_maxTiers);
@@ -400,10 +500,15 @@ contract CreditPolicy is ICreditPolicy {
         emit MaxTiersChanged(_maxTiers);
     }
 
+    /// @notice Returns the current maximum tier count.
     function getMaxTiers() external view returns (uint8) {
         return maxTiers;
     }
 
+    /// @notice Check if an industry is excluded from a policy version.
+    /// @param version  The policy version to query.
+    /// @param industry Keccak256 hash of the industry code.
+    /// @return True if the industry is excluded (loans in this industry are rejected).
     function isIndustryExcluded(
         uint256 version,
         bytes32 industry

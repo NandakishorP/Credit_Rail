@@ -1,66 +1,47 @@
-## Foundry
+## Credit Rail Smart Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This directory contains the core smart contract suite for the Credit Rail protocol, built using [Foundry](https://book.getfoundry.sh/). 
 
-Foundry consists of:
+The architecture is deliberately segmented to maintain strict boundaries between identity checks, risk management, and capital allocation.
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+### Core Contracts (`src/`)
 
-## Documentation
+1. **`LoanEngine.sol`**: The primary entry point. Orchestrates the creation, activation, repayment, and write-off of loans. It handles zero-knowledge proof verification natively using the imported Noir `LoanProofVerifier`.
+2. **`TranchePool.sol`**: The capital vault. Manages LP deposits across three risk tiers (Senior, Junior, Equity) and runs the complex arithmetic for interest distribution and loss absorption waterfalls. Contains the core logic for the share-based `Global Claim Index` (so it handles mass distribution at O(1) gas).
+3. **`CreditPolicy.sol`**: A registry of active and historical lending criteria (e.g., maximum concentrations, specific banned industries, coverage ratios). Its defining role is supplying the unalterable `policyScopeHash` against which the zero-knowledge circuits restrict borrower proofs.
 
-https://book.getfoundry.sh/
+### Helper Math Library 
+- **`InterestMath.sol`**: Centralized library avoiding re-computation across the stack. Calculations include `accrueTargetInterest`, `calculateClaimable`, and `computeIndexDelta`.
 
-## Usage
+---
 
-### Build
+## Setup & Testing
+
+Foundry handles the EVM testing suite, compiling both standard deterministic logic and fuzzing/invariant checking. We leverage an embedded ZKSync compiler due to the ultimate deployment target requiring native account abstraction and high-throughput zero-knowledge environments.
+
+### 1. Build
+
+You must install dependencies (`forge install`) before building. We execute builds using the `--zksync` flag to ensure compatibility with EraVM:
 
 ```shell
-$ forge build
+$ forge build --zksync
 ```
 
-### Test
+### 2. State-Based Invariant Fuzzing
 
+Due to the complexity of the Senior/Junior/Equity capital waterfall and math rounding, simple static unit tests are insufficient. The suite heavily relies on stateful invariant tests (`test/fuzz/invariant/CreditRailStateFullFuzzTest.t.sol`).
+
+Run the standard test suite:
 ```shell
-$ forge test
+$ forge test --zksync
 ```
 
-### Format
+*Note: The `Echidna` and `Medusa` test contracts are designed exclusively for their respective offline analysis engines and may fail gracefully in the standard Foundry runner.*
+
+### 3. Formatting
+
+Enforce style using the built-in formatter:
 
 ```shell
 $ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
 ```

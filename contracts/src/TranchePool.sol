@@ -11,9 +11,27 @@ import {InterestMath} from "./libraries/InterestMath.sol";
 
 /**
  * @title TranchePool
- * @notice Three-tranche capital pool with waterfall interest distribution.
- * @dev Uses a `TrancheState` struct to eliminate the 3x code duplication
+ * @notice Three-tranche capital pool (Senior / Junior / Equity) with waterfall
+ *         interest distribution, loss absorption, and recovery.
+ * @dev Uses a `TrancheState` struct to eliminate the 3× code duplication
  *      that previously existed for senior / junior / equity logic.
+ *
+ *      **Lifecycle**: OPEN → COMMITTED → DEPLOYED → CLOSED
+ *        - OPEN:      LPs deposit stablecoins, receiving 1:1 share tokens.
+ *        - COMMITTED:  Pool is locked, no new deposits. Capital can be allocated to loans.
+ *        - DEPLOYED:   At least one loan has been funded. Interest accrues.
+ *        - CLOSED:     All loans repaid/written-off. LPs withdraw principal + interest.
+ *
+ *      **Capital allocation** follows configurable senior/junior ratios (default 80/15)
+ *      with equity absorbing the remainder. Overflow is absorbed bottom-up
+ *      (equity → junior → senior) when a tranche has insufficient idle funds.
+ *
+ *      **Interest waterfall**: Senior is paid first (up to its target), then junior,
+ *      then equity receives the residual. Uses a global interest index pattern
+ *      for gas-efficient per-user claim accounting.
+ *
+ *      **Loss waterfall**: Equity absorbs first, then junior, then senior.
+ *      **Recovery waterfall**: Senior restored first, then junior, then equity.
  *
  *      Tranche indices:  SENIOR = 0,  JUNIOR = 1,  EQUITY = 2
  */
@@ -55,20 +73,20 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     mapping(address => bool) public whiteListedForEquityTranche;
 
     address public immutable i_stableCoin;
-    address public loanEngine;
+    address internal loanEngine;
 
-    uint256 public s_capital_allocation_factor_senior;
-    uint256 public s_capital_allocation_factor_junior;
+    uint256 internal s_capital_allocation_factor_senior;
+    uint256 internal s_capital_allocation_factor_junior;
 
     uint256 public lastTrancheAccrualTimestamp;
 
-    uint256 public s_protocolRevenue;
-    uint256 public s_totalDeposited;
-    uint256 public s_totalLoss;
-    uint256 public s_totalRecovered;
-    uint256 public s_totalUnclaimedInterest;
+    uint256 internal s_protocolRevenue;
+    uint256 internal s_totalDeposited;
+    uint256 internal s_totalLoss;
+    uint256 internal s_totalRecovered;
+    uint256 internal s_totalUnclaimedInterest;
 
-    PoolState public poolState = PoolState.OPEN;
+    PoolState internal poolState = PoolState.OPEN;
 
     // =========================================================================
     //                            MODIFIERS
@@ -94,6 +112,11 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                           CONSTRUCTOR
     // =========================================================================
 
+    /// @notice Deploy a new TranchePool.
+    /// @dev Sets `msg.sender` as the Ownable owner. Initializes all three
+    ///      interest indices to 1e18 (the base precision for the global index pattern).
+    /// @param stableCoin_ Address of the ERC-20 stablecoin used for all deposits
+    ///                    and withdrawals (e.g. USDC, USDT).
     constructor(address stableCoin_) Ownable(msg.sender) {
         if (stableCoin_ == address(0)) revert TranchePool__ZeroAddressError();
         i_stableCoin = stableCoin_;
@@ -108,6 +131,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                   DEPOSIT  (external thin wrappers)
     // =========================================================================
 
+    /// @notice Deposit stablecoins into the senior tranche.
+    /// @dev Only callable when the pool is OPEN. Shares are minted 1:1.
+    /// @param amount The stablecoin amount to deposit (must meet minimum threshold).
     function depositSeniorTranche(
         uint256 amount
     ) external isWhiteListed(msg.sender) whenNotPaused nonReentrant {
@@ -120,6 +146,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /// @notice Deposit stablecoins into the junior tranche.
+    /// @param amount The stablecoin amount to deposit.
     function depositJuniorTranche(
         uint256 amount
     ) external isWhiteListed(msg.sender) whenNotPaused nonReentrant {
@@ -132,6 +160,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /// @notice Deposit stablecoins into the equity tranche (separate whitelist required).
+    /// @param amount The stablecoin amount to deposit.
     function depositEquityTranche(
         uint256 amount
     )
@@ -153,6 +183,10 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                  WITHDRAW BY SHARES  (external thin wrappers)
     // =========================================================================
 
+    /// @notice Withdraw from the senior tranche by burning shares.
+    /// @dev The withdrawal amount is pro-rata: `shares * idleValue / totalShares`.
+    ///      Interest must be fully claimed before withdrawing.
+    /// @param shares Number of shares to redeem (0 = redeem all).
     function withdrawSeniorTranche(
         uint256 shares
     ) external isWhiteListed(msg.sender) nonReentrant {
@@ -165,6 +199,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /// @notice Withdraw from the junior tranche by burning shares.
+    /// @param shares Number of shares to redeem (0 = redeem all).
     function withdrawJuniorTranche(
         uint256 shares
     ) external isWhiteListed(msg.sender) nonReentrant {
@@ -177,6 +213,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /// @notice Withdraw from the equity tranche by burning shares.
+    /// @param shares Number of shares to redeem (0 = redeem all).
     function withdrawEquityTranche(
         uint256 shares
     ) external isWhiteListedForEquityTranche(msg.sender) nonReentrant {
@@ -193,6 +231,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                WITHDRAW BY AMOUNT  (external thin wrappers)
     // =========================================================================
 
+    /// @notice Withdraw a specific stablecoin amount from the senior tranche.
+    /// @dev Inverse of share-based withdrawal: computes shares to burn for the requested amount.
+    /// @param amount The stablecoin amount to withdraw.
     function withdrawSeniorTrancheByAmount(
         uint256 amount
     ) external isWhiteListed(msg.sender) nonReentrant {
@@ -205,6 +246,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /// @notice Withdraw a specific stablecoin amount from the junior tranche.
+    /// @param amount The stablecoin amount to withdraw.
     function withdrawJuniorTrancheByAmount(
         uint256 amount
     ) external isWhiteListed(msg.sender) nonReentrant {
@@ -217,6 +260,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /// @notice Withdraw a specific stablecoin amount from the equity tranche.
+    /// @param amount The stablecoin amount to withdraw.
     function withdrawEquityTrancheByAmount(
         uint256 amount
     ) external isWhiteListedForEquityTranche(msg.sender) nonReentrant {
@@ -233,14 +278,18 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                  CLAIM INTEREST  (external thin wrappers)
     // =========================================================================
 
+    /// @notice Claim accrued interest from the senior tranche.
+    /// @dev Uses the global index pattern: claimable = shares × (currentIndex − userIndex) / 1e18.
     function claimSeniorInterest() external nonReentrant {
         _claimInterest(SENIOR);
     }
 
+    /// @notice Claim accrued interest from the junior tranche.
     function claimJuniorInterest() external nonReentrant {
         _claimInterest(JUNIOR);
     }
 
+    /// @notice Claim accrued interest from the equity tranche.
     function claimEquityInterest()
         external
         isWhiteListedForEquityTranche(msg.sender)
@@ -253,6 +302,22 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //            CAPITAL ALLOCATION  (called by LoanEngine)
     // =========================================================================
 
+    /// @notice Allocate capital from idle tranches to fund a loan.
+    /// @dev Called by `LoanEngine.activateLoan()`. Follows the configured allocation
+    ///      ratios (senior/junior), with equity taking the remainder. If any tranche
+    ///      has insufficient idle funds, overflow is absorbed bottom-up
+    ///      (equity → junior → senior).
+    ///
+    ///      Transitions pool from COMMITTED → DEPLOYED on first allocation.
+    ///      Disburses `totalDisbursement` to `deployer` and `fees` to `feeManager`.
+    ///
+    /// @param totalDisbursement Stablecoin amount disbursed to the borrower.
+    /// @param fees              Origination fee amount sent to the fee manager.
+    /// @param deployer          Address that receives the loan disbursement.
+    /// @param feeManager        Address that receives the origination fee.
+    /// @return seniorAmount     Amount allocated from the senior tranche.
+    /// @return juniorAmount     Amount allocated from the junior tranche.
+    /// @return equityAmount     Amount allocated from the equity tranche.
     function allocateCapital(
         uint256 totalDisbursement,
         uint256 fees,
@@ -351,6 +416,15 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                  INTEREST ACCRUAL  (called by LoanEngine)
     // =========================================================================
 
+    /// @notice Distribute newly accrued loan interest across tranche buckets.
+    /// @dev Called by `LoanEngine._accrueInterest()` whenever a loan's interest
+    ///      is updated. Interest flows senior-first: senior gets up to its target
+    ///      outstanding, then junior, then any residual goes to equity.
+    ///
+    ///      This function only tracks *accrued* interest (owed but not yet paid).
+    ///      Actual payment distribution happens in `onRepayment()`.
+    ///
+    /// @param interestAmount The total interest amount accrued since last call.
     function onInterestAccrued(
         uint256 interestAmount
     ) external onlyLoanEngine(msg.sender) {
@@ -400,6 +474,18 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                    REPAYMENT  (called by LoanEngine)
     // =========================================================================
 
+    /// @notice Process a loan repayment, distributing interest and principal.
+    /// @dev Called by `LoanEngine.repayLoan()`. The function:
+    ///      1. Distributes interest via the waterfall (senior → junior → equity),
+    ///         updating each tranche's interest index for pro-rata LP claims.
+    ///      2. Redeems principal in seniority order (senior → junior → equity),
+    ///         moving funds from deployed back to idle.
+    ///
+    ///      If equity tranche has no shareholders, overflow interest goes to
+    ///      junior; if junior also has none, it becomes protocol revenue.
+    ///
+    /// @param principalRepaid The principal portion being repaid.
+    /// @param interestRepaid  The interest portion being repaid.
     function onRepayment(
         uint256 principalRepaid,
         uint256 interestRepaid
@@ -500,6 +586,15 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                       LOSS  (called by LoanEngine)
     // =========================================================================
 
+    /// @notice Process a loan write-off, absorbing the principal loss.
+    /// @dev Called by `LoanEngine.writeOffLoan()`. The function:
+    ///      1. Cancels "ghost" interest — accrued interest that will never be
+    ///         paid because the loan defaulted. Cancelled senior-first.
+    ///      2. Absorbs principal loss in reverse seniority (equity → junior → senior),
+    ///         reducing deployed value and increasing principal shortfall.
+    ///
+    /// @param principalLoss   The outstanding principal being written off.
+    /// @param interestAccrued The accrued (but unpaid) interest being cancelled.
     function onLoss(
         uint256 principalLoss,
         uint256 interestAccrued
@@ -565,6 +660,10 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                    RECOVERY  (called by LoanEngine)
     // =========================================================================
 
+    /// @notice Process a recovery on a previously written-off loan.
+    /// @dev Restores principal shortfalls in seniority order (senior → junior → equity).
+    ///      Any excess beyond the total shortfall flows to equity as upside gain.
+    /// @param amount The recovery amount (already transferred to this contract by LoanEngine).
     function onRecovery(uint256 amount) external onlyLoanEngine(msg.sender) {
         if (amount == 0) revert TranchePool__ZeroValueError();
 
@@ -735,6 +834,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                     INTERNAL:  INTEREST ACCRUAL
     // =========================================================================
 
+    /// @dev Accrues time-weighted target interest for senior and junior tranches.
+    ///      Called before every state-changing operation to ensure interest targets
+    ///      are up-to-date. Equity has no target (it receives the residual).
     function _accrueTrancheTargets() internal {
         uint256 currentTimestamp = block.timestamp;
         uint256 timeElapsed = currentTimestamp - lastTrancheAccrualTimestamp;
@@ -759,6 +861,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     //                          ADMIN  FUNCTIONS
     // =========================================================================
 
+    /// @notice Set the minimum deposit amount for the senior tranche.
+    /// @param amount New minimum (must be ≤ maxCap).
     function setMinimumDepositAmountSeniorTranche(
         uint256 amount
     ) external onlyOwner {
@@ -768,6 +872,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit MinimumDepositAmountUpdated(SENIOR, amount);
     }
 
+    /// @notice Set the minimum deposit amount for the junior tranche.
+    /// @param amount New minimum (must be ≤ maxCap).
     function setMinimumDepositAmountJuniorTranche(
         uint256 amount
     ) external onlyOwner {
@@ -777,6 +883,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit MinimumDepositAmountUpdated(JUNIOR, amount);
     }
 
+    /// @notice Set the minimum deposit amount for the equity tranche.
+    /// @param amount New minimum (must be ≤ maxCap).
     function setMinimumDepositAmountEquityTranche(
         uint256 amount
     ) external onlyOwner {
@@ -786,6 +894,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit MinimumDepositAmountUpdated(EQUITY, amount);
     }
 
+    /// @notice Set the senior tranche’s share of capital allocation.
+    /// @dev Senior + junior must not exceed 100. Equity gets the remainder.
+    /// @param factor Percentage of each loan allocated to senior (e.g. 80 = 80%).
     function setTrancheCapitalAllocationFactorSenior(
         uint256 factor
     ) external onlyOwner {
@@ -795,6 +906,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit CapitalAllocationFactorUpdatedSenior(factor);
     }
 
+    /// @notice Set the junior tranche’s share of capital allocation.
+    /// @param factor Percentage of each loan allocated to junior (e.g. 15 = 15%).
     function setTrancheCapitalAllocationFactorJunior(
         uint256 factor
     ) external onlyOwner {
@@ -804,6 +917,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit CapitalAllocationFactorUpdatedJunior(factor);
     }
 
+    /// @notice Set the senior tranche APR (used for target interest accrual).
+    /// @dev Accrues any pending target interest before changing the rate.
+    /// @param aprbps Annual percentage rate in basis points (e.g. 800 = 8%).
     function setSeniorAPR(uint256 aprbps) external onlyOwner {
         if (aprbps == 0) revert TranchePool__ZeroAPRError();
         _accrueTrancheTargets();
@@ -811,6 +927,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit TrancheAPRUpdated(SENIOR, aprbps);
     }
 
+    /// @notice Set the junior tranche APR (used for target interest accrual).
+    /// @param aprbps Annual percentage rate in basis points (e.g. 1500 = 15%).
     function setTargetJuniorAPR(uint256 aprbps) external onlyOwner {
         if (aprbps == 0) revert TranchePool__ZeroAPRError();
         _accrueTrancheTargets();
@@ -818,6 +936,10 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit TrancheAPRUpdated(JUNIOR, aprbps);
     }
 
+    /// @notice Advance the pool lifecycle state.
+    /// @dev States can only move forward (OPEN → COMMITTED → DEPLOYED → CLOSED).
+    ///      CLOSED requires all deployed capital to be zero (all loans settled).
+    /// @param newState The target pool state.
     function setPoolState(PoolState newState) external onlyOwner {
         if (uint256(newState) < uint256(poolState))
             revert TranchePool__InvalidStateTransition(newState);
@@ -831,12 +953,16 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit PoolStateUpdated(newState);
     }
 
+    /// @notice Set the LoanEngine address that is authorized to call pool callbacks.
+    /// @param _loanEngine Address of the deployed LoanEngine contract.
     function setLoanEngine(address _loanEngine) external onlyOwner {
         if (_loanEngine == address(0)) revert TranchePool__ZeroAddressError();
         loanEngine = _loanEngine;
         emit LoanEngineUpdated(_loanEngine);
     }
 
+    /// @notice Set the maximum deposit cap for the senior tranche.
+    /// @param amount New cap in stablecoin units.
     function setMaxAllocationCapSeniorTranche(
         uint256 amount
     ) external onlyOwner {
@@ -847,6 +973,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit MaxAllocationCapUpdated(SENIOR, amount);
     }
 
+    /// @notice Set the maximum deposit cap for the junior tranche.
+    /// @param amount New cap in stablecoin units.
     function setMaxAllocationCapJuniorTranche(
         uint256 amount
     ) external onlyOwner {
@@ -857,6 +985,8 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit MaxAllocationCapUpdated(JUNIOR, amount);
     }
 
+    /// @notice Set the maximum deposit cap for the equity tranche.
+    /// @param amount New cap in stablecoin units.
     function setMaxAllocationCapEquityTranche(
         uint256 amount
     ) external onlyOwner {
@@ -867,11 +997,17 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit MaxAllocationCapUpdated(EQUITY, amount);
     }
 
+    /// @notice Add or remove an address from the LP whitelist (senior + junior).
+    /// @param user   The address to update.
+    /// @param status True to whitelist, false to remove.
     function updateWhitelist(address user, bool status) external onlyOwner {
         whiteListedLps[user] = status;
         emit WhitelistUpdated(user, status);
     }
 
+    /// @notice Add or remove an address from the equity tranche whitelist.
+    /// @param user   The address to update.
+    /// @param status True to whitelist, false to remove.
     function updateEquityTrancheWhiteList(
         address user,
         bool status
@@ -880,10 +1016,12 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         emit EquityWhitelistUpdated(user, status);
     }
 
+    /// @notice Emergency pause — halts all deposits.
     function pause() external onlyOwner {
         _pause();
     }
 
+    /// @notice Unpause the contract, resuming normal operations.
     function unpause() external onlyOwner {
         _unpause();
     }
@@ -1088,6 +1226,10 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
     function getTotalUnclaimedInterest() external view returns (uint256) {
         return s_totalUnclaimedInterest;
+    }
+
+    function getLoanEngine() external view returns (address) {
+        return loanEngine;
     }
 
     // -- Legacy public-variable getters --

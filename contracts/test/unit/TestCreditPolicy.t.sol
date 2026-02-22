@@ -177,8 +177,8 @@ contract TestCreditPolicy is Test {
         creditPolicy.createPolicy(1);
 
         assertEq(creditPolicy.policyCreated(1), true);
-        assertEq(creditPolicy.policyActive(1), true);
-        assertEq(creditPolicy.policyFrozen(1), false);
+        assertEq(creditPolicy.isPolicyActive(1), true);
+        assertEq(creditPolicy.isPolicyFrozen(1), false);
         assertEq(creditPolicy.lastUpdated(1), block.timestamp);
     }
 
@@ -202,8 +202,8 @@ contract TestCreditPolicy is Test {
         bytes32 industry = _hashString("Gambling");
         creditPolicy.excludeIndustry(1, industry);
 
-        assertTrue(creditPolicy.excludedIndustries(1, industry));
-        assertFalse(creditPolicy.excludedIndustries(2, industry));
+        assertTrue(creditPolicy.isIndustryExcluded(1, industry));
+        assertFalse(creditPolicy.isIndustryExcluded(2, industry));
         vm.stopPrank();
     }
 
@@ -213,12 +213,12 @@ contract TestCreditPolicy is Test {
 
     function testDeactivatePolicy() public {
         _createPolicy(1);
-        assertEq(creditPolicy.policyActive(1), true);
+        assertEq(creditPolicy.isPolicyActive(1), true);
 
         vm.prank(deployer);
         creditPolicy.deActivatePolicy(1);
 
-        assertEq(creditPolicy.policyActive(1), false);
+        assertEq(creditPolicy.isPolicyActive(1), false);
     }
 
     function testDeactivatePolicyRevertIfOwnerIsNotAdmin() public {
@@ -258,7 +258,7 @@ contract TestCreditPolicy is Test {
         vm.prank(deployer);
         creditPolicy.deActivatePolicy(1);
 
-        assertFalse(creditPolicy.policyActive(1));
+        assertFalse(creditPolicy.isPolicyActive(1));
         assertEq(creditPolicy.lastUpdated(1), block.timestamp);
         assertGt(creditPolicy.lastUpdated(1), t1);
     }
@@ -301,7 +301,7 @@ contract TestCreditPolicy is Test {
         emit CreditPolicy.PolicyFrozen(1, block.timestamp);
         creditPolicy.freezePolicy(1);
         vm.stopPrank();
-        assertEq(creditPolicy.policyFrozen(1), true);
+        assertEq(creditPolicy.isPolicyFrozen(1), true);
     }
 
     function testFreezePolicyRevertIfOwnerIsNotAdmin() public {
@@ -341,7 +341,7 @@ contract TestCreditPolicy is Test {
 
     function testFreezePolicyMarksPolicyAsFrozen() public {
         _createPolicy(1);
-        assertEq(creditPolicy.policyActive(1), true);
+        assertEq(creditPolicy.isPolicyActive(1), true);
         vm.startPrank(deployer);
         creditPolicy.updateEligibility(1, _createEligibilityCriteria());
         creditPolicy.updateRatios(1, _createFinancialRatios());
@@ -357,7 +357,7 @@ contract TestCreditPolicy is Test {
         creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
         _freezePolicy(1);
-        assertEq(creditPolicy.policyFrozen(1), true);
+        assertEq(creditPolicy.isPolicyFrozen(1), true);
     }
 
     function testFreezeUpdatesLastUpdated() public {
@@ -386,8 +386,8 @@ contract TestCreditPolicy is Test {
 
     function testFreezeDoesNotDeactivatePolicy() public {
         _createAndFreezePolicy(1);
-        assertTrue(creditPolicy.policyActive(1));
-        assertTrue(creditPolicy.policyFrozen(1));
+        assertTrue(creditPolicy.isPolicyActive(1));
+        assertTrue(creditPolicy.isPolicyFrozen(1));
     }
 
     function testFrozenPolicyIsFullyImmutable() public {
@@ -1125,10 +1125,10 @@ contract TestCreditPolicy is Test {
 
         vm.startPrank(deployer);
         creditPolicy.excludeIndustry(1, industry);
-        assertTrue(creditPolicy.excludedIndustries(1, industry));
+        assertTrue(creditPolicy.isIndustryExcluded(1, industry));
 
         creditPolicy.excludeIndustry(1, industry);
-        assertTrue(creditPolicy.excludedIndustries(1, industry));
+        assertTrue(creditPolicy.isIndustryExcluded(1, industry));
         vm.stopPrank();
     }
 
@@ -1181,7 +1181,7 @@ contract TestCreditPolicy is Test {
         vm.prank(deployer);
         creditPolicy.includeIndustry(1, industry); // Should work, sets to false
 
-        assertFalse(creditPolicy.excludedIndustries(1, industry));
+        assertFalse(creditPolicy.isIndustryExcluded(1, industry));
     }
 
     function testIncludeIndustryRevertsIfDataIsZeroHash() public {
@@ -1222,15 +1222,15 @@ contract TestCreditPolicy is Test {
         _createPolicy(1);
         bytes32 industry = _hashString("Manufacturing");
 
-        assertEq(creditPolicy.excludedIndustries(1, industry), false);
+        assertEq(creditPolicy.isIndustryExcluded(1, industry), false);
 
         vm.prank(deployer);
         creditPolicy.excludeIndustry(1, industry);
-        assertEq(creditPolicy.excludedIndustries(1, industry), true);
+        assertEq(creditPolicy.isIndustryExcluded(1, industry), true);
 
         vm.prank(deployer);
         creditPolicy.includeIndustry(1, industry);
-        assertEq(creditPolicy.excludedIndustries(1, industry), false);
+        assertEq(creditPolicy.isIndustryExcluded(1, industry), false);
     }
 
     function testMultipleIndustryExclusions() public {
@@ -1247,7 +1247,7 @@ contract TestCreditPolicy is Test {
         vm.stopPrank();
 
         for (uint i = 0; i < industries.length; i++) {
-            assertTrue(creditPolicy.excludedIndustries(1, industries[i]));
+            assertTrue(creditPolicy.isIndustryExcluded(1, industries[i]));
         }
     }
 
@@ -1366,8 +1366,8 @@ contract TestCreditPolicy is Test {
     // Test complete lifecycle
     function testCompletePolicyLifecycle() public {
         _createPolicy(1);
-        assertTrue(creditPolicy.policyActive(1));
-        assertFalse(creditPolicy.policyFrozen(1));
+        assertTrue(creditPolicy.isPolicyActive(1));
+        assertFalse(creditPolicy.isPolicyFrozen(1));
 
         // Build policy
         vm.startPrank(deployer);
@@ -1383,14 +1383,14 @@ contract TestCreditPolicy is Test {
 
         // Freeze
         _freezePolicy(1);
-        assertTrue(creditPolicy.policyFrozen(1));
-        assertTrue(creditPolicy.policyActive(1));
+        assertTrue(creditPolicy.isPolicyFrozen(1));
+        assertTrue(creditPolicy.isPolicyActive(1));
 
         // Cannot deactivate frozen policy? - TEST THIS
         vm.prank(deployer);
         creditPolicy.deActivatePolicy(1);
-        assertFalse(creditPolicy.policyActive(1));
-        assertTrue(creditPolicy.policyFrozen(1)); // Still frozen
+        assertFalse(creditPolicy.isPolicyActive(1));
+        assertTrue(creditPolicy.isPolicyFrozen(1)); // Still frozen
     }
 
     // Test interaction between deactivate and freeze

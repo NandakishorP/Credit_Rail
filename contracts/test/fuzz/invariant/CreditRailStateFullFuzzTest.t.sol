@@ -414,4 +414,111 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             }
         }
     }
+
+    function invariant__lossWaterfallOrdering() public view {
+        if (tranchePool.getSeniorPrincipalShortfall() > 0) {
+            assertEq(
+                tranchePool.getEquityTrancheDeployedValue(),
+                0,
+                "Senior has shortfall but equity still has deployed value"
+            );
+        }
+        if (tranchePool.getJuniorPrincipalShortfall() > 0) {
+            assertEq(
+                tranchePool.getEquityTrancheDeployedValue(),
+                0,
+                "Junior has shortfall but equity still has deployed value"
+            );
+        }
+    }
+
+    function invariant__interestWaterfallSeniorPriority() public view {
+        uint256 seniorAccrued = tranchePool.seniorAccruedInterest();
+        uint256 seniorTarget = tranchePool.seniorTargetInterest();
+        uint256 juniorAccrued = tranchePool.juniorAccruedInterest();
+        uint256 juniorTarget = tranchePool.juniorTargetInterest();
+
+        assertLe(
+            seniorAccrued,
+            seniorTarget,
+            "Senior accrued interest exceeds target"
+        );
+        assertLe(
+            juniorAccrued,
+            juniorTarget,
+            "Junior accrued interest exceeds target"
+        );
+    }
+
+    function invariant__juniorShareToIdleOpen() public view {
+        if (tranchePool.getPoolState() == ITranchePool.PoolState.OPEN) {
+            assertEq(
+                tranchePool.getTotalJuniorShares(),
+                tranchePool.getJuniorTrancheIdleValue(),
+                "Junior: Shares != Idle in OPEN state"
+            );
+            assertEq(
+                tranchePool.getTotalEquityShares(),
+                tranchePool.getEquityTrancheIdleValue(),
+                "Equity: Shares != Idle in OPEN state"
+            );
+        }
+    }
+
+    function invariant__allocationRatiosSumTo100OrLess() public view {
+        assertLe(
+            tranchePool.getSeniorAllocationRatio() +
+                tranchePool.getJuniorAllocationRatio(),
+            100,
+            "Allocation factors exceed 100%"
+        );
+    }
+
+    function invariant__originationFeeBounded() public view {
+        uint256 nextId = loanEngine.getNextLoanId();
+        uint256 maxFee = loanEngine.getMaxOriginationFeeBps();
+        for (uint256 i = 1; i < nextId; i++) {
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            assertLe(
+                loan.originationFeeBps,
+                maxFee,
+                "Loan origination fee exceeds max"
+            );
+        }
+    }
+
+    function invariant__aprSanityBound() public view {
+        uint256 nextId = loanEngine.getNextLoanId();
+        for (uint256 i = 1; i < nextId; i++) {
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            if (loan.state != ILoanEngine.LoanState.NONE) {
+                assertGt(loan.aprBps, 0, "Loan APR is zero");
+                assertLt(loan.aprBps, 10000, "Loan APR >= 100%");
+            }
+        }
+    }
+
+    function invariant__globalConservationLaw() public view {
+        uint256 poolBalance = ERC20Mock(usdt).balanceOf(address(tranchePool));
+        uint256 totalLiabilities = tranchePool.getTotalIdleValue() +
+            tranchePool.getTotalUnclaimedInterest() +
+            tranchePool.getProtocolRevenue();
+        assertEq(
+            poolBalance,
+            totalLiabilities,
+            "Token balance != idle + unclaimed interest (value leak detected)"
+        );
+    }
+
+    function invariant__poolSolvency() public view {
+        uint256 poolBalance = ERC20Mock(usdt).balanceOf(address(tranchePool));
+        uint256 totalClaims = tranchePool.getTotalIdleValue() +
+            tranchePool.getTotalUnclaimedInterest();
+        // The pool token balance must always cover all obligations
+        assertGe(
+            poolBalance,
+            totalClaims,
+            "Pool is insolvent: balance < obligations"
+        );
+    }
 }

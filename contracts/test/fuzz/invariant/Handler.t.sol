@@ -591,7 +591,7 @@ contract Handler is Test {
 
     function claimSeniorTrancheInterest(uint256 userIndex) public {
         userIndex = bound(userIndex, 0, seniorUsers.length - 1);
-        if (tranchePool.poolState() != ITranchePool.PoolState.CLOSED) {
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.CLOSED) {
             return;
         }
         address user = seniorUsers[userIndex];
@@ -616,7 +616,7 @@ contract Handler is Test {
 
     function claimJuniorTrancheInterest(uint256 userIndex) public {
         userIndex = bound(userIndex, 0, juniorUsers.length - 1);
-        if (tranchePool.poolState() != ITranchePool.PoolState.CLOSED) {
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.CLOSED) {
             return;
         }
         address user = juniorUsers[userIndex];
@@ -641,7 +641,7 @@ contract Handler is Test {
 
     function claimEquityTrancheInterest(uint256 userIndex) public {
         userIndex = bound(userIndex, 0, equityUsers.length - 1);
-        if (tranchePool.poolState() != ITranchePool.PoolState.CLOSED) {
+        if (tranchePool.getPoolState() != ITranchePool.PoolState.CLOSED) {
             return;
         }
         address user = equityUsers[userIndex];

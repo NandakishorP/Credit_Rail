@@ -117,9 +117,6 @@ fn main(
     //==============================================================
     //             1. VERIFY BORROWER COMMITMENT
     //==============================================================
-    //==============================================================
-    //             1. VERIFY BORROWER COMMITMENT
-    //==============================================================
     verify_borrower_commitment(
         borrower_commitment,
         borrower_secret,
@@ -353,6 +350,9 @@ fn verify_schnorr_signature(
     sig_e: Field,
     msg_hash: Field,
 ) {
+    // Validate public key is not the zero/identity point
+    assert((pk_x != 0) | (pk_y != 0), "Underwriter PK cannot be the zero point");
+
     // Reconstruct R' = s*G + e*PK via multi_scalar_mul
     // multi_scalar_mul takes arrays of points and scalars
     let pk = EmbeddedCurvePoint { x: pk_x, y: pk_y, is_infinite: false };

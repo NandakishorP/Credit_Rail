@@ -13,6 +13,24 @@ import {TranchePool} from "./TranchePool.sol";
 import {IPoseidon2} from "./interfaces/IPoseidon2.sol";
 import {Field} from "@poseidon2-evm/Field.sol";
 
+/**
+ * @title LoanEngine
+ * @notice Core lending engine for privacy-preserving institutional credit.
+ * @dev Manages the full loan lifecycle: creation (with ZK proof verification),
+ *      activation (capital deployment), repayment (waterfall accounting),
+ *      default declaration, write-off (loss absorption), and recovery.
+ *
+ *      Loans are created using zero-knowledge proofs that attest to borrower
+ *      compliance with a frozen CreditPolicy, without revealing borrower identity
+ *      or financial details on-chain.
+ *
+ *      Access control uses OpenZeppelin's role-based model:
+ *        - UNDERWRITER_ROLE: Can create loans (submit ZK proofs)
+ *        - SERVICER_ROLE:    Can activate, repay, and recover loans
+ *        - RISK_ADMIN_ROLE:  Can declare defaults and write off loans
+ *        - CONFIG_ADMIN_ROLE: Can update whitelists and fee parameters
+ *        - EMERGENCY_ADMIN_ROLE: Can pause/unpause the contract
+ */
 contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     using SafeERC20 for IERC20;
 
@@ -108,6 +126,15 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Deploy a new LoanEngine instance.
+    /// @dev Grants all roles to `msg.sender`. In production the DEFAULT_ADMIN_ROLE
+    ///      should be transferred to a ProtocolController (timelock + multisig).
+    /// @param _creditPolicyContract Address of the deployed CreditPolicy contract.
+    /// @param _loanProofVerifier    Address of the Noir UltraPlonk verifier contract.
+    /// @param _maxOriginationFeeBps Global ceiling for origination fees (in basis points, max 10 000).
+    /// @param _tranchePool          Address of the TranchePool that holds LP capital.
+    /// @param _stableCoinAddress    Address of the stablecoin used for all settlements (e.g. USDC).
+    /// @param _poseidon2            Address of the on-chain Poseidon2 hasher contract.
     constructor(
         address _creditPolicyContract,
         address _loanProofVerifier,
@@ -150,8 +177,21 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
                             CORE LOAN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Create a zero-knowledge loan commitment on-chain
-    /// @dev Requires UNDERWRITER_ROLE
+    /// @notice Create a zero-knowledge loan commitment on-chain.
+    /// @dev Validates policy compliance, proof freshness, nullifier uniqueness,
+    ///      underwriter authorization, and the ZK proof itself. The loan is
+    ///      created in CREATED state and must be separately activated via
+    ///      `activateLoan()` to disburse funds.
+    ///
+    ///      Public inputs layout:
+    ///        [0] policy_version_hash — binds proof to a specific frozen policy
+    ///        [1] loan_hash          — Poseidon2 hash of all loan parameters
+    ///        [2] nullifier_hash     — prevents double-use of a proof
+    ///
+    /// @param params       Struct containing all loan parameters (borrower commitment,
+    ///                     principal, APR, term, tier, industry, underwriter keys, etc.).
+    /// @param proofData    The serialized UltraPlonk proof bytes from the Noir circuit.
+    /// @param publicInputs Array of 3 public inputs matching the circuit's public outputs.
     function createLoan(
         CreateLoanParams calldata params,
         bytes calldata proofData,
@@ -317,12 +357,18 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         );
     }
 
-    /*
-        preconditions
-        - onlyOwner
-        - loan must already exist
-        - loan.state == CREATED
-    */
+    /// @notice Activate a CREATED loan, deploying capital from the TranchePool.
+    /// @dev Transitions the loan from CREATED → ACTIVE. Capital is allocated
+    ///      across senior/junior/equity tranches via `TranchePool.allocateCapital()`.
+    ///      The net disbursement (principal − origination fee) is transferred to
+    ///      the `receivingEntity`, and the fee to the `feeManager`.
+    ///
+    ///      Checks idle liquidity at activation time (not just at creation) to
+    ///      prevent stale commitments from over-deploying the pool.
+    ///
+    /// @param loanId          The ID of the loan to activate (must be in CREATED state).
+    /// @param receivingEntity Whitelisted address that receives the disbursed principal.
+    /// @param feeManager      Whitelisted address that receives the origination fee.
     function activateLoan(
         uint256 loanId,
         address receivingEntity,
@@ -371,15 +417,24 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         loan.seniorPrincipalAllocated = seniorAmount;
         loan.juniorPrincipalAllocated = juniorAmount;
 
-        emit LoanActivated(
-            loan.loanId,
-            principal,
-            ts,
-            ts,
-            maturity
-        );
+        emit LoanActivated(loan.loanId, principal, ts, ts, maturity);
     }
 
+    /// @notice Process a repayment against an active loan.
+    /// @dev Payment is applied interest-first, then principal. Accrues interest
+    ///      up to `timestamp` before applying the payment. Funds are pulled from
+    ///      `repaymentAgent` via `safeTransferFrom` and sent directly to the
+    ///      TranchePool. The pool's `onRepayment()` handles the waterfall
+    ///      distribution (interest index updates + principal redemption).
+    ///
+    ///      If the loan is fully repaid (outstanding principal and accrued
+    ///      interest both reach zero), the loan transitions to REPAID state.
+    ///
+    /// @param loanId          The ID of the loan being repaid.
+    /// @param principalAmount The portion of the payment intended for principal.
+    /// @param interestAmount  The portion of the payment intended for interest.
+    /// @param repaymentAgent  Whitelisted address from which funds are pulled.
+    /// @param timestamp       The timestamp used for interest accrual calculation.
     function repayLoan(
         uint256 loanId,
         uint256 principalAmount,
@@ -412,8 +467,8 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         );
 
         // Cache storage reads — avoid re-reading after writes
-        uint256 interestDue = loan.interestAccrued;       // SLOAD once
-        uint256 principalDue = loan.principalOutstanding;  // SLOAD once
+        uint256 interestDue = loan.interestAccrued; // SLOAD once
+        uint256 principalDue = loan.principalOutstanding; // SLOAD once
 
         // 2. Interest first
         uint256 interestPaid = totalPayment > interestDue
@@ -449,6 +504,17 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         }
     }
 
+    /// @notice Declare an active loan as defaulted.
+    /// @dev Transitions the loan from ACTIVE → DEFAULTED. Accrues any pending
+    ///      interest before changing state. The loan remains in DEFAULTED until
+    ///      `writeOffLoan()` is called to realize the loss against the pool.
+    ///
+    ///      Note: No capital movement occurs at default declaration. The actual
+    ///      loss absorption happens during write-off.
+    ///
+    /// @param loanId     The ID of the loan to declare as defaulted.
+    /// @param reasonHash Keccak256 hash of the default reason (for off-chain audit trail).
+    /// @param timestamp  The timestamp used for final interest accrual.
     function declareDefault(
         uint256 loanId,
         bytes32 reasonHash,
@@ -464,10 +530,18 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit LoanDefaulted(loanId, reasonHash, timestamp);
     }
 
+    /// @notice Write off a defaulted loan, realizing the loss against the TranchePool.
+    /// @dev Transitions the loan from DEFAULTED → WRITTEN_OFF. Zeroes out the
+    ///      outstanding principal and accrued interest, then calls
+    ///      `TranchePool.onLoss()` which absorbs the principal loss in reverse
+    ///      seniority order (equity → junior → senior) and cancels ghost interest.
+    ///
+    ///      Reverts if the loan has zero outstanding principal (nothing to write off).
+    ///
+    /// @param loanId The ID of the defaulted loan to write off.
     function writeOffLoan(
         uint256 loanId
     ) external onlyRole(RISK_ADMIN_ROLE) whenNotPaused {
-        // Implementation goes here
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.DEFAULTED) {
             revert LoanEngine__LoanIsNotDefaulted(loanId);
@@ -485,6 +559,17 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit LoanWrittenOff(loanId, block.timestamp);
     }
 
+    /// @notice Recover funds from a previously written-off loan.
+    /// @dev Pulls `amount` from `recoveryAgent` and sends it to the TranchePool.
+    ///      The pool's `onRecovery()` restores principal shortfalls in seniority
+    ///      order (senior → junior → equity). Any excess beyond the total
+    ///      shortfall flows to the equity tranche as upside.
+    ///
+    ///      A loan can receive multiple recovery payments over time.
+    ///
+    /// @param loanId        The ID of the written-off loan.
+    /// @param amount        The recovery amount to transfer to the pool.
+    /// @param recoveryAgent Whitelisted address from which recovery funds are pulled.
     function recoverLoan(
         uint256 loanId,
         uint256 amount,
@@ -511,6 +596,12 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit LoanRecovered(loanId, amount, block.timestamp);
     }
 
+    /// @dev Accrues simple interest on the loan's outstanding principal.
+    ///      Uses the provided `timestamp` to compute elapsed time, but writes
+    ///      `block.timestamp` to storage as a safety measure against backdating.
+    ///      Notifies the TranchePool of newly accrued interest via `onInterestAccrued()`.
+    /// @param loanId    The loan to accrue interest for (must be ACTIVE).
+    /// @param timestamp The reference timestamp for elapsed-time calculation.
     function _accrueInterest(uint256 loanId, uint256 timestamp) internal {
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.ACTIVE) {
@@ -534,8 +625,12 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         }
     }
 
-    // setters for contract management
+    /*//////////////////////////////////////////////////////////////
+                        CONFIGURATION FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
+    /// @notice Update the global maximum origination fee.
+    /// @param _maxOriginationFeeBps New ceiling in basis points (e.g. 500 = 5%).
     function setMaxOriginationFeeBps(
         uint256 _maxOriginationFeeBps
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
@@ -543,14 +638,19 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit MaxOriginationFeeBpsUpdated(_maxOriginationFeeBps);
     }
 
+    /// @notice Emergency pause — halts createLoan, activateLoan, declareDefault, writeOffLoan.
     function pause() external onlyRole(EMERGENCY_ADMIN_ROLE) {
         _pause();
     }
 
+    /// @notice Unpause the contract, resuming normal operations.
     function unpause() external onlyRole(EMERGENCY_ADMIN_ROLE) {
         _unpause();
     }
 
+    /// @notice Add or remove an off-ramping entity (receives loan disbursements).
+    /// @param entity       The address to whitelist or de-whitelist.
+    /// @param isWhitelisted True to authorize, false to revoke.
     function setWhitelistedOffRampingEntity(
         address entity,
         bool isWhitelisted
@@ -560,6 +660,9 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit WhitelistedOffRampingEntityUpdated(entity, isWhitelisted);
     }
 
+    /// @notice Add or remove a recovery agent (provides recovery funds for written-off loans).
+    /// @param agent        The address to whitelist or de-whitelist.
+    /// @param isWhitelisted True to authorize, false to revoke.
     function setWhitelistedRecoveryAgent(
         address agent,
         bool isWhitelisted
@@ -569,6 +672,9 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit WhitelistedRecoveryAgentUpdated(agent, isWhitelisted);
     }
 
+    /// @notice Add or remove a repayment agent (provides repayment funds for active loans).
+    /// @param agent        The address to whitelist or de-whitelist.
+    /// @param isWhitelisted True to authorize, false to revoke.
     function setWhitelistedRepaymentAgent(
         address agent,
         bool isWhitelisted
@@ -578,6 +684,9 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit WhitelistedRepaymentAgentUpdated(agent, isWhitelisted);
     }
 
+    /// @notice Add or remove a fee manager (receives origination fees at loan activation).
+    /// @param manager      The address to whitelist or de-whitelist.
+    /// @param isWhitelisted True to authorize, false to revoke.
     function setWhitelistedFeeManager(
         address manager,
         bool isWhitelisted
@@ -587,10 +696,19 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         emit WhitelistedFeeManagerUpdated(manager, isWhitelisted);
     }
 
+    /// @notice Returns the current global maximum origination fee in basis points.
     function getMaxOriginationFeeBps() external view returns (uint256) {
         return s_maxOriginationFeeBps;
     }
 
+    /// @notice Authorize or revoke an underwriter's Grumpkin public key.
+    /// @dev The key hash is `keccak256(abi.encodePacked(keyX, keyY))`. During
+    ///      `createLoan()`, the proof's underwriter key components are checked
+    ///      against this allowlist to ensure only authorized underwriters can
+    ///      originate loans.
+    /// @param keyX         The X-coordinate of the underwriter's Grumpkin public key.
+    /// @param keyY         The Y-coordinate of the underwriter's Grumpkin public key.
+    /// @param isAuthorized True to authorize, false to revoke.
     function setUnderwriterAuthorization(
         bytes32 keyX,
         bytes32 keyY,
@@ -607,10 +725,18 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         );
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the ID that will be assigned to the next created loan.
     function getNextLoanId() external view returns (uint256) {
         return s_nextLoanId;
     }
 
+    /// @notice Returns the full Loan struct for a given loan ID.
+    /// @param loanId The loan to query.
+    /// @return The Loan struct (returns a zeroed struct for non-existent IDs).
     function getLoanDetails(
         uint256 loanId
     ) external view returns (Loan memory) {

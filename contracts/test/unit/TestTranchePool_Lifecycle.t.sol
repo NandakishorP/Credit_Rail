@@ -331,14 +331,14 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         vm.prank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorSenior(70);
 
-        assertEq(tranchePool.s_capital_allocation_factor_senior(), 70);
+        assertEq(tranchePool.getSeniorAllocationRatio(), 70);
     }
 
     function test_SetAllocationFactor_Junior_Success() public {
         vm.prank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorJunior(20);
 
-        assertEq(tranchePool.s_capital_allocation_factor_junior(), 20);
+        assertEq(tranchePool.getJuniorAllocationRatio(), 20);
     }
 
     function test_SetAllocationFactor_RevertIf_ExceedsMax() public {
@@ -387,7 +387,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         vm.prank(deployer);
         tranchePool.setLoanEngine(newLoanEngine);
 
-        assertEq(tranchePool.loanEngine(), newLoanEngine);
+        assertEq(tranchePool.getLoanEngine(), newLoanEngine);
     }
 
     function test_UpdateWhitelist_Success() public {
