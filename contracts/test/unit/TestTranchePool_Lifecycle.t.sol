@@ -264,6 +264,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     //////////////////////////////////////////////////////////////*/
 
     function test_SetPoolState_ToCommited_Success() public {
+        vm.prank(deployer);
         tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
 
         assertEq(
@@ -288,6 +289,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         _depositToAllTranches();
         // Do NOT allocate capital. Closing is only allowed if deployed == 0.
 
+        vm.prank(deployer);
         tranchePool.setPoolState(ITranchePool.PoolState.CLOSED);
 
         assertEq(
@@ -300,6 +302,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         _depositToAllTranches();
         _allocateCapital();
 
+        vm.prank(deployer);
         vm.expectRevert(
             ITranchePool.TranchePool__DeployedCapitalExists.selector
         );
@@ -325,18 +328,21 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     //////////////////////////////////////////////////////////////*/
 
     function test_SetAllocationFactor_Senior_Success() public {
+        vm.prank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorSenior(70);
 
         assertEq(tranchePool.getSeniorAllocationRatio(), 70);
     }
 
     function test_SetAllocationFactor_Junior_Success() public {
+        vm.prank(deployer);
         tranchePool.setTrancheCapitalAllocationFactorJunior(20);
 
         assertEq(tranchePool.getJuniorAllocationRatio(), 20);
     }
 
     function test_SetAllocationFactor_RevertIf_ExceedsMax() public {
+        vm.prank(deployer);
         vm.expectRevert(
             ITranchePool.TranchePool__InvalidAllocationRatio.selector
         );
@@ -344,28 +350,33 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     }
 
     function test_SetSeniorAPR_Success() public {
+        vm.prank(deployer);
         tranchePool.setSeniorAPR(500);
 
         assertEq(tranchePool.s_senior_apr_bps(), 500);
     }
 
     function test_SetSeniorAPR_RevertIf_Zero() public {
+        vm.prank(deployer);
         vm.expectRevert(ITranchePool.TranchePool__ZeroAPRError.selector);
         tranchePool.setSeniorAPR(0);
     }
 
     function test_SetTargetJuniorAPR_Success() public {
+        vm.prank(deployer);
         tranchePool.setTargetJuniorAPR(1000);
 
         assertEq(tranchePool.s_target_junior_apr_bps(), 1000);
     }
 
     function test_SetTargetJuniorAPR_RevertIf_Zero() public {
+        vm.prank(deployer);
         vm.expectRevert(ITranchePool.TranchePool__ZeroAPRError.selector);
         tranchePool.setTargetJuniorAPR(0);
     }
 
     function test_SetMaxCap_RevertIf_Zero() public {
+        vm.prank(deployer);
         vm.expectRevert(ITranchePool.TranchePool__ZeroValueError.selector);
         tranchePool.setMaxAllocationCapSeniorTranche(0);
     }
@@ -373,6 +384,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     function test_SetLoanEngine_Success() public {
         address newLoanEngine = makeAddr("newLoanEngine");
 
+        vm.prank(deployer);
         tranchePool.setLoanEngine(newLoanEngine);
 
         assertEq(tranchePool.getLoanEngine(), newLoanEngine);
@@ -381,6 +393,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     function test_UpdateWhitelist_Success() public {
         address newUser = makeAddr("newUser");
 
+        vm.prank(deployer);
         tranchePool.updateWhitelist(newUser, true);
 
         assertTrue(tranchePool.whiteListedLps(newUser));
@@ -389,6 +402,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     function test_UpdateEquityTrancheWhitelist_Success() public {
         address newUser = makeAddr("newUser");
 
+        vm.prank(deployer);
         tranchePool.updateEquityTrancheWhiteList(newUser, true);
 
         assertTrue(tranchePool.whiteListedForEquityTranche(newUser));
