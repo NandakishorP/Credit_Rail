@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -35,7 +35,18 @@ import {InterestMath} from "./libraries/InterestMath.sol";
  *
  *      Tranche indices:  SENIOR = 0,  JUNIOR = 1,  EQUITY = 2
  */
-contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
+contract TranchePool is ITranchePool, AccessControl, Pausable, ReentrancyGuard {
+    // =========================================================================
+    //                         ACCESS CONTROL ROLES
+    // =========================================================================
+
+    bytes32 public constant POOL_ADMIN_ROLE = keccak256("POOL_ADMIN_ROLE");
+    bytes32 public constant CONFIG_ADMIN_ROLE = keccak256("CONFIG_ADMIN_ROLE");
+    bytes32 public constant WHITELIST_ADMIN_ROLE =
+        keccak256("WHITELIST_ADMIN_ROLE");
+    bytes32 public constant EMERGENCY_ADMIN_ROLE =
+        keccak256("EMERGENCY_ADMIN_ROLE");
+    bytes32 public constant TREASURY_ROLE = keccak256("TREASURY_ROLE");
     using SafeERC20 for IERC20;
 
     // =========================================================================
@@ -113,11 +124,11 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     // =========================================================================
 
     /// @notice Deploy a new TranchePool.
-    /// @dev Sets `msg.sender` as the Ownable owner. Initializes all three
-    ///      interest indices to 1e18 (the base precision for the global index pattern).
+    /// @dev Grants all admin roles to `msg.sender`. In production, DEFAULT_ADMIN_ROLE
+    ///      should be transferred to a ProtocolController (timelock + multisig).
     /// @param stableCoin_ Address of the ERC-20 stablecoin used for all deposits
     ///                    and withdrawals (e.g. USDC, USDT).
-    constructor(address stableCoin_) Ownable(msg.sender) {
+    constructor(address stableCoin_) {
         if (stableCoin_ == address(0)) revert TranchePool__ZeroAddressError();
         i_stableCoin = stableCoin_;
 
@@ -125,6 +136,14 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
         tranches[JUNIOR].interestIndex = 1e18;
         tranches[EQUITY].interestIndex = 1e18;
         lastTrancheAccrualTimestamp = block.timestamp;
+
+        // Grant all roles to deployer initially
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(POOL_ADMIN_ROLE, msg.sender);
+        _grantRole(CONFIG_ADMIN_ROLE, msg.sender);
+        _grantRole(WHITELIST_ADMIN_ROLE, msg.sender);
+        _grantRole(EMERGENCY_ADMIN_ROLE, msg.sender);
+        _grantRole(TREASURY_ROLE, msg.sender);
     }
 
     // =========================================================================
@@ -865,7 +884,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param amount New minimum (must be ≤ maxCap).
     function setMinimumDepositAmountSeniorTranche(
         uint256 amount
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount > tranches[SENIOR].maxCap)
             revert TranchePool__InvalidMinDepositAmount();
         tranches[SENIOR].minDeposit = amount;
@@ -876,7 +895,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param amount New minimum (must be ≤ maxCap).
     function setMinimumDepositAmountJuniorTranche(
         uint256 amount
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount > tranches[JUNIOR].maxCap)
             revert TranchePool__InvalidMinDepositAmount();
         tranches[JUNIOR].minDeposit = amount;
@@ -887,7 +906,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param amount New minimum (must be ≤ maxCap).
     function setMinimumDepositAmountEquityTranche(
         uint256 amount
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount > tranches[EQUITY].maxCap)
             revert TranchePool__InvalidMinDepositAmount();
         tranches[EQUITY].minDeposit = amount;
@@ -899,7 +918,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param factor Percentage of each loan allocated to senior (e.g. 80 = 80%).
     function setTrancheCapitalAllocationFactorSenior(
         uint256 factor
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (factor + s_capital_allocation_factor_junior > 100)
             revert TranchePool__InvalidAllocationRatio();
         s_capital_allocation_factor_senior = factor;
@@ -910,7 +929,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param factor Percentage of each loan allocated to junior (e.g. 15 = 15%).
     function setTrancheCapitalAllocationFactorJunior(
         uint256 factor
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (factor + s_capital_allocation_factor_senior > 100)
             revert TranchePool__InvalidAllocationRatio();
         s_capital_allocation_factor_junior = factor;
@@ -920,7 +939,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @notice Set the senior tranche APR (used for target interest accrual).
     /// @dev Accrues any pending target interest before changing the rate.
     /// @param aprbps Annual percentage rate in basis points (e.g. 800 = 8%).
-    function setSeniorAPR(uint256 aprbps) external onlyOwner {
+    function setSeniorAPR(uint256 aprbps) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (aprbps == 0) revert TranchePool__ZeroAPRError();
         _accrueTrancheTargets();
         tranches[SENIOR].aprBps = aprbps;
@@ -929,7 +948,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Set the junior tranche APR (used for target interest accrual).
     /// @param aprbps Annual percentage rate in basis points (e.g. 1500 = 15%).
-    function setTargetJuniorAPR(uint256 aprbps) external onlyOwner {
+    function setTargetJuniorAPR(
+        uint256 aprbps
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (aprbps == 0) revert TranchePool__ZeroAPRError();
         _accrueTrancheTargets();
         tranches[JUNIOR].aprBps = aprbps;
@@ -940,7 +961,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @dev States can only move forward (OPEN → COMMITTED → DEPLOYED → CLOSED).
     ///      CLOSED requires all deployed capital to be zero (all loans settled).
     /// @param newState The target pool state.
-    function setPoolState(PoolState newState) external onlyOwner {
+    function setPoolState(
+        PoolState newState
+    ) external onlyRole(POOL_ADMIN_ROLE) {
         if (uint256(newState) < uint256(poolState))
             revert TranchePool__InvalidStateTransition(newState);
 
@@ -955,7 +978,9 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Set the LoanEngine address that is authorized to call pool callbacks.
     /// @param _loanEngine Address of the deployed LoanEngine contract.
-    function setLoanEngine(address _loanEngine) external onlyOwner {
+    function setLoanEngine(
+        address _loanEngine
+    ) external onlyRole(POOL_ADMIN_ROLE) {
         if (_loanEngine == address(0)) revert TranchePool__ZeroAddressError();
         loanEngine = _loanEngine;
         emit LoanEngineUpdated(_loanEngine);
@@ -965,7 +990,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param amount New cap in stablecoin units.
     function setMaxAllocationCapSeniorTranche(
         uint256 amount
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount == 0) revert TranchePool__ZeroValueError();
         if (amount < tranches[SENIOR].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
@@ -977,7 +1002,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param amount New cap in stablecoin units.
     function setMaxAllocationCapJuniorTranche(
         uint256 amount
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount == 0) revert TranchePool__ZeroValueError();
         if (amount < tranches[JUNIOR].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
@@ -989,7 +1014,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @param amount New cap in stablecoin units.
     function setMaxAllocationCapEquityTranche(
         uint256 amount
-    ) external onlyOwner {
+    ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount == 0) revert TranchePool__ZeroValueError();
         if (amount < tranches[EQUITY].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
@@ -1000,7 +1025,10 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     /// @notice Add or remove an address from the LP whitelist (senior + junior).
     /// @param user   The address to update.
     /// @param status True to whitelist, false to remove.
-    function updateWhitelist(address user, bool status) external onlyOwner {
+    function updateWhitelist(
+        address user,
+        bool status
+    ) external onlyRole(WHITELIST_ADMIN_ROLE) {
         whiteListedLps[user] = status;
         emit WhitelistUpdated(user, status);
     }
@@ -1011,18 +1039,18 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     function updateEquityTrancheWhiteList(
         address user,
         bool status
-    ) external onlyOwner {
+    ) external onlyRole(WHITELIST_ADMIN_ROLE) {
         whiteListedForEquityTranche[user] = status;
         emit EquityWhitelistUpdated(user, status);
     }
 
     /// @notice Emergency pause — halts all deposits.
-    function pause() external onlyOwner {
+    function pause() external onlyRole(EMERGENCY_ADMIN_ROLE) {
         _pause();
     }
 
     /// @notice Unpause the contract, resuming normal operations.
-    function unpause() external onlyOwner {
+    function unpause() external onlyRole(EMERGENCY_ADMIN_ROLE) {
         _unpause();
     }
 
@@ -1032,7 +1060,7 @@ contract TranchePool is ITranchePool, Ownable, Pausable, ReentrancyGuard {
     function sweepProtocolRevenue(
         address to,
         uint256 amount
-    ) external onlyOwner nonReentrant {
+    ) external onlyRole(TREASURY_ROLE) nonReentrant {
         if (to == address(0)) revert TranchePool__ZeroAddressError();
         if (amount == 0 || amount > s_protocolRevenue)
             revert TranchePool__InvalidTransferAmount(amount);

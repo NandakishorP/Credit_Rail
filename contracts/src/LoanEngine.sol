@@ -25,7 +25,7 @@ import {Field} from "@poseidon2-evm/Field.sol";
  *      or financial details on-chain.
  *
  *      Access control uses OpenZeppelin's role-based model:
- *        - UNDERWRITER_ROLE: Can create loans (submit ZK proofs)
+ *        - FUND_MANAGER_ROLE: Can create loans (submit ZK proofs)
  *        - SERVICER_ROLE:    Can activate, repay, and recover loans
  *        - RISK_ADMIN_ROLE:  Can declare defaults and write off loans
  *        - CONFIG_ADMIN_ROLE: Can update whitelists and fee parameters
@@ -38,7 +38,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
                             ACCESS CONTROL ROLES
     //////////////////////////////////////////////////////////////*/
 
-    bytes32 public constant UNDERWRITER_ROLE = keccak256("UNDERWRITER_ROLE");
+    bytes32 public constant FUND_MANAGER_ROLE = keccak256("FUND_MANAGER_ROLE");
     bytes32 public constant SERVICER_ROLE = keccak256("SERVICER_ROLE");
     bytes32 public constant RISK_ADMIN_ROLE = keccak256("RISK_ADMIN_ROLE");
     bytes32 public constant CONFIG_ADMIN_ROLE = keccak256("CONFIG_ADMIN_ROLE");
@@ -166,7 +166,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
 
         // Grant all roles to deployer initially
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(UNDERWRITER_ROLE, msg.sender);
+        _grantRole(FUND_MANAGER_ROLE, msg.sender);
         _grantRole(SERVICER_ROLE, msg.sender);
         _grantRole(RISK_ADMIN_ROLE, msg.sender);
         _grantRole(CONFIG_ADMIN_ROLE, msg.sender);
@@ -196,7 +196,7 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         CreateLoanParams calldata params,
         bytes calldata proofData,
         bytes32[] calldata publicInputs
-    ) external onlyRole(UNDERWRITER_ROLE) whenNotPaused {
+    ) external onlyRole(FUND_MANAGER_ROLE) whenNotPaused {
         if (publicInputs.length != TOTAL_PUBLIC_INPUTS) {
             revert LoanEngine__InvalidPublicInputsLength();
         }

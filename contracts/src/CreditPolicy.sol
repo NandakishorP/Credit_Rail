@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title CreditPolicy
@@ -20,34 +21,36 @@ import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
  *        - Document hash and URI for legal anchoring
  *        - Policy scope hash (binds all parameters for ZK circuit verification)
  *
- *      Access is controlled by a single `policyAdmin` address which should
- *      be set to a ProtocolController (timelock + multisig) in production.
+ *      Access is controlled via OpenZeppelin's AccessControl with granular
+ *      roles (POLICY_ADMIN, POLICY_EDITOR, INDUSTRY_ADMIN). In production,
+ *      DEFAULT_ADMIN_ROLE should be held by a ProtocolController (timelock + multisig).
  */
-contract CreditPolicy is ICreditPolicy {
+contract CreditPolicy is ICreditPolicy, AccessControl {
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
-    error CreditPolicy__Unauthorized();
     error CreditPolicy__PolicyFrozen(uint256 version);
     error CreditPolicy__InvalidVersion();
     error CreditPolicy__PolicyVersionExists(uint256 version);
-    error CreditPolicy__InvalidAdmin();
     error CreditPolicy__PolicyNotEditable(uint256 version);
     error CreditPolicy__IncompletePolicy(uint256 version);
     error CreditPolicy__InvalidIndustryHash();
     error CreditPolicy__PolicyNotActive(uint256 version);
     error CreditPolicy__InvalidTierCount(uint256 count);
+
+    /*//////////////////////////////////////////////////////////////
+                         ACCESS CONTROL ROLES
+    //////////////////////////////////////////////////////////////*/
+
+    bytes32 public constant POLICY_ADMIN_ROLE = keccak256("POLICY_ADMIN_ROLE");
+    bytes32 public constant POLICY_EDITOR_ROLE =
+        keccak256("POLICY_EDITOR_ROLE");
+    bytes32 public constant INDUSTRY_ADMIN_ROLE =
+        keccak256("INDUSTRY_ADMIN_ROLE");
+
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
-    modifier onlyAdmin() {
-        _onlyAdmin();
-        _;
-    }
-
-    function _onlyAdmin() internal view {
-        if (msg.sender != policyAdmin) revert CreditPolicy__Unauthorized();
-    }
 
     modifier policyEditable(uint256 version) {
         _policyEditable(version);
@@ -69,9 +72,8 @@ contract CreditPolicy is ICreditPolicy {
     }
 
     /*//////////////////////////////////////////////////////////////
-                                CORE ROLES
+                                CORE STATE
     //////////////////////////////////////////////////////////////*/
-    address public policyAdmin;
     uint8 internal maxTiers;
 
     /*//////////////////////////////////////////////////////////////
@@ -185,9 +187,14 @@ contract CreditPolicy is ICreditPolicy {
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deploy a new CreditPolicy, setting `msg.sender` as the initial admin.
+    /// @notice Deploy a new CreditPolicy, granting all roles to `msg.sender`.
+    /// @dev In production, DEFAULT_ADMIN_ROLE should be transferred to a
+    ///      ProtocolController (timelock + multisig).
     constructor() {
-        policyAdmin = msg.sender;
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(POLICY_ADMIN_ROLE, msg.sender);
+        _grantRole(POLICY_EDITOR_ROLE, msg.sender);
+        _grantRole(INDUSTRY_ADMIN_ROLE, msg.sender);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -198,7 +205,9 @@ contract CreditPolicy is ICreditPolicy {
     /// @dev The version is created in an active, editable (unfrozen) state.
     ///      All required sections must be populated before the policy can be frozen.
     /// @param version The version number to create (must be > 0 and not already exist).
-    function createPolicy(uint256 version) external onlyAdmin {
+    function createPolicy(
+        uint256 version
+    ) external onlyRole(POLICY_ADMIN_ROLE) {
         if (version == 0) {
             revert CreditPolicy__InvalidVersion();
         }
@@ -220,7 +229,7 @@ contract CreditPolicy is ICreditPolicy {
     /// @param version The version number to freeze.
     function freezePolicy(
         uint256 version
-    ) external onlyAdmin policyExists(version) {
+    ) external onlyRole(POLICY_ADMIN_ROLE) policyExists(version) {
         if (policyFrozen[version]) {
             revert CreditPolicy__PolicyFrozen(version);
         }
@@ -255,7 +264,7 @@ contract CreditPolicy is ICreditPolicy {
     /// @param version The version number to deactivate.
     function deActivatePolicy(
         uint256 version
-    ) external onlyAdmin policyExists(version) {
+    ) external onlyRole(POLICY_ADMIN_ROLE) policyExists(version) {
         policyActive[version] = false;
         lastUpdated[version] = block.timestamp;
         emit PolicyDeactivated(version, block.timestamp);
@@ -272,7 +281,12 @@ contract CreditPolicy is ICreditPolicy {
     function updateEligibility(
         uint256 version,
         EligibilityCriteria calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_EDITOR_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         eligibility[version] = data;
         lastUpdated[version] = block.timestamp;
         eligibilitySet[version] = true;
@@ -289,7 +303,12 @@ contract CreditPolicy is ICreditPolicy {
     function updateRatios(
         uint256 version,
         FinancialRatios calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_EDITOR_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         ratios[version] = data;
         lastUpdated[version] = block.timestamp;
         ratiosSet[version] = true;
@@ -306,7 +325,12 @@ contract CreditPolicy is ICreditPolicy {
     function updateConcentration(
         uint256 version,
         ConcentrationLimits calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_EDITOR_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         concentration[version] = data;
         lastUpdated[version] = block.timestamp;
         concentrationSet[version] = true;
@@ -323,7 +347,12 @@ contract CreditPolicy is ICreditPolicy {
     function updateAttestation(
         uint256 version,
         AttestationRequirements calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_EDITOR_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         attestation[version] = data;
         lastUpdated[version] = block.timestamp;
         attestationSet[version] = true;
@@ -340,7 +369,12 @@ contract CreditPolicy is ICreditPolicy {
     function updateCovenants(
         uint256 version,
         MaintenanceCovenants calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_EDITOR_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         covenants[version] = data;
         lastUpdated[version] = block.timestamp;
         covenantsSet[version] = true;
@@ -362,7 +396,12 @@ contract CreditPolicy is ICreditPolicy {
         uint256 version,
         uint8 tierId,
         LoanTier calldata tier
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_EDITOR_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         if (tierId >= maxTiers) {
             revert CreditPolicy__InvalidTierCount(tierId);
         }
@@ -386,7 +425,12 @@ contract CreditPolicy is ICreditPolicy {
     function excludeIndustry(
         uint256 version,
         bytes32 industry
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(INDUSTRY_ADMIN_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         if (industry == bytes32(0)) {
             revert CreditPolicy__InvalidIndustryHash();
         }
@@ -401,7 +445,12 @@ contract CreditPolicy is ICreditPolicy {
     function includeIndustry(
         uint256 version,
         bytes32 industry
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(INDUSTRY_ADMIN_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         if (industry == bytes32(0)) {
             revert CreditPolicy__InvalidIndustryHash();
         }
@@ -424,7 +473,12 @@ contract CreditPolicy is ICreditPolicy {
         uint256 version,
         bytes32 hash,
         string calldata uri
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_EDITOR_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         policyDocumentHash[version] = hash;
         policyDocumentURI[version] = uri;
         lastUpdated[version] = block.timestamp;
@@ -442,21 +496,28 @@ contract CreditPolicy is ICreditPolicy {
     function setPolicyScopeHash(
         uint256 version,
         bytes32 hash
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
+    )
+        external
+        onlyRole(POLICY_ADMIN_ROLE)
+        policyExists(version)
+        policyEditable(version)
+    {
         policyScopeHash[version] = hash;
         lastUpdated[version] = block.timestamp;
 
         emit PolicyScopeHashSet(version, hash, block.timestamp);
     }
 
-    /// @notice Transfer policy admin rights to a new address.
-    /// @dev In production, this should be a ProtocolController address.
-    /// @param newAdmin The address to become the new policy admin (must be non-zero).
-    function changePolicyAdmin(address newAdmin) external onlyAdmin {
-        if (newAdmin == address(0)) {
-            revert CreditPolicy__InvalidAdmin();
-        }
-        policyAdmin = newAdmin;
+    /// @notice Transfer admin rights — use AccessControl.grantRole/revokeRole instead.
+    /// @dev Kept for backward compatibility during migration.
+    /// @param newAdmin The address to become the new default admin.
+    function changePolicyAdmin(
+        address newAdmin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(DEFAULT_ADMIN_ROLE, newAdmin);
+        grantRole(POLICY_ADMIN_ROLE, newAdmin);
+        grantRole(POLICY_EDITOR_ROLE, newAdmin);
+        grantRole(INDUSTRY_ADMIN_ROLE, newAdmin);
 
         emit PolicyAdminChanged(newAdmin);
     }
@@ -492,7 +553,7 @@ contract CreditPolicy is ICreditPolicy {
 
     /// @notice Set the global maximum number of tiers allowed per policy.
     /// @param _maxTiers The new max tier count (must be < 255).
-    function setMaxTiers(uint8 _maxTiers) external onlyAdmin {
+    function setMaxTiers(uint8 _maxTiers) external onlyRole(POLICY_ADMIN_ROLE) {
         if (_maxTiers == 255) {
             revert CreditPolicy__InvalidTierCount(_maxTiers);
         }
