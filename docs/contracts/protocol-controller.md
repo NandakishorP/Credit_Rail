@@ -1,6 +1,8 @@
 # ProtocolController
 
-The `ProtocolController` is a governance wrapper around OpenZeppelin's `TimelockController`. It acts as the `policyAdmin` of `CreditPolicy` in production, enforcing a mandatory time delay on all parameter changes so that liquidity providers have a window to review and exit before any risk changes take effect.
+The `ProtocolController` is a governance wrapper around OpenZeppelin's `TimelockController`. It acts as the ultimate administrator across the **entire Credit Rail protocol**. It governs not only the `CreditPolicy`, but also the `LoanEngine` (via `DEFAULT_ADMIN_ROLE`) and the `TranchePool` (via `Ownable`).
+
+It enforces a mandatory time delay on all critical protocol changes (like policy updates, whitelist modifications, and role grants) so that liquidity providers have a window to review and exit before any changes take effect.
 
 ---
 
@@ -46,7 +48,7 @@ After the delay, the proposer (or any executor role holder) calls:
 
 ```solidity
 timelockController.execute(
-    target,
+    target, // Could be CreditPolicy, LoanEngine, or TranchePool
     value,
     data,
     predecessor,
@@ -54,7 +56,7 @@ timelockController.execute(
 );
 ```
 
-The underlying call to `CreditPolicy` is executed. If the operation was cancelled, execution reverts.
+The underlying call is executed. If the operation was cancelled, execution reverts.
 
 ---
 
@@ -80,9 +82,13 @@ The correct order for a production deployment:
 2. Deploy TranchePool
 3. Deploy LoanEngine (references CreditPolicy + TranchePool)
 4. Deploy ProtocolController (TimelockController)
-5. Call CreditPolicy.transferAdmin(address(protocolController))
-6. Call TranchePool.setLoanEngine(address(loanEngine))
-7. Grant LoanEngine roles to appropriate operator addresses
+5. Transfer admin rights to ProtocolController:
+   - CreditPolicy.transferAdmin(address(protocolController))
+   - TranchePool.transferOwnership(address(protocolController))
+   - LoanEngine.grantRole(DEFAULT_ADMIN_ROLE, address(protocolController))
+   - LoanEngine.revokeRole(DEFAULT_ADMIN_ROLE, deployer)
+6. Call TranchePool.setLoanEngine(address(loanEngine)) (via Timelock if transferred first)
+7. Grant operational roles (UNDERWRITER, SERVICER) via Timelock to operators
 8. Fund the TranchePool (LP deposits)
 9. Create and freeze a policy version via the timelock
 10. Activate the pool (set state to COMMITTED)
@@ -106,13 +112,11 @@ The emergency pause in `LoanEngine` is intentionally outside the timelock. If th
 
 ---
 
-## What the Timelock Does NOT Govern
+## What the Timelock Governs
 
-The `ProtocolController` only governs `CreditPolicy`. The following are **not** gated by the timelock:
+In a full production setup, the `ProtocolController` governs:
+1. **CreditPolicy**: All policy creation and freezing (`policyAdmin`)
+2. **LoanEngine**: All configuration and role assignments (`DEFAULT_ADMIN_ROLE`, `CONFIG_ADMIN_ROLE`)
+3. **TranchePool**: All pool-level configuration and state transitions (`owner`)
 
-- `LoanEngine` configuration (whitelists, max fee) — controlled by `CONFIG_ADMIN_ROLE`
-- Emergency pause/unpause — controlled by `EMERGENCY_ADMIN_ROLE`
-- TranchePool pool state transitions — controlled by the pool admin
-- LP deposits and withdrawals — open to whitelisted LPs
-
-In a more hardened production setup, all admin functions on `LoanEngine` and `TranchePool` would also pass through the timelock. The current architecture gates the most critical parameter (the credit policy governing all new loan origination) while keeping operational controls (pausing, whitelist updates) fast-response.
+Operational roles (creating loans, activating them, or processing repayments) are generally assigned to dedicated bots or servicers without a timelock to ensure fast execution, but the ProtocolController retains ultimate authority to revoke those roles if a servicer misbehaves.

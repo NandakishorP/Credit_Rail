@@ -144,16 +144,30 @@ ProtocolController(
 
 ---
 
-### Step 7: Transfer Ownership
+### Step 7: Transfer Administration to ProtocolController
 
-Transfer `policyAdmin` of `CreditPolicy` to `ProtocolController`:
+Transfer all admin rights to `ProtocolController`:
 
 ```bash
+# 1. CreditPolicy (policyAdmin)
 cast send $CREDIT_POLICY_ADDRESS "transferAdmin(address)" $PROTOCOL_CONTROLLER_ADDRESS \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+
+# 2. TranchePool (owner)
+cast send $TRANCHE_POOL_ADDRESS "transferOwnership(address)" $PROTOCOL_CONTROLLER_ADDRESS \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+
+# 3. LoanEngine (DEFAULT_ADMIN_ROLE)
+cast send $LOAN_ENGINE_ADDRESS \
+  "grantRole(bytes32,address)" \
+  $(cast keccak "DEFAULT_ADMIN_ROLE") \
+  $PROTOCOL_CONTROLLER_ADDRESS \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+
+# (Optional: revoke DEFAULT_ADMIN_ROLE from deployer)
 ```
 
-> ⚠️ This is the critical step. After this, all `CreditPolicy` changes require a timelock proposal. Do not skip this in production.
+> ⚠️ This is the critical step. After this, all core protocol changes require a timelock proposal. Do not skip this in production.
 
 ---
 

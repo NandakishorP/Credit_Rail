@@ -21,7 +21,7 @@ graph TD
         LoanEngine -->|policyScopeHash check| CreditPolicy[CreditPolicy.sol]
         LoanEngine -->|recompute loan hash| Poseidon2[Poseidon2.sol]
         LoanEngine -->|allocateCapital / onRepayment / onLoss / onRecovery| TranchePool[TranchePool.sol]
-        ProtocolController[ProtocolController.sol] -->|governs| CreditPolicy
+        ProtocolController[ProtocolController.sol] -->|governs| CreditPolicy & LoanEngine & TranchePool
         LPs([Liquidity Providers]) -->|deposit / withdraw USDC| TranchePool
         TranchePool -->|yield + principal| LPs
     end
@@ -144,7 +144,7 @@ Once frozen, a policy is permanently immutable. The `policyScopeHash` — a Pose
 ---
 
 ### `ProtocolController.sol`
-A `TimelockController` wrapper that governs `CreditPolicy`. In production, the `policyAdmin` of `CreditPolicy` is set to the `ProtocolController` address. Any policy change must be scheduled, pass a configurable delay period, and then be explicitly executed — enforcing a governance window that allows LPs to review parameter changes and exit before they take effect.
+A `TimelockController` wrapper that is the ultimate admin of the protocol. In production, the `ProtocolController` acts as the `policyAdmin` of `CreditPolicy`, the `owner` of `TranchePool`, and holds the `DEFAULT_ADMIN_ROLE` on `LoanEngine`. Any critical change — such as updating policy requirements, granting operational roles, or changing pool allocation caps — must be scheduled, pass a configurable delay period, and then be explicitly executed via this timelock. This enforces a governance window that allows LPs to review parameter changes and exit before they take effect.
 
 ---
 
@@ -169,12 +169,13 @@ Three pure math helpers used internally by `TranchePool`:
 | `EMERGENCY_ADMIN_ROLE` | Multisig | `pause()`, `unpause()` |
 
 ### `TranchePool`
+- Admin configuration is governed by `Ownable` (held by `ProtocolController` in production)
 - Only the registered `loanEngine` address can call `allocateCapital`, `onRepayment`, `onLoss`, `onRecovery`
 - Deposits restricted to whitelisted LP addresses
 
 ### `CreditPolicy`
 - Single `policyAdmin` address — creates, updates, and freezes policy versions
-- Should be set to `ProtocolController` in production
+- Held by `ProtocolController` in production
 
 ---
 
