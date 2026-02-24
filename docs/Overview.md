@@ -1,4 +1,4 @@
-
+ 
 # Institutional Private Credit Rail
 Credit Rail is an on-chain accounting and risk allocation engine for institutional private credit. It connects off-chain underwriting decisions to on-chain capital allocation, using zero-knowledge proofs to verify loan compliance without exposing any sensitive borrower data.
 

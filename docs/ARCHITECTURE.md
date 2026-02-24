@@ -1,72 +1,255 @@
 # Credit Rail Architecture
 
-Credit Rail is engineered as a permissioned, production-grade private credit protocol on Ethereum (compatible with EVM and ZKSync). It relies on zero-knowledge execution environments off-chain to certify borrower data, which is then verified against a strict underwriting formula on-chain. 
+Credit Rail is a permissioned, production-grade private credit protocol. It connects off-chain underwriting decisions to on-chain capital allocation using zero-knowledge proofs to verify loan compliance without exposing borrower data. The system is deployed on zkSync Era (EVM-compatible).
 
 ---
 
-## High-Level Topology
+## System Topology
 
 ```mermaid
-graph TD;
-    Borrower([Borrower]) -->|Provides sensitive financial data| Underwriter([Off-chain Auth Server]);
-    Underwriter -->|Calculates limits & commitments| NoirCircuit[[Noir ZK Circuit]];
-    NoirCircuit -->|Generates verifiable Proof| Relayer([Relayer / UI Client]);
-    Relayer -->|Submits tx + proof| LoanEngine[/LoanEngine.sol/];
-    LoanEngine -->|Verifies proof against public limits| LoanProofVerifier[/Noir Verifier Contract/];
-    LoanEngine -->|Checks active policy hash| CreditPolicy[/CreditPolicy.sol/];
-    LoanEngine -->|Moves funds & logs states| TranchePool[/TranchePool.sol/];
-    LPs([Liquidity Providers]) -->|Deposit USDC| TranchePool;
-    TranchePool -->|Yields/Principal| LPs;
+graph TD
+    subgraph Off-chain
+        Borrower([Borrower]) -->|Financial data| Underwriter([Underwriter])
+        Underwriter -->|Schnorr signs borrower data| FundAdmin([Fund Admin Script])
+        FundAdmin -->|Private inputs to circuit| NoirCircuit[[Noir ZK Circuit]]
+        NoirCircuit -->|UltraHonk proof| FundAdmin
+    end
+
+    subgraph On-chain
+        FundAdmin -->|createLoan + proof + 3 public inputs| LoanEngine[LoanEngine.sol]
+        LoanEngine -->|verify proof| HonkVerifier[HonkVerifier.sol]
+        LoanEngine -->|policyScopeHash check| CreditPolicy[CreditPolicy.sol]
+        LoanEngine -->|recompute loan hash| Poseidon2[Poseidon2.sol]
+        LoanEngine -->|allocateCapital / onRepayment / onLoss / onRecovery| TranchePool[TranchePool.sol]
+        ProtocolController[ProtocolController.sol] -->|governs| CreditPolicy
+        LPs([Liquidity Providers]) -->|deposit / withdraw USDC| TranchePool
+        TranchePool -->|yield + principal| LPs
+    end
 ```
 
 ---
 
-## Core Smart Contracts
+## Call Graph
 
-The entire state machine is centralized into three tightly coupled contracts. The primary system relies on role-based access control (using the OpenZeppelin `AccessControl` and `Ownable` primitives) targeting institutional setups.
+The exact sequence of on-chain calls across the full loan lifecycle:
 
-### 1. `LoanEngine.sol`
-The master orchestrator. This is the only contract that directly updates the lifecycle state of a loan and delegates accounting instructions to the capital pool.
+### Loan Creation
+```
+Fund Admin → LoanEngine.createLoan()
+    → CreditPolicy.policyScopeHash()       [verify policy hash matches proof public input]
+    → Poseidon2.hash()                     [recompute loan hash on-chain]
+    → HonkVerifier.verify()                [verify ZK proof against public inputs]
+    → [store loan struct, mark nullifier used]
+```
 
-**Loan Lifecycle State Machine:**
-1. **CREATED:** A loan is initialized by a valid `createLoan` transaction containing a ZK proof. The proof asserts the borrower meets the configured `CreditPolicy` limits (e.g., maximum term lengths, minimum collateral coverage, restricted industries). It sits in a pending state until reviewed/activated.
-2. **ACTIVE:** The `SERVICER_ROLE` approves the loan and funds are allocated from `TranchePool`. Disbursals are sent straight to off-ramping partners. The loan begins to accrue interest.
-3. **REPAID:** The borrower sends funds back. The engine registers the repayment, closing the loan account. 
-4. **DEFAULTED / WRITTEN_OFF:** If a loan is delinquent, the servicer marks it as a default. A `writeOffLoan` action officially dissolves it from the active ledger, triggering loss allocation in the `TranchePool`.
+### Loan Activation
+```
+Servicer → LoanEngine.activateLoan()
+    → TranchePool.allocateCapital()        [move funds: idle → deployed across tranches]
+    → IERC20.safeTransfer()                [send principal to whitelisted off-ramping entity]
+```
 
-### 2. `TranchePool.sol`
-Handles capital inflows, outflows, and the complex waterfall logic required in structured finance. The architecture abstracts the duplicate logic into a single `TrancheState` struct indexed to three distinct pools: `SENIOR` (index 0), `JUNIOR` (index 1), and `EQUITY` (index 2).
+### Repayment
+```
+Servicer → LoanEngine.repayLoan()
+    → LoanEngine._accrueInterest()         [lazy interest accrual up to payment timestamp]
+    → IERC20.safeTransferFrom()            [pull funds from whitelisted repayment agent]
+    → TranchePool.onRepayment()            [waterfall: interest first, then principal]
+```
 
-**Key Responsibilities:**
-- **LP Deposits & Shares:** Mints a 1:1 "share" tracking system for deposits in an `OPEN` state.
-- **Interest Waterfall:** Receives aggregated interest from the `LoanEngine`, distributing it via a *senior-first* approach. The pool tracks "target interest" vs. "accrued interest" to handle real-world scenarios where yield falls behind targets.
-- **Loss / Recovery Matrix:** Implements the mathematically critical insolvency absorption mechanism (Equity absorbs first losses, Senior restored first upon recovery).
+### Default & Write-off
+```
+Servicer → LoanEngine.declareDefault()
+    → LoanEngine._accrueInterest()         [freeze interest at default timestamp]
 
-### 3. `CreditPolicy.sol`
-A registry designed for immutable snapshots of fund criteria. The fund protocol administrator versions a policy that maps parameters like maximum concentration limits, attestation thresholds, loan tiers (amount vs. term length), and industry blacklists.
+Risk Admin → LoanEngine.writeOffLoan()
+    → TranchePool.onLoss()                 [loss waterfall: Equity → Junior → Senior]
+```
 
-*Important:* The `CreditPolicy` enforces that any newly created active policy gets mathematically hashed (`policyScopeHash`). 
+### Recovery
+```
+Risk Admin → LoanEngine.recoverLoan()
+    → IERC20.safeTransferFrom()            [pull from whitelisted recovery agent]
+    → TranchePool.onRecovery()             [restore: Senior → Junior → Equity → Equity upside]
+```
 
 ---
 
-## Zero-Knowledge Trust Boundary
+## Core Contracts
 
-The core security principle in Credit Rail revolves around the "trust boundary." 
+### `LoanEngine.sol`
+The master orchestrator. The only contract that directly manages the loan lifecycle state machine and delegates all capital accounting to `TranchePool`.
 
-Why are we using **Noir**?
-In traditional DeFi, all checks are public parameters. In a private real-world credit environment, uploading a borrower's net income and business classification violates strict data privacy laws (like GDPR) and reveals valuable proprietary business information. 
+**Loan State Machine:**
+```
+NONE → CREATED → ACTIVE → REPAID
+                   ↓
+               DEFAULTED → WRITTEN_OFF
+```
 
-1. **The Circuit Constraints:** The circuit takes the `policyScopeHash` (a public parameter on the contract) and the private borrower data.
-2. **The Verification:** The verifier contract simply checks the assertion: "A loan originating for `Principal=X` with `APR=Y` on `Date=Z` mathematically satisfies the rigid metrics defined by the on-chain `policyScopeHash`."
-3. **Immutability:** Even if the Protocol Administrator maliciously changes the `CreditPolicy` post-origination, historical proofs remain irrefutable, preventing a rug-pull on borrower agreements.
+All state transitions are strictly enforced — no skipping, no reversal. `WRITTEN_OFF` is terminal.
+
+**Interest Accrual:**
+Interest is lazy — computed on-demand at the moment of any state-changing call. No keepers or oracles required.
+
+```
+accrued += principalOutstanding × aprBps × timeElapsed / (365 days × 10,000)
+```
 
 ---
 
-## Fuzzing and Invariant Strategy
+### `TranchePool.sol`
+Manages LP capital across three tranches. All capital accounting is driven through four functions called exclusively by `LoanEngine`:
 
-Due to the extreme complexity of capital flowing backward and forward under varying yields, the protocol employs rigorous invariant testing. Standard unit tests cover state transitions, but deep economic security relies on Foundry invariants natively baked into `test/fuzz/invariant/CreditRailStateFullFuzzTest.t.sol`:
+| Function | Trigger | Effect |
+|---|---|---|
+| `allocateCapital()` | `activateLoan()` | Moves idle → deployed (default: 80% Senior / 15% Junior / 5% Equity) |
+| `onRepayment()` | `repayLoan()` | Waterfall: interest first, then principal |
+| `onLoss()` | `writeOffLoan()` | Loss absorption: Equity first, Junior second, Senior last |
+| `onRecovery()` | `recoverLoan()` | Restoration: Senior first, Junior second, Equity last (excess → Equity upside) |
 
-1. **Global Conservation Law:** Idle Capital + Deployed Capital must perfectly sum up to `TotalDeposited - TotalLosses + TotalRecovered`.
-2. **Token Solvency:** The actual unbacked USDC token balance inside the `TranchePool` must always `>= Idle Capital`.
-3. **Waterfall Symmetry:** No situation should result in a Junior LP receiving interest payments while the Senior LP is experiencing a principal shortfall or missing their target accrued yield.
-4. **No Share Inflation:** LP shares uniquely match 1:1 with deposits, meaning a user can maliciously attempt rapid deposits/withdrawals, or fractional yield claims, but cannot artificially mint a single extra share or extract unearned value.
+**Interest Waterfall:**
+Each tranche has a *target interest* (what it is owed) and *accrued interest* (what has been paid). When a repayment arrives: Senior receives interest until its target is met, then Junior, then Equity receives all remaining residual.
+
+**Loss Waterfall:**
+When a loan is written off, principal loss is absorbed from the riskiest tranche first: Equity → Junior → Senior. Ghost interest (interest accrued on a now-defaulted loan) is cancelled in the same order.
+
+**LP Share Model:**
+Deposits mint shares 1:1. Interest is tracked via a global index delta per tranche using `InterestMath.computeIndexDelta`, enabling O(1) claim calculation for any LP regardless of pool size.
+
+---
+
+### `CreditPolicy.sol`
+An immutable-by-version registry of fund risk parameters. Policies must be frozen before they can be referenced in any loan origination.
+
+**Policy Lifecycle:**
+```
+ACTIVE → FROZEN → INACTIVE
+ACTIVE → INACTIVE
+```
+
+Once frozen, a policy is permanently immutable. The `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — is computed at freeze time and stored on-chain. Every ZK proof must embed this hash as a public input, binding the proof cryptographically to an exact policy version. Even the fund administrator cannot modify the rules a loan was underwritten under.
+
+**What a Policy Contains:**
+
+| Struct | Fields |
+|---|---|
+| `EligibilityCriteria` | Min revenue, EBITDA, net worth, business age, default count, bankruptcy flag |
+| `FinancialRatios` | Max debt-to-EBITDA, min interest coverage, min current ratio, min EBITDA margin |
+| `LoanTier` | APR, origination fee, term, revenue bounds, max LTV |
+| `ConcentrationLimits` | Max single borrower %, max industry concentration % |
+| `AttestationRequirements` | Max attestation age, re-attestation frequency |
+| `MaintenanceCovenants` | Leverage ratio, coverage ratio, liquidity, reporting frequency |
+
+---
+
+### `ProtocolController.sol`
+A `TimelockController` wrapper that governs `CreditPolicy`. In production, the `policyAdmin` of `CreditPolicy` is set to the `ProtocolController` address. Any policy change must be scheduled, pass a configurable delay period, and then be explicitly executed — enforcing a governance window that allows LPs to review parameter changes and exit before they take effect.
+
+---
+
+### `InterestMath.sol` (Library)
+Three pure math helpers used internally by `TranchePool`:
+- `accrueTargetInterest()` — interest accrued over elapsed time at a given APR
+- `calculateClaimable()` — an LP's claimable interest from the global index
+- `computeIndexDelta()` — the index increment from distributing a payment across all shares
+
+---
+
+## Role Architecture
+
+### `LoanEngine` — OpenZeppelin `AccessControl`
+
+| Role | Who Holds It | What They Can Do |
+|---|---|---|
+| `UNDERWRITER_ROLE` | Fund admin | `createLoan()` — submit ZK proofs for loan origination |
+| `SERVICER_ROLE` | Servicer | `activateLoan()`, `repayLoan()`, `declareDefault()` |
+| `RISK_ADMIN_ROLE` | Risk team | `writeOffLoan()`, `declareDefault()` |
+| `CONFIG_ADMIN_ROLE` | Governance / multisig | Manage whitelists, update max origination fee |
+| `EMERGENCY_ADMIN_ROLE` | Multisig | `pause()`, `unpause()` |
+
+### `TranchePool`
+- Only the registered `loanEngine` address can call `allocateCapital`, `onRepayment`, `onLoss`, `onRecovery`
+- Deposits restricted to whitelisted LP addresses
+
+### `CreditPolicy`
+- Single `policyAdmin` address — creates, updates, and freezes policy versions
+- Should be set to `ProtocolController` in production
+
+---
+
+## Whitelist Architecture
+
+`LoanEngine` enforces four independent whitelists for distinct operational roles:
+
+| Whitelist | Checked In | Purpose |
+|---|---|---|
+| `whitelistedOffRampingEntities` | `activateLoan()` | Who can receive principal disbursals |
+| `whitelistedRepaymentAgents` | `repayLoan()` | Who can be the source of repayment funds |
+| `whitelistedRecoveryAgents` | `recoverLoan()` | Who can submit post-default recovery amounts |
+| `whitelistedFeeManagers` | `activateLoan()` | Who handles origination fee routing |
+
+Calling any function with a non-whitelisted address reverts immediately. None of these are bypassable.
+
+---
+
+## Off-chain / On-chain Boundary
+
+| Data | Location | Visible On-chain? |
+|---|---|---|
+| Raw borrower financials (revenue, EBITDA, ratios) | Off-chain only | ❌ Never |
+| Underwriter Grumpkin private key | Off-chain only | ❌ Never |
+| Schnorr signature components | Off-chain, private circuit input | ❌ Never |
+| Proof generation (Barretenberg WASM) | Off-chain, fund admin machine | ❌ Never |
+| `policy_version_hash` | Public circuit output | ✅ Yes |
+| `loan_hash` | Public circuit output | ✅ Yes |
+| `nullifierHash` | Public circuit output | ✅ Yes |
+| ZK proof bytes | Submitted in `createLoan` calldata | ✅ Yes |
+| Underwriter public key (x, y) | Submitted in `createLoan` params | ✅ Yes |
+| Loan terms (principal, APR, fee, term) | Submitted in `createLoan` params | ✅ Yes |
+
+The on-chain `LoanEngine` performs three independent verifications on every `createLoan` call. All three must pass or the transaction reverts:
+1. `policy_version_hash` in the proof matches `CreditPolicy.policyScopeHash(policyVersion)`
+2. `loan_hash` in the proof matches the Poseidon2 recomputation using the submitted loan params
+3. The proof passes `HonkVerifier.verify(proofData, publicInputs)`
+
+---
+
+## ZK Circuit Constraint Summary
+
+The Noir circuit enforces six categories of constraints off-chain before a proof is generated:
+
+| Step | What It Proves |
+|---|---|
+| 1. Borrower Commitment | `Hash(secret ‖ revenue ‖ EBITDA ‖ net_worth ‖ age)` binds private data to proof |
+| 2. Attestation Freshness | Attestation timestamp is within `policy_max_attestation_age_days` of current time |
+| 3. Underwriter Signature | Schnorr/Grumpkin signature over borrower data hash is valid against underwriter public key |
+| 4. Policy Version Integrity | 21-parameter Poseidon2 hash matches the `policy_version_hash` public input |
+| 5. Policy Compliance | All eligibility, ratio, and tier constraints are satisfied by the private borrower data |
+| 6. Nullifier Uniqueness | `Hash(loanId ‖ secret ‖ principal ‖ timestamp)` is registered on-chain to prevent replay |
+
+Industry exclusion is checked on-chain in `LoanEngine` rather than inside the circuit — because the exclusion list is dynamic and cannot be embedded in a static frozen policy hash.
+
+For full circuit internals, see [`ZK_PROOF_INTEGRATION.md`](./ZK_PROOF_INTEGRATION.md).
+
+---
+
+## Pool State Machine
+
+```
+OPEN → COMMITTED → DEPLOYED → CLOSED
+```
+
+| State | Deposits | Withdrawals | Loan Activation |
+|---|---|---|---|
+| `OPEN` | ✅ | ✅ | ❌ |
+| `COMMITTED` | ❌ | ❌ | ✅ |
+| `DEPLOYED` | ❌ | ❌ | ✅ |
+| `CLOSED` | ❌ | ✅ | ❌ |
+
+State transitions are strictly one-directional and enforced by `TranchePool`.
+
+---
+
+For invariant testing strategy, see [`Invariants.md`](./Invariants.md).
+For ZK proof generation and pipeline details, see [`ZK_PROOF_INTEGRATION.md`](./ZK_PROOF_INTEGRATION.md).
