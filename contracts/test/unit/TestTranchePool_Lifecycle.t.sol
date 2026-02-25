@@ -5,6 +5,7 @@ import {TestTranchePoolBase} from "./TestTranchePoolBase.t.sol";
 import {TranchePool, ITranchePool} from "../../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     function test_OnRepayment_PrincipalOnly_Success() public {
@@ -420,10 +421,17 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
         // Note: For unit testing we might need to simulate revenue. We'll simulate a repayment
         // when equity/junior is empty. Setting up an empty pool:
-        TranchePool emptyPool = new TranchePool(address(usdt));
+        TranchePool emptyImpl = new TranchePool();
+        ERC1967Proxy emptyProxy = new ERC1967Proxy(
+            address(emptyImpl),
+            abi.encodeCall(TranchePool.initialize, (address(usdt), deployer))
+        );
+        TranchePool emptyPool = TranchePool(address(emptyProxy));
+        vm.startPrank(deployer);
         emptyPool.setLoanEngine(loanEngine);
         emptyPool.setPoolState(ITranchePool.PoolState.COMMITED);
         emptyPool.setPoolState(ITranchePool.PoolState.DEPLOYED);
+        vm.stopPrank();
 
         uint256 simulateRevenue = 5000 * USDT;
         usdt.mint(address(emptyPool), simulateRevenue);
@@ -438,6 +446,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         // Sweep it away!
         address treasury = makeAddr("treasury");
 
+        vm.prank(deployer);
         emptyPool.sweepProtocolRevenue(treasury, simulateRevenue);
 
         assertEq(emptyPool.getProtocolRevenue(), 0);

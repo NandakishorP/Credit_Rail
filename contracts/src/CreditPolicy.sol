@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @title CreditPolicy
@@ -25,7 +27,12 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
  *      roles (POLICY_ADMIN, POLICY_EDITOR, INDUSTRY_ADMIN). In production,
  *      DEFAULT_ADMIN_ROLE should be held by a ProtocolController (timelock + multisig).
  */
-contract CreditPolicy is ICreditPolicy, AccessControl {
+contract CreditPolicy is
+    ICreditPolicy,
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable
+{
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -184,18 +191,30 @@ contract CreditPolicy is ICreditPolicy, AccessControl {
     event PolicyDeactivated(uint256 version, uint256 timestamp);
 
     /*//////////////////////////////////////////////////////////////
-                                CONSTRUCTOR
+                            INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deploy a new CreditPolicy, granting all roles to `msg.sender`.
-    /// @dev In production, DEFAULT_ADMIN_ROLE should be transferred to a
-    ///      ProtocolController (timelock + multisig).
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(POLICY_ADMIN_ROLE, msg.sender);
-        _grantRole(POLICY_EDITOR_ROLE, msg.sender);
-        _grantRole(INDUSTRY_ADMIN_ROLE, msg.sender);
+        _disableInitializers();
     }
+
+    /// @notice Initialize the CreditPolicy proxy, granting all roles to `initialAdmin`.
+    /// @dev Can only be called once (via proxy). In production, `initialAdmin`
+    ///      should be the ProtocolController (timelock + multisig).
+    /// @param initialAdmin The address to receive all admin roles.
+    function initialize(address initialAdmin) external initializer {
+        __AccessControl_init();
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(POLICY_ADMIN_ROLE, initialAdmin);
+        _grantRole(POLICY_EDITOR_ROLE, initialAdmin);
+        _grantRole(INDUSTRY_ADMIN_ROLE, initialAdmin);
+    }
+
+    /// @dev Only DEFAULT_ADMIN_ROLE can authorize upgrades.
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /*//////////////////////////////////////////////////////////////
                         POLICY CREATION
@@ -576,4 +595,11 @@ contract CreditPolicy is ICreditPolicy, AccessControl {
     ) external view returns (bool) {
         return excludedIndustries[version][industry];
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        STORAGE GAP
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Reserved storage for future upgrades.
+    uint256[50] private __gap;
 }

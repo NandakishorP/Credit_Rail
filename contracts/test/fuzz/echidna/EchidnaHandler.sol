@@ -8,6 +8,7 @@ import {ITranchePool} from "../../../src/interfaces/ITranchePool.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../../src/interfaces/ICreditPolicy.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../../mocks/MockPoseidon2.sol";
@@ -65,8 +66,16 @@ contract EchidnaHandler {
         // Deploy mock token
         usdt = new ERC20Mock();
 
-        // Deploy TranchePool
-        tranchePool = new TranchePool(address(usdt));
+        // Deploy TranchePool via proxy
+        TranchePool tpImpl = new TranchePool();
+        ERC1967Proxy tpProxy = new ERC1967Proxy(
+            address(tpImpl),
+            abi.encodeCall(
+                TranchePool.initialize,
+                (address(usdt), address(this))
+            )
+        );
+        tranchePool = TranchePool(address(tpProxy));
 
         // Configure tranches (matching Foundry)
         tranchePool.setMaxAllocationCapSeniorTranche(5_00_00_000 * USDT);
@@ -83,20 +92,35 @@ contract EchidnaHandler {
         // Deploy MockLoanProofVerifier
         verifier = new MockLoanProofVerifier();
 
-        // Deploy CreditPolicy and set it up
-        creditPolicy = new CreditPolicy();
+        // Deploy CreditPolicy via proxy
+        CreditPolicy cpImpl = new CreditPolicy();
+        ERC1967Proxy cpProxy = new ERC1967Proxy(
+            address(cpImpl),
+            abi.encodeCall(CreditPolicy.initialize, (address(this)))
+        );
+        creditPolicy = CreditPolicy(address(cpProxy));
         _setupCreditPolicy();
 
-        // Deploy LoanEngine with MockPoseidon2
+        // Deploy LoanEngine via proxy
         MockPoseidon2 mockPoseidon = new MockPoseidon2();
-        loanEngine = new LoanEngine(
-            address(creditPolicy),
-            address(verifier),
-            MAX_ORIGINATION_FEE_BPS,
-            address(tranchePool),
-            address(usdt),
-            address(mockPoseidon)
+        LoanEngine leImpl = new LoanEngine();
+        ERC1967Proxy leProxy = new ERC1967Proxy(
+            address(leImpl),
+            abi.encodeCall(
+                LoanEngine.initialize,
+                (
+                    address(creditPolicy),
+                    address(verifier),
+                    MAX_ORIGINATION_FEE_BPS,
+                    address(tranchePool),
+                    address(usdt),
+                    address(mockPoseidon),
+                    address(this)
+                )
+            )
         );
+        loanEngine = LoanEngine(address(leProxy));
+
         loanEngine.setMaxOriginationFeeBps(500);
         tranchePool.setLoanEngine(address(loanEngine));
 

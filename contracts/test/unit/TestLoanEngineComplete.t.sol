@@ -12,6 +12,7 @@ import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 import {Field} from "@poseidon2-evm/Field.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract TestLoanEngineComplete is Test {
     TranchePool tranchePool;
@@ -111,8 +112,22 @@ contract TestLoanEngineComplete is Test {
         vm.startPrank(deployer);
 
         verifier = new MockLoanProofVerifier();
-        tranchePool = new TranchePool(address(usdt));
-        creditPolicy = new CreditPolicy();
+
+        // Deploy TranchePool via proxy
+        TranchePool tpImpl = new TranchePool();
+        ERC1967Proxy tpProxy = new ERC1967Proxy(
+            address(tpImpl),
+            abi.encodeCall(TranchePool.initialize, (address(usdt), deployer))
+        );
+        tranchePool = TranchePool(address(tpProxy));
+
+        // Deploy CreditPolicy via proxy
+        CreditPolicy cpImpl = new CreditPolicy();
+        ERC1967Proxy cpProxy = new ERC1967Proxy(
+            address(cpImpl),
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
+        );
+        creditPolicy = CreditPolicy(address(cpProxy));
 
         // Setup credit policy
         creditPolicy.createPolicy(1);
@@ -136,16 +151,25 @@ contract TestLoanEngineComplete is Test {
 
         creditPolicy.freezePolicy(1);
 
-        // Setup loan engine
+        // Deploy LoanEngine via proxy
         MockPoseidon2 mockPoseidon = new MockPoseidon2();
-        loanEngine = new LoanEngine(
-            address(creditPolicy),
-            address(verifier),
-            500, // max origination fee 5%
-            address(tranchePool),
-            address(usdt),
-            address(mockPoseidon)
+        LoanEngine leImpl = new LoanEngine();
+        ERC1967Proxy leProxy = new ERC1967Proxy(
+            address(leImpl),
+            abi.encodeCall(
+                LoanEngine.initialize,
+                (
+                    address(creditPolicy),
+                    address(verifier),
+                    500, // max origination fee 5%
+                    address(tranchePool),
+                    address(usdt),
+                    address(mockPoseidon),
+                    deployer
+                )
+            )
         );
+        loanEngine = LoanEngine(address(leProxy));
 
         // Authorize underwriter
         loanEngine.setUnderwriterAuthorization(
@@ -996,7 +1020,10 @@ contract TestLoanEngineComplete is Test {
 
         ) = loanEngine.s_loans(1);
 
-        assertEq(uint256(stateBefore), uint256(ILoanEngine.LoanState.DEFAULTED));
+        assertEq(
+            uint256(stateBefore),
+            uint256(ILoanEngine.LoanState.DEFAULTED)
+        );
         assertGt(principalOutstandingBefore, 0);
         assertGt(interestAccruedBefore, 0);
 

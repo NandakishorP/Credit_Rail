@@ -10,6 +10,7 @@ import {ICreditPolicy} from "../../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../../mocks/MockPoseidon2.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {Handler} from "./Handler.t.sol";
 import {Test} from "forge-std/Test.sol";
@@ -31,7 +32,15 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         vm.deal(deployer, 100 ether);
         vm.startPrank(deployer);
         usdt = new ERC20Mock();
-        tranchePool = new TranchePool(address(usdt));
+
+        // Deploy TranchePool via proxy
+        TranchePool tpImpl = new TranchePool();
+        ERC1967Proxy tpProxy = new ERC1967Proxy(
+            address(tpImpl),
+            abi.encodeCall(TranchePool.initialize, (address(usdt), deployer))
+        );
+        tranchePool = TranchePool(address(tpProxy));
+
         tranchePool.setMaxAllocationCapSeniorTranche(5_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapJuniorTranche(3_00_00_000 * USDT);
         tranchePool.setMaxAllocationCapEquityTranche(2_00_00_000 * USDT);
@@ -43,7 +52,14 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         tranchePool.setSeniorAPR(800);
         tranchePool.setTargetJuniorAPR(1500);
 
-        creditPolicy = new CreditPolicy();
+        // Deploy CreditPolicy via proxy
+        CreditPolicy cpImpl = new CreditPolicy();
+        ERC1967Proxy cpProxy = new ERC1967Proxy(
+            address(cpImpl),
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
+        );
+        creditPolicy = CreditPolicy(address(cpProxy));
+
         creditPolicy.setMaxTiers(3);
         creditPolicy.createPolicy(1);
 
@@ -61,16 +77,27 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         creditPolicy.freezePolicy(1);
 
+        // Deploy LoanEngine via proxy
         MockLoanProofVerifier mockLoanProofVerifier = new MockLoanProofVerifier();
         MockPoseidon2 mockPoseidon = new MockPoseidon2();
-        loanEngine = new LoanEngine(
-            address(creditPolicy),
-            address(mockLoanProofVerifier),
-            maxOriginationFeeBps,
-            address(tranchePool),
-            address(usdt),
-            address(mockPoseidon)
+        LoanEngine leImpl = new LoanEngine();
+        ERC1967Proxy leProxy = new ERC1967Proxy(
+            address(leImpl),
+            abi.encodeCall(
+                LoanEngine.initialize,
+                (
+                    address(creditPolicy),
+                    address(mockLoanProofVerifier),
+                    maxOriginationFeeBps,
+                    address(tranchePool),
+                    address(usdt),
+                    address(mockPoseidon),
+                    deployer
+                )
+            )
         );
+        loanEngine = LoanEngine(address(leProxy));
+
         loanEngine.setMaxOriginationFeeBps(500);
         tranchePool.setLoanEngine(address(loanEngine));
 

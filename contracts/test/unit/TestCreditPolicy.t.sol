@@ -4,6 +4,7 @@ import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Test} from "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract TestCreditPolicy is Test {
     address deployer = makeAddr("deployer");
@@ -13,7 +14,12 @@ contract TestCreditPolicy is Test {
 
     function setUp() public {
         vm.startPrank(deployer);
-        creditPolicy = new CreditPolicy();
+        CreditPolicy impl = new CreditPolicy();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl),
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
+        );
+        creditPolicy = CreditPolicy(address(proxy));
         creditPolicy.setMaxTiers(50);
         vm.stopPrank();
     }

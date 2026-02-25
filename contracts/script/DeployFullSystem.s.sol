@@ -8,6 +8,7 @@ import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {TranchePool} from "../src/TranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title DeployFullSystem
@@ -57,30 +58,46 @@ contract DeployFullSystem is Script {
         verifier = address(_verifier);
         console2.log("3. HonkVerifier deployed at:", verifier);
 
-        // 4. Deploy CreditPolicy
-        CreditPolicy _creditPolicy = new CreditPolicy();
-        creditPolicy = address(_creditPolicy);
+        // 4. Deploy CreditPolicy via proxy
+        CreditPolicy cpImpl = new CreditPolicy();
+        ERC1967Proxy cpProxy = new ERC1967Proxy(
+            address(cpImpl),
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
+        );
+        creditPolicy = address(cpProxy);
         console2.log("4. CreditPolicy deployed at:", creditPolicy);
 
-        // 5. Deploy TranchePool
-        TranchePool _tranchePool = new TranchePool(stablecoin);
-        tranchePool = address(_tranchePool);
+        // 5. Deploy TranchePool via proxy
+        TranchePool tpImpl = new TranchePool();
+        ERC1967Proxy tpProxy = new ERC1967Proxy(
+            address(tpImpl),
+            abi.encodeCall(TranchePool.initialize, (stablecoin, deployer))
+        );
+        tranchePool = address(tpProxy);
         console2.log("5. TranchePool deployed at:", tranchePool);
 
-        // 6. Deploy LoanEngine
-        LoanEngine _loanEngine = new LoanEngine(
-            creditPolicy,
-            verifier,
-            1000, // maxOriginationFeeBps (10%)
-            tranchePool,
-            stablecoin,
-            poseidon2
+        // 6. Deploy LoanEngine via proxy
+        LoanEngine leImpl = new LoanEngine();
+        ERC1967Proxy leProxy = new ERC1967Proxy(
+            address(leImpl),
+            abi.encodeCall(
+                LoanEngine.initialize,
+                (
+                    creditPolicy,
+                    verifier,
+                    1000, // maxOriginationFeeBps (10%)
+                    tranchePool,
+                    stablecoin,
+                    poseidon2,
+                    deployer
+                )
+            )
         );
-        loanEngine = address(_loanEngine);
+        loanEngine = address(leProxy);
         console2.log("6. LoanEngine deployed at:", loanEngine);
 
         // 7. Setup: Set LoanEngine as the engine for TranchePool
-        _tranchePool.setLoanEngine(loanEngine);
+        TranchePool(tranchePool).setLoanEngine(loanEngine);
         console2.log("7. TranchePool engine set to LoanEngine");
 
         // 8. Mint some USDC for testing

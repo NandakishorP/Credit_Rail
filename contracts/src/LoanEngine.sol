@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
 import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ITranchePool} from "./interfaces/ITranchePool.sol";
 import {ILoanEngine} from "./interfaces/ILoanEngine.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TranchePool} from "./TranchePool.sol";
 import {IPoseidon2} from "./interfaces/IPoseidon2.sol";
@@ -31,7 +33,14 @@ import {Field} from "@poseidon2-evm/Field.sol";
  *        - CONFIG_ADMIN_ROLE: Can update whitelists and fee parameters
  *        - EMERGENCY_ADMIN_ROLE: Can pause/unpause the contract
  */
-contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
+contract LoanEngine is
+    Initializable,
+    AccessControlUpgradeable,
+    ReentrancyGuard,
+    PausableUpgradeable,
+    UUPSUpgradeable,
+    ILoanEngine
+{
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -93,9 +102,9 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
         }
     }
 
-    ICreditPolicy public immutable i_creditPolicy;
-    IVerifier public immutable i_loanProofVerifier;
-    ITranchePool public immutable i_tranchePool;
+    ICreditPolicy public i_creditPolicy;
+    IVerifier public i_loanProofVerifier;
+    ITranchePool public i_tranchePool;
 
     mapping(uint256 loanId => Loan) public s_loans;
     mapping(uint256 loanId => uint256) public s_originationFees;
@@ -112,10 +121,10 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     mapping(bytes32 nullifierHash => bool) public s_nullifierHashes;
     uint256 public s_nextLoanId = 1;
     uint256 public s_maxOriginationFeeBps;
-    address public immutable i_stableCoin;
+    address public i_stableCoin;
     mapping(bytes32 => bool) public authorizedUnderwriters;
     uint256 public constant PROOF_MAX_AGE = 1 hours;
-    IPoseidon2 public immutable i_poseidon2;
+    IPoseidon2 public i_poseidon2;
 
     uint256 public constant POLICY_VERSION_HASH_INDEX = 0;
     uint256 public constant LOAN_HASH_INDEX = 1;
@@ -123,32 +132,39 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     uint256 public constant TOTAL_PUBLIC_INPUTS = 3;
 
     /*//////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                            INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deploy a new LoanEngine instance.
-    /// @dev Grants all roles to `msg.sender`. In production the DEFAULT_ADMIN_ROLE
-    ///      should be transferred to a ProtocolController (timelock + multisig).
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Initialize the LoanEngine proxy.
+    /// @dev Can only be called once (via proxy). Grants all roles to `initialAdmin`.
     /// @param _creditPolicyContract Address of the deployed CreditPolicy contract.
     /// @param _loanProofVerifier    Address of the Noir UltraPlonk verifier contract.
     /// @param _maxOriginationFeeBps Global ceiling for origination fees (in basis points, max 10 000).
     /// @param _tranchePool          Address of the TranchePool that holds LP capital.
     /// @param _stableCoinAddress    Address of the stablecoin used for all settlements (e.g. USDC).
     /// @param _poseidon2            Address of the on-chain Poseidon2 hasher contract.
-    constructor(
+    /// @param _initialAdmin         Address to receive all admin roles.
+    function initialize(
         address _creditPolicyContract,
         address _loanProofVerifier,
         uint256 _maxOriginationFeeBps,
         address _tranchePool,
         address _stableCoinAddress,
-        address _poseidon2
-    ) {
+        address _poseidon2,
+        address _initialAdmin
+    ) external initializer {
         if (_creditPolicyContract == address(0))
             revert LoanEngine__ZeroAddress();
         if (_loanProofVerifier == address(0)) revert LoanEngine__ZeroAddress();
         if (_tranchePool == address(0)) revert LoanEngine__ZeroAddress();
         if (_stableCoinAddress == address(0)) revert LoanEngine__ZeroAddress();
         if (_poseidon2 == address(0)) revert LoanEngine__ZeroAddress();
+        if (_initialAdmin == address(0)) revert LoanEngine__ZeroAddress();
         if (_maxOriginationFeeBps > 10_000)
             revert LoanEngine__InvalidLoanParameters(
                 0,
@@ -157,21 +173,30 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
                 0
             );
 
+        __AccessControl_init();
+        __Pausable_init();
+
         i_creditPolicy = ICreditPolicy(_creditPolicyContract);
         i_loanProofVerifier = IVerifier(_loanProofVerifier);
         s_maxOriginationFeeBps = _maxOriginationFeeBps;
         i_tranchePool = ITranchePool(_tranchePool);
         i_stableCoin = _stableCoinAddress;
         i_poseidon2 = IPoseidon2(_poseidon2);
+        s_nextLoanId = 1; // proxy storage won't inherit declaration default
 
-        // Grant all roles to deployer initially
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(FUND_MANAGER_ROLE, msg.sender);
-        _grantRole(SERVICER_ROLE, msg.sender);
-        _grantRole(RISK_ADMIN_ROLE, msg.sender);
-        _grantRole(CONFIG_ADMIN_ROLE, msg.sender);
-        _grantRole(EMERGENCY_ADMIN_ROLE, msg.sender);
+        // Grant all roles to initialAdmin
+        _grantRole(DEFAULT_ADMIN_ROLE, _initialAdmin);
+        _grantRole(FUND_MANAGER_ROLE, _initialAdmin);
+        _grantRole(SERVICER_ROLE, _initialAdmin);
+        _grantRole(RISK_ADMIN_ROLE, _initialAdmin);
+        _grantRole(CONFIG_ADMIN_ROLE, _initialAdmin);
+        _grantRole(EMERGENCY_ADMIN_ROLE, _initialAdmin);
     }
+
+    /// @dev Only DEFAULT_ADMIN_ROLE can authorize upgrades.
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /*//////////////////////////////////////////////////////////////
                             CORE LOAN FUNCTIONS
@@ -762,4 +787,11 @@ contract LoanEngine is AccessControl, ReentrancyGuard, Pausable, ILoanEngine {
     function stableCoin() external view returns (address) {
         return i_stableCoin;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                            STORAGE GAP
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Reserved storage for future upgrades.
+    uint256[50] private __gap;
 }

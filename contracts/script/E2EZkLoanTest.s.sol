@@ -12,6 +12,7 @@ import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
 import {ICreditPolicy} from "../src/interfaces/ICreditPolicy.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title E2EZkLoanTest
@@ -64,20 +65,42 @@ contract E2EZkLoanTest is Script {
         verifier = new HonkVerifier();
         console2.log("[3/6] HonkVerifier:", address(verifier));
 
-        creditPolicy = new CreditPolicy();
+        // Deploy CreditPolicy via proxy
+        CreditPolicy cpImpl = new CreditPolicy();
+        ERC1967Proxy cpProxy = new ERC1967Proxy(
+            address(cpImpl),
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
+        );
+        creditPolicy = CreditPolicy(address(cpProxy));
         console2.log("[4/6] CreditPolicy:", address(creditPolicy));
 
-        tranchePool = new TranchePool(address(usdc));
+        // Deploy TranchePool via proxy
+        TranchePool tpImpl = new TranchePool();
+        ERC1967Proxy tpProxy = new ERC1967Proxy(
+            address(tpImpl),
+            abi.encodeCall(TranchePool.initialize, (address(usdc), deployer))
+        );
+        tranchePool = TranchePool(address(tpProxy));
         console2.log("[5/6] TranchePool:", address(tranchePool));
 
-        loanEngine = new LoanEngine(
-            address(creditPolicy),
-            address(verifier),
-            1000,
-            address(tranchePool),
-            address(usdc),
-            address(poseidon2)
+        // Deploy LoanEngine via proxy
+        LoanEngine leImpl = new LoanEngine();
+        ERC1967Proxy leProxy = new ERC1967Proxy(
+            address(leImpl),
+            abi.encodeCall(
+                LoanEngine.initialize,
+                (
+                    address(creditPolicy),
+                    address(verifier),
+                    1000,
+                    address(tranchePool),
+                    address(usdc),
+                    address(poseidon2),
+                    deployer
+                )
+            )
         );
+        loanEngine = LoanEngine(address(leProxy));
         console2.log("[6/6] LoanEngine:", address(loanEngine));
 
         // Setup pool

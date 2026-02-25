@@ -9,6 +9,7 @@ import "../src/TranchePool.sol";
 import {HonkVerifier} from "../src-zk/Verifier.sol";
 import "../test/mocks/MockPoseidon2.sol";
 import "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployAndSetup is Script {
     function run() external {
@@ -25,27 +26,46 @@ contract DeployAndSetup is Script {
         HonkVerifier verifier = new HonkVerifier();
         console.log("HonkVerifier:", address(verifier));
 
-        // 3. Deploy CreditPolicy
-        CreditPolicy policy = new CreditPolicy();
+        // 3. Deploy CreditPolicy via proxy
+        CreditPolicy cpImpl = new CreditPolicy();
+        ERC1967Proxy cpProxy = new ERC1967Proxy(
+            address(cpImpl),
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
+        );
+        CreditPolicy policy = CreditPolicy(address(cpProxy));
         console.log("CreditPolicy:", address(policy));
 
         // 4. Deploy ERC20Mock (USDC)
         ERC20Mock usdc = new ERC20Mock();
         console.log("USDC:", address(usdc));
 
-        // 5. Deploy TranchePool
-        TranchePool pool = new TranchePool(address(usdc));
+        // 5. Deploy TranchePool via proxy
+        TranchePool tpImpl = new TranchePool();
+        ERC1967Proxy tpProxy = new ERC1967Proxy(
+            address(tpImpl),
+            abi.encodeCall(TranchePool.initialize, (address(usdc), deployer))
+        );
+        TranchePool pool = TranchePool(address(tpProxy));
         console.log("TranchePool:", address(pool));
 
-        // 6. Deploy LoanEngine
-        LoanEngine engine = new LoanEngine(
-            address(policy),
-            address(verifier),
-            500, // maxOriginationFeeBps = 5%
-            address(pool),
-            address(usdc),
-            address(poseidon)
+        // 6. Deploy LoanEngine via proxy
+        LoanEngine leImpl = new LoanEngine();
+        ERC1967Proxy leProxy = new ERC1967Proxy(
+            address(leImpl),
+            abi.encodeCall(
+                LoanEngine.initialize,
+                (
+                    address(policy),
+                    address(verifier),
+                    500, // maxOriginationFeeBps = 5%
+                    address(pool),
+                    address(usdc),
+                    address(poseidon),
+                    deployer
+                )
+            )
         );
+        LoanEngine engine = LoanEngine(address(leProxy));
         console.log("LoanEngine:", address(engine));
 
         // 7. Setup Credit Policy (version 1)

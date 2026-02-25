@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {LoanEngine} from "../src/LoanEngine.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployLoanEngine is Script {
     function run() external {
@@ -16,16 +17,24 @@ contract DeployLoanEngine is Script {
 
         vm.startBroadcast();
 
-        LoanEngine engine = new LoanEngine(
-            creditPolicy,
-            verifier,
-            maxOriginationFeeBps,
-            tranchePool,
-            stableCoin,
-            poseidon2
+        LoanEngine impl = new LoanEngine();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl),
+            abi.encodeCall(
+                LoanEngine.initialize,
+                (
+                    creditPolicy,
+                    verifier,
+                    maxOriginationFeeBps,
+                    tranchePool,
+                    stableCoin,
+                    poseidon2,
+                    msg.sender
+                )
+            )
         );
 
-        console2.log("LoanEngine deployed to:", address(engine));
+        console2.log("LoanEngine deployed to:", address(proxy));
 
         vm.stopBroadcast();
     }

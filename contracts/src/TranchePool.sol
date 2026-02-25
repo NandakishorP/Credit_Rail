@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ITranchePool} from "./interfaces/ITranchePool.sol";
@@ -35,7 +37,14 @@ import {InterestMath} from "./libraries/InterestMath.sol";
  *
  *      Tranche indices:  SENIOR = 0,  JUNIOR = 1,  EQUITY = 2
  */
-contract TranchePool is ITranchePool, AccessControl, Pausable, ReentrancyGuard {
+contract TranchePool is
+    ITranchePool,
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard,
+    UUPSUpgradeable
+{
     // =========================================================================
     //                         ACCESS CONTROL ROLES
     // =========================================================================
@@ -83,7 +92,7 @@ contract TranchePool is ITranchePool, AccessControl, Pausable, ReentrancyGuard {
     mapping(address => bool) public whiteListedLps;
     mapping(address => bool) public whiteListedForEquityTranche;
 
-    address public immutable i_stableCoin;
+    address public i_stableCoin;
     address internal loanEngine;
 
     uint256 internal s_capital_allocation_factor_senior;
@@ -120,16 +129,28 @@ contract TranchePool is ITranchePool, AccessControl, Pausable, ReentrancyGuard {
     }
 
     // =========================================================================
-    //                           CONSTRUCTOR
+    //                           INITIALIZER
     // =========================================================================
 
-    /// @notice Deploy a new TranchePool.
-    /// @dev Grants all admin roles to `msg.sender`. In production, DEFAULT_ADMIN_ROLE
-    ///      should be transferred to a ProtocolController (timelock + multisig).
-    /// @param stableCoin_ Address of the ERC-20 stablecoin used for all deposits
-    ///                    and withdrawals (e.g. USDC, USDT).
-    constructor(address stableCoin_) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Initialize the TranchePool proxy.
+    /// @dev Can only be called once (via proxy). Grants all roles to `initialAdmin`.
+    /// @param stableCoin_ Address of the ERC-20 stablecoin (e.g. USDC, USDT).
+    /// @param initialAdmin The address to receive all admin roles.
+    function initialize(
+        address stableCoin_,
+        address initialAdmin
+    ) external initializer {
         if (stableCoin_ == address(0)) revert TranchePool__ZeroAddressError();
+        if (initialAdmin == address(0)) revert TranchePool__ZeroAddressError();
+
+        __AccessControl_init();
+        __Pausable_init();
+
         i_stableCoin = stableCoin_;
 
         tranches[SENIOR].interestIndex = 1e18;
@@ -137,14 +158,19 @@ contract TranchePool is ITranchePool, AccessControl, Pausable, ReentrancyGuard {
         tranches[EQUITY].interestIndex = 1e18;
         lastTrancheAccrualTimestamp = block.timestamp;
 
-        // Grant all roles to deployer initially
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(POOL_ADMIN_ROLE, msg.sender);
-        _grantRole(CONFIG_ADMIN_ROLE, msg.sender);
-        _grantRole(WHITELIST_ADMIN_ROLE, msg.sender);
-        _grantRole(EMERGENCY_ADMIN_ROLE, msg.sender);
-        _grantRole(TREASURY_ROLE, msg.sender);
+        // Grant all roles to initialAdmin
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(POOL_ADMIN_ROLE, initialAdmin);
+        _grantRole(CONFIG_ADMIN_ROLE, initialAdmin);
+        _grantRole(WHITELIST_ADMIN_ROLE, initialAdmin);
+        _grantRole(EMERGENCY_ADMIN_ROLE, initialAdmin);
+        _grantRole(TREASURY_ROLE, initialAdmin);
     }
+
+    /// @dev Only DEFAULT_ADMIN_ROLE can authorize upgrades.
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     // =========================================================================
     //                   DEPOSIT  (external thin wrappers)
@@ -1426,4 +1452,11 @@ contract TranchePool is ITranchePool, AccessControl, Pausable, ReentrancyGuard {
     function equityUserIndex(address u) external view returns (uint256) {
         return tranches[EQUITY].userIndex[u];
     }
+
+    // =========================================================================
+    //                          STORAGE GAP
+    // =========================================================================
+
+    /// @dev Reserved storage for future upgrades.
+    uint256[50] private __gap;
 }

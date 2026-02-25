@@ -7,6 +7,7 @@ import {ITranchePool} from "../../src/interfaces/ITranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {LoanEngine} from "../../src/LoanEngine.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract TestTranchePoolBase is Test {
     TranchePool tranchePool;
@@ -36,7 +37,12 @@ contract TestTranchePoolBase is Test {
     function setUp() public virtual {
         usdt = new ERC20Mock();
         vm.startPrank(deployer);
-        tranchePool = new TranchePool(address(usdt));
+        TranchePool impl = new TranchePool();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl),
+            abi.encodeCall(TranchePool.initialize, (address(usdt), deployer))
+        );
+        tranchePool = TranchePool(address(proxy));
 
         // Set max caps
         tranchePool.setMaxAllocationCapSeniorTranche(13_00_00_000 * USDT);
@@ -51,7 +57,7 @@ contract TestTranchePoolBase is Test {
         // Set allocation factors
         tranchePool.setTrancheCapitalAllocationFactorSenior(80);
         tranchePool.setTrancheCapitalAllocationFactorJunior(15);
-        
+
         tranchePool.setSeniorAPR(500);
         tranchePool.setTargetJuniorAPR(1000);
 
