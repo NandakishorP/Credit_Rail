@@ -19,7 +19,7 @@ class Address_(Library):
     """
     _abi = {b'\x99\x96\xb3\x15': {'inputs': [{'internalType': 'address', 'name': 'target', 'type': 'address'}], 'name': 'AddressEmptyCode', 'type': 'error'}}
     _storage_layout = {"storage":[]}
-    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220a84d4db2995bc67f660910f49df0411d00f4a43984ec1e1a05911ca835fb2fd864736f6c63430008210033"
+    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220d3550946b8c2ccf759e5f6fba9a392fc1347505adf12c4cd826e6d84293eb71064736f6c63430008210033"
 
     _library_id = b'\x86L9\xd6\xbc\x14\xf3\xcd\xf3\x18&\x986\xe6\xf7`\x17'
 

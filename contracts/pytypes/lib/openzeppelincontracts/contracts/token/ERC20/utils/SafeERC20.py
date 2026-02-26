@@ -19,7 +19,7 @@ class SafeERC20(Library):
     """
     _abi = {b'\xe5p\x11\x0f': {'inputs': [{'internalType': 'address', 'name': 'spender', 'type': 'address'}, {'internalType': 'uint256', 'name': 'currentAllowance', 'type': 'uint256'}, {'internalType': 'uint256', 'name': 'requestedDecrease', 'type': 'uint256'}], 'name': 'SafeERC20FailedDecreaseAllowance', 'type': 'error'}, b'Rt\xaf\xe7': {'inputs': [{'internalType': 'address', 'name': 'token', 'type': 'address'}], 'name': 'SafeERC20FailedOperation', 'type': 'error'}}
     _storage_layout = {"storage":[]}
-    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220bc7716218a5f36ccdc0da8f710c37c85ebf2c3763dfa037034f707c9f734981b64736f6c63430008210033"
+    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea26469706673582212204539393e0b9830e4cabddb5510615dc13eb607f28f45681b4861c32a05a4cbf664736f6c63430008210033"
 
     _library_id = b'ww@#\xe8P+\xd4\x18t*\xf1:\xb4\x89\xeeX'
 

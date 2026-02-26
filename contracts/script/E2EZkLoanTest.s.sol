@@ -206,8 +206,8 @@ contract E2EZkLoanTest is Script {
         (
             bytes memory proofData,
             bytes32[] memory publicInputs,
-            bytes32 policyHash,
-            bytes32 loanHash,
+            bytes32 _policyHash,
+            bytes32 _loanHash,
             bytes32 nullifierHash,
             bytes32 borrowerCommitment,
             bytes32 underwriterKeyX,

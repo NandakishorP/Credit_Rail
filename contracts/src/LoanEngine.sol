@@ -622,8 +622,8 @@ contract LoanEngine is
     }
 
     /// @dev Accrues simple interest on the loan's outstanding principal.
-    ///      Uses the provided `timestamp` to compute elapsed time, but writes
-    ///      `block.timestamp` to storage as a safety measure against backdating.
+    ///      Uses the provided `timestamp` to compute elapsed time and updates
+    ///      the storage timestamp to match the accrual cutoff.
     ///      Notifies the TranchePool of newly accrued interest via `onInterestAccrued()`.
     /// @param loanId    The loan to accrue interest for (must be ACTIVE).
     /// @param timestamp The reference timestamp for elapsed-time calculation.
@@ -637,13 +637,13 @@ contract LoanEngine is
         uint256 outstanding = loan.principalOutstanding; // SLOAD once instead of 2x
 
         if (outstanding == 0) {
-            loan.lastAccrualTimestamp = block.timestamp;
+            loan.lastAccrualTimestamp = timestamp;
             return;
         }
 
         uint256 interest = (outstanding * loan.aprBps * timeElapsed) /
             (365 days * 10_000);
-        loan.lastAccrualTimestamp = block.timestamp;
+        loan.lastAccrualTimestamp = timestamp;
         if (interest > 0) {
             loan.interestAccrued += interest;
             i_tranchePool.onInterestAccrued(interest);

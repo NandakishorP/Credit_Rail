@@ -19,7 +19,7 @@ class Errors(Library):
     """
     _abi = {b'\xd6\xbd\xa2u': {'inputs': [], 'name': 'FailedCall', 'type': 'error'}, b'\xb0n\xbf=': {'inputs': [], 'name': 'FailedDeployment', 'type': 'error'}, b'\xcfG\x91\x81': {'inputs': [{'internalType': 'uint256', 'name': 'balance', 'type': 'uint256'}, {'internalType': 'uint256', 'name': 'needed', 'type': 'uint256'}], 'name': 'InsufficientBalance', 'type': 'error'}, b'B\xb0\x1b\xce': {'inputs': [{'internalType': 'address', 'name': '', 'type': 'address'}], 'name': 'MissingPrecompile', 'type': 'error'}}
     _storage_layout = {"storage":[]}
-    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220d4e90cb8822164dc56dc89cd2b0bd61660bd989c05c3f758f174fbced543da9264736f6c63430008210033"
+    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea26469706673582212207354d916b461b77dffad62d69f69fc0491ad2e95eb273452270fa2ad1f3b7c4364736f6c63430008210033"
 
     _library_id = b"\xa0\x05\xe0\xc9'6\xe8\x87\x95\xc6\x91&%v\x06,\xa8"
 

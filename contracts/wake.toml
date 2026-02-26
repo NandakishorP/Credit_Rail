@@ -4,8 +4,11 @@
 version = "0.8.27"
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    "@poseidon2-evm/=lib/poseidon2-evm/src/",
     "forge-std/=lib/forge-std/src/"
 ]
+exclude_paths = ["src-zk/", "script/", "lib/", "node_modules/"]
 via_IR = true
 
 [compiler.solc.optimizer]

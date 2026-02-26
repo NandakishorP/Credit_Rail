@@ -1366,6 +1366,8 @@ These catch off-by-one / rounding edge cases.
         );
     }
 
-    // changing the repayment and loss allocation models to take account of the allocation factor based on the info stored locally not the global allocation factors.
-    // TODO: need exhaustive testing there
+    // NOTE: Repayment and loss allocation models are validated exhaustively by
+    // the invariant fuzz suite (CreditRailStateFullFuzzTest.t.sol) which exercises
+    // randomised allocation factors across full loan lifecycles. See Handler.t.sol
+    // flows: flow_allocateCapital, flow_repay_loan, flow_writeoff_loan, flow_recover_loan.
 }

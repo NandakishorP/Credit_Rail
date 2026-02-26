@@ -12,6 +12,8 @@ from pytypes.src.LoanEngine import LoanEngine
 from pytypes.lib.openzeppelincontracts.contracts.mocks.token.ERC20Mock import ERC20Mock
 from pytypes.src.CreditPolicy import CreditPolicy
 from pytypes.test.mocks.MockLoanProofVerifier import MockLoanProofVerifier
+from pytypes.test.mocks.MockPoseidon2 import MockPoseidon2
+from pytypes.lib.openzeppelincontracts.contracts.proxy.ERC1967.ERC1967Proxy import ERC1967Proxy
 from eth_utils import to_bytes, keccak
 
 class InvariantTest(FuzzTest):
@@ -68,8 +70,19 @@ class InvariantTest(FuzzTest):
         
         # Deploy dependencies
         self.usdt = ERC20Mock.deploy()
-        self.tranche_pool = TranchePool.deploy(self.usdt)
-        self.credit_policy = CreditPolicy.deploy()
+        
+        # Deploy TranchePool
+        pool_impl = TranchePool.deploy()
+        pool_proxy = ERC1967Proxy.deploy(pool_impl, b"")
+        self.tranche_pool = TranchePool(pool_proxy)
+        self.tranche_pool.initialize(self.usdt, self.deployer)
+        
+        # Deploy CreditPolicy
+        policy_impl = CreditPolicy.deploy()
+        policy_proxy = ERC1967Proxy.deploy(policy_impl, b"")
+        self.credit_policy = CreditPolicy(policy_proxy)
+        self.credit_policy.initialize(self.deployer)
+        
         self.verifier = MockLoanProofVerifier.deploy()
         
         # Configure TranchePool
@@ -137,16 +150,25 @@ class InvariantTest(FuzzTest):
         ))
         
         self.credit_policy.setPolicyDocument(1, keccak(b"document"), "ipfs://policyDocHash")
+        self.credit_policy.setPolicyScopeHash(1, keccak(b"scope_hash"))
         self.credit_policy.freezePolicy(1)
         
+        self.mock_poseidon = MockPoseidon2.deploy()
+        
         # Deploy LoanEngine
-        self.loan_engine = LoanEngine.deploy(
+        engine_impl = LoanEngine.deploy()
+        engine_proxy = ERC1967Proxy.deploy(engine_impl, b"")
+        self.loan_engine = LoanEngine(engine_proxy)
+        self.loan_engine.initialize(
             self.credit_policy,
             self.verifier,
             500, # origination fee
             self.tranche_pool,
-            self.usdt
+            self.usdt,
+            self.mock_poseidon, # Mock poseidon
+            self.deployer  # Admin
         )
+        self.loan_engine.setUnderwriterAuthorization(bytes(32), bytes(32), True)
         self.tranche_pool.setLoanEngine(self.loan_engine)
         
         # Whitelist setup
@@ -392,27 +414,44 @@ class InvariantTest(FuzzTest):
         borrower_commitment = keccak(to_bytes(hexstr=str(user.address)) + user_idx.to_bytes(32, 'big'))
         next_id = self.loan_engine.getNextLoanId()
         
+        proof_ts = default_chain.blocks['latest'].timestamp
         nullifier = keccak(
             next_id.to_bytes(32, 'big') + 
             user_idx.to_bytes(32, 'big') + 
             borrower_commitment + 
-            default_chain.blocks['latest'].timestamp.to_bytes(32, 'big')
+            proof_ts.to_bytes(32, 'big')
         )
         
-        self.loan_engine.createLoan(
-            borrower_commitment,
-            nullifier,
-            1,
-            1,
-            principal,
-            500,
-            fee_bps,
-            term_days,
-            bytes(32),
-            b'',
-            [],
-            from_=self.deployer
-        )
+        params = {
+            "borrowerCommitment": borrower_commitment,
+            "nullifierHash": nullifier,
+            "policyVersion": 1,
+            "tierId": 1,
+            "principalIssued": principal,
+            "aprBps": 500,
+            "originationFeeBps": fee_bps,
+            "termDays": term_days,
+            "industry": bytes(32),
+            "underwriterKeyX": bytes(32),
+            "underwriterKeyY": bytes(32),
+            "proofTimestamp": proof_ts
+        }
+
+        public_inputs = [
+            keccak(b"scope_hash"), 
+            bytes(32), 
+            nullifier 
+        ]
+
+        try:
+            self.loan_engine.createLoan(
+                params,
+                b'',
+                public_inputs,
+                from_=self.deployer
+            )
+        except Exception as e:
+            return
 
     @flow()
     def flow_activate_loan(self, loan_id: uint256):

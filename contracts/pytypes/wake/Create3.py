@@ -19,7 +19,7 @@ class Create3(Library):
     """
     _abi = {b'S\xdeT\xb9': {'inputs': [], 'name': 'ErrorCreatingContract', 'type': 'error'}, b'\xbb\xd2\xfe\x87': {'inputs': [], 'name': 'ErrorCreatingProxy', 'type': 'error'}, b'\xcdC\xef\xa1': {'inputs': [], 'name': 'TargetAlreadyExists', 'type': 'error'}}
     _storage_layout = {"storage":[]}
-    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220b7cdd5a868b1b2c7965048d0fb26cfe5c739c4e9421292ef1e9e2db877abea1e64736f6c63430008210033"
+    _creation_code = "6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea2646970667358221220f86a4ad66d7874c37ad521469e68a5d87690fc6a9d2c85530a9449f8e08ded3064736f6c63430008210033"
 
     _library_id = b'\xb8\x8c~y\x8d<p-m\r\xd7\x81\x89:\xadU^'
 
