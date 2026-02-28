@@ -2,6 +2,15 @@
 
 The `CreditPolicy` contract is an immutable-by-version registry of fund risk parameters. It defines the criteria a borrower must meet, the pricing tiers available, and the industries excluded from lending — all versioned and frozen before any loan can be originated against them.
 
+The contract is deployed behind an `ERC1967Proxy` using the UUPS (Universal Upgradeable Proxy Standard) pattern. Access control is managed via `AccessControlUpgradeable` with granular roles:
+
+| Role | Purpose |
+|---|---|
+| `DEFAULT_ADMIN_ROLE` | Manages role assignments, authorizes upgrades |
+| `POLICY_ADMIN_ROLE` | Create, freeze, and deactivate policy versions |
+| `POLICY_EDITOR_ROLE` | Update individual policy structs (eligibility, ratios, tiers, covenants, attestation) |
+| `INDUSTRY_ADMIN_ROLE` | Manage industry exclusion lists |
+
 ---
 
 ## Policy Lifecycle
@@ -148,16 +157,23 @@ Industry exclusion is **checked on-chain in `LoanEngine`**, not inside the ZK ci
 
 ---
 
-## `policyAdmin` and Production Setup
+## Role Assignment and Production Setup
 
-`CreditPolicy` has a single `policyAdmin` address that can create, configure, and freeze policy versions.
+`CreditPolicy` uses `AccessControlUpgradeable` with three granular roles (`POLICY_ADMIN_ROLE`, `POLICY_EDITOR_ROLE`, `INDUSTRY_ADMIN_ROLE`), all managed by `DEFAULT_ADMIN_ROLE`.
 
-In development, `policyAdmin` is the deployer. In production, it should be set to the `ProtocolController` address:
+In development, the deployer holds all roles. In production, `DEFAULT_ADMIN_ROLE` is transferred to the `ProtocolController` (a timelock + multisig):
 
-```bash
-creditPolicy.transferAdmin(address(protocolController));
+```solidity
+// Grant admin to ProtocolController
+creditPolicy.grantRole(DEFAULT_ADMIN_ROLE, address(protocolController));
+creditPolicy.grantRole(POLICY_ADMIN_ROLE, address(protocolController));
+// ... grant other roles ...
+
+// Deployer renounces
+creditPolicy.renounceRole(DEFAULT_ADMIN_ROLE, deployer);
+// ... renounce other roles ...
 ```
 
 This means every policy update — even creating a new version — passes through the `ProtocolController`'s timelock delay, giving LPs a window to review and exit before new risk parameters take effect.
 
-See [`protocol-controller.md`](./protocol-controller.md) for the governance setup.
+See [`protocol-controller.md`](./protocol-controller.md) for the governance setup and [`DeployWithGovernance.s.sol`](../../contracts/script/DeployWithGovernance.s.sol) for the complete deployment script.

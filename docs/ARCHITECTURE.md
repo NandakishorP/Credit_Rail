@@ -75,6 +75,19 @@ Risk Admin → LoanEngine.recoverLoan()
 
 ---
 
+## Upgradeability
+
+All three core contracts (`LoanEngine`, `TranchePool`, `CreditPolicy`) are deployed behind OpenZeppelin `ERC1967Proxy` contracts using the **UUPS (Universal Upgradeable Proxy Standard)** pattern. Each contract:
+- Inherits from `Initializable` and `UUPSUpgradeable`
+- Replaces its constructor with an `initialize()` function
+- Restricts upgrade authorization to `DEFAULT_ADMIN_ROLE` via `_authorizeUpgrade()`
+- Calls `_disableInitializers()` in the constructor to prevent direct initialization of the implementation
+- Includes a `uint256[50] private __gap` storage gap for future-proof storage layout
+
+In production, `DEFAULT_ADMIN_ROLE` is held exclusively by the `ProtocolController` (a `TimelockController`), meaning upgrades must pass through the governance timelock.
+
+---
+
 ## Core Contracts
 
 ### `LoanEngine.sol`
@@ -169,13 +182,22 @@ Three pure math helpers used internally by `TranchePool`:
 | `EMERGENCY_ADMIN_ROLE` | Multisig | `pause()`, `unpause()` |
 
 ### `TranchePool`
-- Admin configuration is governed by `Ownable` (held by `ProtocolController` in production)
+- Admin configuration is governed by `AccessControlUpgradeable` with granular roles:
+  - `POOL_ADMIN_ROLE` — pool state transitions, loan engine wiring
+  - `CONFIG_ADMIN_ROLE` — allocation factors, APR targets, tranche caps
+  - `WHITELIST_ADMIN_ROLE` — LP whitelist management
+  - `EMERGENCY_ADMIN_ROLE` — pause/unpause
+  - `TREASURY_ROLE` — sweep protocol revenue
+- `DEFAULT_ADMIN_ROLE` held by `ProtocolController` in production
 - Only the registered `loanEngine` address can call `allocateCapital`, `onRepayment`, `onLoss`, `onRecovery`
 - Deposits restricted to whitelisted LP addresses
 
 ### `CreditPolicy`
-- Single `policyAdmin` address — creates, updates, and freezes policy versions
-- Held by `ProtocolController` in production
+- Uses `AccessControlUpgradeable` with granular roles:
+  - `POLICY_ADMIN_ROLE` — create, freeze, and deactivate policy versions
+  - `POLICY_EDITOR_ROLE` — update individual policy structs (eligibility, ratios, tiers, etc.)
+  - `INDUSTRY_ADMIN_ROLE` — manage industry exclusion lists
+- `DEFAULT_ADMIN_ROLE` held by `ProtocolController` in production
 
 ---
 

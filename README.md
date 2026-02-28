@@ -1,59 +1,185 @@
 # Credit Rail
 
-**Credit Rail** is an institutional-grade, zero-knowledge powered private credit protocol. It provides a secure, fully on-chain accounting rail for managing credit funds, structured with multi-tranche capital pools (Senior, Junior, Equity) and programmatic credit policies enforced via ZK proofs.
+A fully permissioned, admin-led institutional private credit protocol. Every on-chain action is gated behind explicit roles — there are no public-facing functions. The Fund Manager generates ZK proofs off-chain using borrower financial data as private inputs, then submits them on-chain to prove policy compliance without exposing raw borrower data. Capital flows through a three-tranche structured finance pool (Senior / Junior / Equity) with waterfall interest distribution, loss absorption, and recovery mechanics enforced entirely by smart contract invariants.
 
-Built for the exact needs of real-world asset (RWA) and private credit originators, the system separates the *public* verification of loan criteria from the *private* borrower data (like PII, bank statements, and business relationships) using Noir-based zero-knowledge circuits.
+Built on Foundry + Noir, tested with four fuzz frameworks, deployed on zkSync Era.
 
-## Core Features
+---
 
-- **Privacy-Preserving Origination**: Uses ZK-SNARKs (via [Noir](https://noir-lang.org/)) to mathematically prove that a borrower meets a fund’s strict `CreditPolicy` (e.g., Debt-Service Coverage Ratio limits, excluded industries) without leaking sensitive, plaintext financials on-chain.
-- **Structured Finance Tranching**: The `TranchePool` manages LP capital in a standard structured finance methodology:
-  - **Senior Tranche**: Lowest risk, first to be paid interest, last to take losses.
-  - **Junior Tranche**: Medium level of risk and returns.
-  - **Equity Tranche**: High upside, but absorbs the first wave of defaults and losses.
-- **Immutable Credit Policies**: Underwriters construct versioned `CreditPolicy` contracts. A snapshot (hash) of this policy is baked into the Noir circuit. If the fund manager attempts to originate a loan that violates the active policy, the ZK proof simply fails.
-- **Robust Economic Engine**: A standalone Python-based economic model (`economic-modelling`) mirrors the smart contract flow. This enables 10-year Monte Carlo simulations of the exact interest math, waterfall distribution, and insolvency thresholds utilized on-chain.
+## The Hard Problems This Solves
+
+**1. On-chain privacy for institutional underwriting**
+
+Institutional borrowers cannot expose revenue, EBITDA, debt ratios, or banking relationships on a public chain. The standard solution — off-chain underwriting with on-chain IOUs — removes any trustless guarantee of policy compliance.
+
+Credit Rail solves this with a Noir ZK circuit that the Fund Manager runs off-chain. The borrower's private financial data is fed in as private inputs. The circuit proves all policy constraints are satisfied (eligibility, financial ratios, tier bounds) and outputs only three values to the chain: a policy version hash, a loan parameter hash, and a nullifier. The borrower never interacts with the chain at all.
+
+**2. Cryptographic binding of proof to policy**
+
+A proof must be tied to a *specific, immutable* version of the credit policy — otherwise an underwriter could generate a valid proof against a loose policy and then tighten the policy post-origination to mask the violation.
+
+The solution: `CreditPolicy.sol` computes a `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — at freeze time. The Noir circuit embeds this hash as a public input. `LoanEngine.createLoan()` independently recomputes the hash from on-chain state and rejects any proof where they don't match. The policy and the proof are cryptographically bound.
+
+**3. Underwriter signature scheme: Schnorr over Grumpkin**
+
+The underwriter attests to the borrower's private data with a cryptographic signature. ECDSA over secp256k1 was rejected — verifying it inside a ZK circuit requires ~250k constraints. Schnorr over Grumpkin (BN254's embedded curve) reduces this to ~25k constraints because Grumpkin arithmetic is native to the BN254 proving backend. The signature scheme: `R = s·G + e·PK`, verified via `multi_scalar_mul` as a blackbox opcode.
+
+**4. Structured finance waterfall with lazy interest accrual**
+
+Interest accrues on-demand (no keepers, no oracles). When capital is deployed, the `TranchePool` tracks per-tranche target interest using each tranche's configured APR and deployed principal. On repayment, interest flows Senior → Junior → Equity (residual). On write-off, principal loss is absorbed Equity → Junior → Senior. On recovery, shortfalls are restored Senior → Junior → Equity with any excess flowing to equity upside.
+
+LP claims use a global interest index pattern (`interestIndex += Δ / totalShares`) for O(1) per-user accounting regardless of pool size.
+
+---
+
+## Architecture
+
+```
+Off-chain                              On-chain
+─────────────────────────────────      ──────────────────────────────────────
+Borrower → Underwriter                 LoanEngine.createLoan()
+           (Schnorr sign)   →  proof      → CreditPolicy.policyScopeHash()
+           ↓                               → Poseidon2.hash() [recompute loan hash]
+           Noir Circuit                    → HonkVerifier.verify()
+           (Barretenberg)              LoanEngine.activateLoan()
+                                           → TranchePool.allocateCapital()
+                                       LoanEngine.repayLoan()
+                                           → TranchePool.onRepayment()
+                                       LoanEngine.writeOffLoan()
+                                           → TranchePool.onLoss()
+                                       LoanEngine.recoverLoan()
+                                           → TranchePool.onRecovery()
+```
+
+**Loan state machine:** `CREATED → ACTIVE → REPAID` or `ACTIVE → DEFAULTED → WRITTEN_OFF`
+
+**Pool state machine:** `OPEN → COMMITTED → DEPLOYED → CLOSED`
+
+Every function is role-gated — there are no public entry points. Role separation:
+
+| Role | Functions |
+|---|---|
+| `FUND_MANAGER_ROLE` | `createLoan()` — submits ZK proof, originates loan |
+| `SERVICER_ROLE` | `activateLoan()`, `repayLoan()`, `recoverLoan()` |
+| `RISK_ADMIN_ROLE` | `declareDefault()`, `writeOffLoan()` |
+| `CONFIG_ADMIN_ROLE` | Whitelists, fee parameters |
+| `EMERGENCY_ADMIN_ROLE` | `pause()`, `unpause()` |
+
+All contracts are UUPS upgradeable. In production, `DEFAULT_ADMIN_ROLE` is held by a `TimelockController`.
+
+---
+
+## ZK Circuit
+
+**Location:** `circuits/src/main.nr`
+
+**Proving system:** UltraHonk (Barretenberg WASM)
+
+**Public inputs (3):**
+| Input | Purpose |
+|---|---|
+| `policy_version_hash` | Binds proof to exact frozen policy version |
+| `loan_hash` | Poseidon2 hash of all loan parameters (recomputed on-chain) |
+| `nullifier_hash` | Prevents proof reuse across loans |
+
+**What the circuit proves (private inputs stay off-chain):**
+1. Borrower commitment: `Hash(secret ‖ revenue ‖ EBITDA ‖ net_worth ‖ age)` binds private data to proof
+2. Attestation freshness: timestamp within `policy_max_attestation_age_days`
+3. Underwriter Schnorr/Grumpkin signature over borrower data hash is valid
+4. Policy scope hash matches all 21 policy parameter constraints
+5. All eligibility, ratio, and tier constraints satisfied by private borrower data
+
+Industry exclusion is verified on-chain in `LoanEngine` (dynamic list, cannot be embedded in a static circuit hash).
+
+---
+
+## Testing
+
+Tested across four fuzz frameworks with 17 protocol-level invariants:
+
+| Framework | Type | Coverage |
+|---|---|---|
+| Foundry (`forge test`) | Unit + Fuzz | Full lifecycle: create, activate, repay, default, write-off, recovery |
+| Foundry Invariants | Stateful fuzz | 17 invariants, 18 handler actions |
+| Echidna | Property-based fuzz | Economic invariants (value conservation, waterfall ordering) |
+| Medusa | Stateful fuzz | Concurrent with Echidna for differential coverage |
+
+**Key invariants tested:**
+- Token balance == idle value + unclaimed interest (no value leak)
+- Sum of loan outstanding principals == pool deployed value
+- If senior shortfall > 0 → equity deployed value must be 0 (waterfall ordering)
+- Interest index is monotonically non-decreasing
+- REPAID and WRITTEN_OFF loans have zero outstanding principal and accrued interest
+
+---
 
 ## Repository Structure
 
-The repository is structured to separate concerns between business logic, zero-knowledge proving, and off-chain modeling:
+```
+credit_rail/
+├── circuits/                # Noir ZK circuit (UltraHonk, Barretenberg)
+│   └── src/main.nr          # 3000+ line circuit with full test suite
+├── contracts/               # Solidity (Foundry, zkSync-compatible)
+│   ├── src/
+│   │   ├── LoanEngine.sol       # Loan lifecycle, ZK proof verification
+│   │   ├── TranchePool.sol      # Capital pool, waterfall accounting
+│   │   ├── CreditPolicy.sol     # Versioned, immutable credit policies
+│   │   └── interfaces/          # ILoanEngine, ITranchePool, ICreditPolicy
+│   └── test/
+│       ├── unit/                # Unit tests for all contracts
+│       └── fuzz/
+│           ├── invariant/       # Foundry stateful invariant tests + Handler
+│           ├── echidna/         # Echidna configuration
+│           └── medusa/          # Medusa configuration
+├── economic-modelling/      # Python economic model + Monte Carlo simulations
+│   └── model/               # state.py, flows.py, time.py
+├── zk-scripts/              # TypeScript: proof generation, deployment, E2E tests
+└── docs/                    # Architecture, threat model, ZK integration guide
+```
 
-- `contracts/`: The Solidity smart contract suite (Foundry) governing the fund accounting and loan state machine.
-- `circuits/`: The Noir circuits for generating and verifying zero-knowledge proofs of credit policy adherence.
-- `economic-modelling/`: Python engine to test the mathematical safety of the waterfall, loss distributions, and yield targets.
-- `zk-scripts/`: TypeScript wrappers to tie the Noir circuits to the Solidity engine.
-
-## Documentation
-
-For a deeper technical understanding of the protocol internals, refer to the `docs/` folder:
-
-- [**System Architecture**](./docs/ARCHITECTURE.md): An overview of how the smart contracts interact with the ZK verifier and off-chain clients.
-- [**Economic Model**](./docs/ECONOMIC_MODEL.md): A detailed breakdown of the math governing the interest and loss waterfalls across tranches.
-- [**ZK Proof Integration**](./docs/ZK_PROOF_INTEGRATION.md): How borrower data is blinded, hashed, and verified on-chain.
+---
 
 ## Quick Start
 
-### 1. Smart Contracts
-The `contracts/` directory uses Foundry and builds for evm as well as ZKsync.
+### Smart Contracts
 ```bash
 cd contracts
 forge install
-forge build --zksync
-forge test --zksync
+forge build
+forge test
 ```
 
-### 2. ZK Proofs
-The circuits are written in Noir. Make sure you have Nargo installed.
+### ZK Circuit
 ```bash
 cd circuits
 nargo check
+nargo test       # Runs circuit unit tests
+nargo compile    # Compiles to target/circuits.json
 ```
 
-### 3. Economic Modeling
-Run the Python simulations to verify mathematical invariants.
+### Economic Model
 ```bash
 cd economic-modelling
-source venv/bin/activate
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python3 -m pytest tests/
+python3 simulate_scenario.py
 ```
+
+### End-to-End (ZK proof → on-chain loan creation)
+```bash
+# Requires: anvil-zksync running on :8546
+cd zk-scripts
+npm install
+npx tsx create_loan_simple.ts
+```
+
+---
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| [`docs/architecture.md`](./docs/architecture.md) | System topology, call graph, role architecture |
+| [`docs/ZK_PROOF_INTEGRATION.md`](./docs/ZK_PROOF_INTEGRATION.md) | Circuit internals, Poseidon2 integration, E2E pipeline |
+| [`docs/THREAT_MODEL.md`](./docs/THREAT_MODEL.md) | Trust boundaries, attack vectors, mitigations |
+| [`docs/ECONOMIC_MODEL.md`](./docs/ECONOMIC_MODEL.md) | Waterfall math, stress test results |

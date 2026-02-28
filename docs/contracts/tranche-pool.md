@@ -2,6 +2,19 @@
 
 The `TranchePool` is the capital vault of the Credit Rail protocol. It manages liquidity provider deposits, tracks capital across three risk tranches, and enforces the interest, loss, and recovery waterfalls mechanically — without administrator discretion.
 
+The contract is deployed behind an `ERC1967Proxy` using the UUPS (Universal Upgradeable Proxy Standard) pattern. Access control is managed via `AccessControlUpgradeable` with granular roles:
+
+| Role | Purpose |
+|---|---|
+| `DEFAULT_ADMIN_ROLE` | Manages role assignments, authorizes upgrades |
+| `POOL_ADMIN_ROLE` | Pool state transitions, loan engine wiring |
+| `CONFIG_ADMIN_ROLE` | Allocation factors, APR targets, tranche caps |
+| `WHITELIST_ADMIN_ROLE` | LP whitelist management |
+| `EMERGENCY_ADMIN_ROLE` | Pause/unpause |
+| `TREASURY_ROLE` | Sweep protocol revenue |
+
+In production, `DEFAULT_ADMIN_ROLE` is held by the `ProtocolController` (timelock + multisig).
+
 ---
 
 ## Tranche Structure
@@ -140,7 +153,7 @@ When interest payments arrive but the Equity tranche has zero shares outstanding
 uint256 public s_protocolRevenue;
 ```
 
-The fund administrator can sweep this to a treasury address via `sweepProtocolRevenue(address treasury)`. This ensures no yield is permanently stranded in the contract.
+A holder of the `TREASURY_ROLE` can sweep this to a treasury address via `sweepProtocolRevenue(address treasury)`. This ensures no yield is permanently stranded in the contract.
 
 ---
 

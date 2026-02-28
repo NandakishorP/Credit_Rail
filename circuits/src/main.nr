@@ -56,9 +56,9 @@ fn main(
     loanId: u64,
     // === Private Inputs (hidden from verifier) ===
     // Underwriter Schnorr signature (Grumpkin curve)
-    underwriter_sig_s_low: Field,   // s scalar low 128 bits
-    underwriter_sig_s_high: Field,  // s scalar high 128 bits
-    underwriter_sig_e: Field,       // e challenge hash
+    underwriter_sig_s_low: Field, // s scalar low 128 bits
+    underwriter_sig_s_high: Field, // s scalar high 128 bits
+    underwriter_sig_e: Field, // e challenge hash
     // Borrower secret for commitment
     borrower_secret: Field,
     // Borrower eligibility data (private - actual values)
@@ -379,9 +379,8 @@ fn verify_schnorr_signature(
     // when used with fixed_base_scalar_mul - but multi_scalar_mul needs explicit points)
     //
     // We get G by using fixed_base_scalar_mul(1):
-    let generator = std::embedded_curve_ops::fixed_base_scalar_mul(
-        EmbeddedCurveScalar { lo: 1, hi: 0 },
-    );
+    let generator =
+        std::embedded_curve_ops::fixed_base_scalar_mul(EmbeddedCurveScalar { lo: 1, hi: 0 });
 
     // multi_scalar_mul: takes [Point; N], [Scalar; N] -> Point
     let r_prime = multi_scalar_mul([generator, pk], [s_scalar, e_scalar]);
@@ -2398,6 +2397,76 @@ fn test_loan_hash_computation() {
     assert(hash != 0);
 }
 
+#[test]
+fn test_loan_hash_unique_per_apr() {
+    let commitment: Field = 123;
+    let pk_x: Field = 456;
+    let pk_y: Field = 789;
+
+    let h1 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        100000,
+        500, // APR = 5%
+        100,
+        365,
+        111,
+        1625097600,
+        1,
+    );
+    let h2 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        100000,
+        1500, // APR = 15% (Maliciously changed)
+        100,
+        365,
+        111,
+        1625097600,
+        1,
+    );
+    assert(h1 != h2, "Different APRs must produce different loan hashes");
+}
+
+#[test]
+fn test_loan_hash_unique_per_term() {
+    let commitment: Field = 123;
+    let pk_x: Field = 456;
+    let pk_y: Field = 789;
+
+    let h1 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        100000,
+        500,
+        100,
+        365, // Term = 1 Year
+        111,
+        1625097600,
+        1,
+    );
+    let h2 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        100000,
+        500,
+        100,
+        1825, // Term = 5 Years (Maliciously changed)
+        111,
+        1625097600,
+        1,
+    );
+    assert(h1 != h2, "Different terms must produce different loan hashes");
+}
+
 // ----------------------------------------------------
 // New Unit Tests for Logic Helper Functions
 // ----------------------------------------------------
@@ -2512,16 +2581,13 @@ fn test_compute_policy_hash_deterministic() {
 
 #[test]
 fn test_grumpkin_generator_coords() {
-    let g = std::embedded_curve_ops::fixed_base_scalar_mul(
-        EmbeddedCurveScalar { lo: 1, hi: 0 },
-    );
+    let g = std::embedded_curve_ops::fixed_base_scalar_mul(EmbeddedCurveScalar { lo: 1, hi: 0 });
     std::println(g.x);
     std::println(g.y);
 
     // Also test sk=42 to cross-check with TS
-    let pk42 = std::embedded_curve_ops::fixed_base_scalar_mul(
-        EmbeddedCurveScalar { lo: 42, hi: 0 },
-    );
+    let pk42 =
+        std::embedded_curve_ops::fixed_base_scalar_mul(EmbeddedCurveScalar { lo: 42, hi: 0 });
     std::println(pk42.x);
     std::println(pk42.y);
 }
@@ -2628,11 +2694,17 @@ fn test_schnorr_wrong_public_key() {
     let msg_hash: Field = 0xdeadbeef;
 
     // Wrong public key (sk=43 instead of sk=42)
-    let wrong_pk = std::embedded_curve_ops::fixed_base_scalar_mul(
-        EmbeddedCurveScalar { lo: 43, hi: 0 },
-    );
+    let wrong_pk =
+        std::embedded_curve_ops::fixed_base_scalar_mul(EmbeddedCurveScalar { lo: 43, hi: 0 });
 
-    verify_schnorr_signature(wrong_pk.x, wrong_pk.y, sig_s_low, sig_s_high, sig_e, msg_hash);
+    verify_schnorr_signature(
+        wrong_pk.x,
+        wrong_pk.y,
+        sig_s_low,
+        sig_s_high,
+        sig_e,
+        msg_hash,
+    );
 }
 
 #[test(should_fail_with = "Invalid underwriter Schnorr signature")]
@@ -2703,10 +2775,12 @@ fn test_nullifier_hash_deterministic() {
     let att_time: u64 = 1000000;
 
     let h1 = poseidon2::Poseidon2::hash(
-        [loan_id as Field, secret, principal as Field, att_time as Field], 4,
+        [loan_id as Field, secret, principal as Field, att_time as Field],
+        4,
     );
     let h2 = poseidon2::Poseidon2::hash(
-        [loan_id as Field, secret, principal as Field, att_time as Field], 4,
+        [loan_id as Field, secret, principal as Field, att_time as Field],
+        4,
     );
     assert(h1 == h2, "Nullifier hash should be deterministic");
     assert(h1 != 0, "Nullifier hash should be non-zero");
@@ -2720,10 +2794,12 @@ fn test_nullifier_hash_unique_per_loan() {
     let att_time: u64 = 1000000;
 
     let h1 = poseidon2::Poseidon2::hash(
-        [1 as Field, secret, principal as Field, att_time as Field], 4,
+        [1 as Field, secret, principal as Field, att_time as Field],
+        4,
     );
     let h2 = poseidon2::Poseidon2::hash(
-        [2 as Field, secret, principal as Field, att_time as Field], 4,
+        [2 as Field, secret, principal as Field, att_time as Field],
+        4,
     );
     assert(h1 != h2, "Different loanIds must produce different nullifiers");
 }
@@ -2736,10 +2812,12 @@ fn test_nullifier_hash_unique_per_secret() {
     let att_time: u64 = 1000000;
 
     let h1 = poseidon2::Poseidon2::hash(
-        [loan_id as Field, 0xaaaa as Field, principal as Field, att_time as Field], 4,
+        [loan_id as Field, 0xaaaa as Field, principal as Field, att_time as Field],
+        4,
     );
     let h2 = poseidon2::Poseidon2::hash(
-        [loan_id as Field, 0xbbbb as Field, principal as Field, att_time as Field], 4,
+        [loan_id as Field, 0xbbbb as Field, principal as Field, att_time as Field],
+        4,
     );
     assert(h1 != h2, "Different secrets must produce different nullifiers");
 }
@@ -2754,8 +2832,32 @@ fn test_loan_hash_unique_per_loan_id() {
     let pk_x: Field = 456;
     let pk_y: Field = 789;
 
-    let h1 = compute_loan_hash(commitment, pk_x, pk_y, 1, 100000, 500, 100, 365, 111, 1625097600, 1);
-    let h2 = compute_loan_hash(commitment, pk_x, pk_y, 1, 100000, 500, 100, 365, 111, 1625097600, 2);
+    let h1 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        100000,
+        500,
+        100,
+        365,
+        111,
+        1625097600,
+        1,
+    );
+    let h2 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        100000,
+        500,
+        100,
+        365,
+        111,
+        1625097600,
+        2,
+    );
     assert(h1 != h2, "Different loanIds must produce different loan hashes");
 }
 
@@ -2765,8 +2867,32 @@ fn test_loan_hash_unique_per_principal() {
     let pk_x: Field = 456;
     let pk_y: Field = 789;
 
-    let h1 = compute_loan_hash(commitment, pk_x, pk_y, 1, 100000, 500, 100, 365, 111, 1625097600, 1);
-    let h2 = compute_loan_hash(commitment, pk_x, pk_y, 1, 200000, 500, 100, 365, 111, 1625097600, 1);
+    let h1 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        100000,
+        500,
+        100,
+        365,
+        111,
+        1625097600,
+        1,
+    );
+    let h2 = compute_loan_hash(
+        commitment,
+        pk_x,
+        pk_y,
+        1,
+        200000,
+        500,
+        100,
+        365,
+        111,
+        1625097600,
+        1,
+    );
     assert(h1 != h2, "Different principals must produce different loan hashes");
 }
 
@@ -2774,8 +2900,32 @@ fn test_loan_hash_unique_per_principal() {
 fn test_loan_hash_unique_per_underwriter() {
     let commitment: Field = 123;
 
-    let h1 = compute_loan_hash(commitment, 456, 789, 1, 100000, 500, 100, 365, 111, 1625097600, 1);
-    let h2 = compute_loan_hash(commitment, 999, 789, 1, 100000, 500, 100, 365, 111, 1625097600, 1);
+    let h1 = compute_loan_hash(
+        commitment,
+        456,
+        789,
+        1,
+        100000,
+        500,
+        100,
+        365,
+        111,
+        1625097600,
+        1,
+    );
+    let h2 = compute_loan_hash(
+        commitment,
+        999,
+        789,
+        1,
+        100000,
+        500,
+        100,
+        365,
+        111,
+        1625097600,
+        1,
+    );
     assert(h1 != h2, "Different underwriter keys must produce different loan hashes");
 }
 
@@ -2809,7 +2959,7 @@ fn test_bankruptcy_not_excluded_allows_bankrupt_borrower() {
         1_000_000,
         1095,
         0,
-        true,  // borrower HAS bankruptcy
+        true, // borrower HAS bankruptcy
         25000,
         20000,
         15000,
@@ -2844,36 +2994,104 @@ fn test_bankruptcy_not_excluded_allows_bankrupt_borrower() {
 fn test_policy_hash_changes_with_single_param() {
     // Changing any single policy parameter must change the hash
     let base = compute_policy_hash(
-        1000000, 100000, 250000, 730, 0, true,
-        40000, 15000, 12000, 1000, 90,
-        1, 1000000, 10000000, 100000, 40000,
-        1000000000000000000, 1200, 100, 365, true,
+        1000000,
+        100000,
+        250000,
+        730,
+        0,
+        true,
+        40000,
+        15000,
+        12000,
+        1000,
+        90,
+        1,
+        1000000,
+        10000000,
+        100000,
+        40000,
+        1000000000000000000,
+        1200,
+        100,
+        365,
+        true,
     );
 
     // Change min_revenue
     let h1 = compute_policy_hash(
-        1000001, 100000, 250000, 730, 0, true,
-        40000, 15000, 12000, 1000, 90,
-        1, 1000000, 10000000, 100000, 40000,
-        1000000000000000000, 1200, 100, 365, true,
+        1000001,
+        100000,
+        250000,
+        730,
+        0,
+        true,
+        40000,
+        15000,
+        12000,
+        1000,
+        90,
+        1,
+        1000000,
+        10000000,
+        100000,
+        40000,
+        1000000000000000000,
+        1200,
+        100,
+        365,
+        true,
     );
     assert(base != h1, "Changing min_revenue must change policy hash");
 
     // Change tier_active
     let h2 = compute_policy_hash(
-        1000000, 100000, 250000, 730, 0, true,
-        40000, 15000, 12000, 1000, 90,
-        1, 1000000, 10000000, 100000, 40000,
-        1000000000000000000, 1200, 100, 365, false,
+        1000000,
+        100000,
+        250000,
+        730,
+        0,
+        true,
+        40000,
+        15000,
+        12000,
+        1000,
+        90,
+        1,
+        1000000,
+        10000000,
+        100000,
+        40000,
+        1000000000000000000,
+        1200,
+        100,
+        365,
+        false,
     );
     assert(base != h2, "Changing tier_active must change policy hash");
 
     // Change bankruptcy_excluded
     let h3 = compute_policy_hash(
-        1000000, 100000, 250000, 730, 0, false,
-        40000, 15000, 12000, 1000, 90,
-        1, 1000000, 10000000, 100000, 40000,
-        1000000000000000000, 1200, 100, 365, true,
+        1000000,
+        100000,
+        250000,
+        730,
+        0,
+        false,
+        40000,
+        15000,
+        12000,
+        1000,
+        90,
+        1,
+        1000000,
+        10000000,
+        100000,
+        40000,
+        1000000000000000000,
+        1200,
+        100,
+        365,
+        true,
     );
     assert(base != h3, "Changing bankruptcy_excluded must change policy hash");
 }
@@ -2890,58 +3108,58 @@ fn test_main_integration_happy_path() {
     main(
         // Public inputs
         13092986158241335727976825583457317324074370493817574499628845613236736334438, // policy_version_hash
-        402538460424446851722261610110794666385356654680636238801022324790394451883,   // loan_hash
+        402538460424446851722261610110794666385356654680636238801022324790394451883, // loan_hash
         17192326775865708290513230403267052356039504450017621353910650748243352732394, // nullifierHash
-        9565104342849014344519519188506829113523896995659714250752383551693562949437,  // borrower_commitment
-        7356913722468763155518092886238006860757299964193402191943647957243737021149,  // underwriter_pk_x
-        8353686781200727416994686754908207716480106082647483667993604622182232784267,  // underwriter_pk_y
-        1,       // tier_id
-        500000,  // loan_principal
-        1200,    // loan_apr_bps
-        100,     // loan_origination_fee_bps
-        365,     // loan_term_days
+        9565104342849014344519519188506829113523896995659714250752383551693562949437, // borrower_commitment
+        7356913722468763155518092886238006860757299964193402191943647957243737021149, // underwriter_pk_x
+        8353686781200727416994686754908207716480106082647483667993604622182232784267, // underwriter_pk_y
+        1, // tier_id
+        500000, // loan_principal
+        1200, // loan_apr_bps
+        100, // loan_origination_fee_bps
+        365, // loan_term_days
         19731118065711264997944706594056596257023240707061919347492376397191952734924, // industry_hash
-        100000,  // current_timestamp
-        1,       // loanId
+        100000, // current_timestamp
+        1, // loanId
         // Schnorr signature
-        172931110297095260686301740567448529116,  // sig_s_low
-        35221310651795293325313958262584868104,   // sig_s_high
+        172931110297095260686301740567448529116, // sig_s_low
+        35221310651795293325313958262584868104, // sig_s_high
         5846913548619941884626780670715341130882531025441799743459978411396200179723, // sig_e
         // Private inputs
-        123,        // borrower_secret
-        5000000,    // borrower_annual_revenue
-        750000,     // borrower_ebitda
-        1000000,    // borrower_tangible_net_worth
-        1095,       // borrower_business_age_days
-        0,          // borrower_defaults_last_36_months
-        false,      // borrower_has_bankruptcy
-        25000,      // borrower_debt_to_ebitda
-        20000,      // borrower_interest_coverage
-        15000,      // borrower_current_ratio
-        1500,       // borrower_ebitda_margin_bps
-        95000,      // attestation_timestamp
+        123, // borrower_secret
+        5000000, // borrower_annual_revenue
+        750000, // borrower_ebitda
+        1000000, // borrower_tangible_net_worth
+        1095, // borrower_business_age_days
+        0, // borrower_defaults_last_36_months
+        false, // borrower_has_bankruptcy
+        25000, // borrower_debt_to_ebitda
+        20000, // borrower_interest_coverage
+        15000, // borrower_current_ratio
+        1500, // borrower_ebitda_margin_bps
+        95000, // attestation_timestamp
         // Policy constraints
-        1000000,    // policy_min_annual_revenue
-        100000,     // policy_min_ebitda
-        250000,     // policy_min_tangible_net_worth
-        730,        // policy_min_business_age_days
-        0,          // policy_max_defaults_36_months
-        true,       // policy_bankruptcy_excluded
-        40000,      // policy_max_debt_to_ebitda
-        15000,      // policy_min_interest_coverage
-        12000,      // policy_min_current_ratio
-        1000,       // policy_min_ebitda_margin_bps
-        90,         // policy_max_attestation_age_days
+        1000000, // policy_min_annual_revenue
+        100000, // policy_min_ebitda
+        250000, // policy_min_tangible_net_worth
+        730, // policy_min_business_age_days
+        0, // policy_max_defaults_36_months
+        true, // policy_bankruptcy_excluded
+        40000, // policy_max_debt_to_ebitda
+        15000, // policy_min_interest_coverage
+        12000, // policy_min_current_ratio
+        1000, // policy_min_ebitda_margin_bps
+        90, // policy_max_attestation_age_days
         // Tier constraints
-        1000000,    // tier_min_revenue
-        10000000,   // tier_max_revenue
-        100000,     // tier_min_ebitda
-        40000,      // tier_max_debt_to_ebitda
+        1000000, // tier_min_revenue
+        10000000, // tier_max_revenue
+        100000, // tier_min_ebitda
+        40000, // tier_max_debt_to_ebitda
         1000000000000000000, // tier_max_loan_to_ebitda
-        1200,       // tier_interest_rate_bps
-        100,        // tier_origination_fee_bps
-        365,        // tier_term_days
-        true,       // tier_active
+        1200, // tier_interest_rate_bps
+        100, // tier_origination_fee_bps
+        365, // tier_term_days
+        true, // tier_active
     );
 }
 
@@ -2955,18 +3173,49 @@ fn test_main_fail_loan_hash_mismatch() {
         9565104342849014344519519188506829113523896995659714250752383551693562949437,
         7356913722468763155518092886238006860757299964193402191943647957243737021149,
         8353686781200727416994686754908207716480106082647483667993604622182232784267,
-        1, 500000, 1200, 100, 365,
+        1,
+        500000,
+        1200,
+        100,
+        365,
         19731118065711264997944706594056596257023240707061919347492376397191952734924,
-        100000, 1,
+        100000,
+        1,
         172931110297095260686301740567448529116,
         35221310651795293325313958262584868104,
         5846913548619941884626780670715341130882531025441799743459978411396200179723,
-        123, 5000000, 750000, 1000000, 1095, 0, false,
-        25000, 20000, 15000, 1500, 95000,
-        1000000, 100000, 250000, 730, 0, true,
-        40000, 15000, 12000, 1000, 90,
-        1000000, 10000000, 100000, 40000,
-        1000000000000000000, 1200, 100, 365, true,
+        123,
+        5000000,
+        750000,
+        1000000,
+        1095,
+        0,
+        false,
+        25000,
+        20000,
+        15000,
+        1500,
+        95000,
+        1000000,
+        100000,
+        250000,
+        730,
+        0,
+        true,
+        40000,
+        15000,
+        12000,
+        1000,
+        90,
+        1000000,
+        10000000,
+        100000,
+        40000,
+        1000000000000000000,
+        1200,
+        100,
+        365,
+        true,
     );
 }
 
@@ -2980,18 +3229,49 @@ fn test_main_fail_nullifier_mismatch() {
         9565104342849014344519519188506829113523896995659714250752383551693562949437,
         7356913722468763155518092886238006860757299964193402191943647957243737021149,
         8353686781200727416994686754908207716480106082647483667993604622182232784267,
-        1, 500000, 1200, 100, 365,
+        1,
+        500000,
+        1200,
+        100,
+        365,
         19731118065711264997944706594056596257023240707061919347492376397191952734924,
-        100000, 1,
+        100000,
+        1,
         172931110297095260686301740567448529116,
         35221310651795293325313958262584868104,
         5846913548619941884626780670715341130882531025441799743459978411396200179723,
-        123, 5000000, 750000, 1000000, 1095, 0, false,
-        25000, 20000, 15000, 1500, 95000,
-        1000000, 100000, 250000, 730, 0, true,
-        40000, 15000, 12000, 1000, 90,
-        1000000, 10000000, 100000, 40000,
-        1000000000000000000, 1200, 100, 365, true,
+        123,
+        5000000,
+        750000,
+        1000000,
+        1095,
+        0,
+        false,
+        25000,
+        20000,
+        15000,
+        1500,
+        95000,
+        1000000,
+        100000,
+        250000,
+        730,
+        0,
+        true,
+        40000,
+        15000,
+        12000,
+        1000,
+        90,
+        1000000,
+        10000000,
+        100000,
+        40000,
+        1000000000000000000,
+        1200,
+        100,
+        365,
+        true,
     );
 }
 
@@ -3005,17 +3285,48 @@ fn test_main_fail_policy_hash_mismatch() {
         9565104342849014344519519188506829113523896995659714250752383551693562949437,
         7356913722468763155518092886238006860757299964193402191943647957243737021149,
         8353686781200727416994686754908207716480106082647483667993604622182232784267,
-        1, 500000, 1200, 100, 365,
+        1,
+        500000,
+        1200,
+        100,
+        365,
         19731118065711264997944706594056596257023240707061919347492376397191952734924,
-        100000, 1,
+        100000,
+        1,
         172931110297095260686301740567448529116,
         35221310651795293325313958262584868104,
         5846913548619941884626780670715341130882531025441799743459978411396200179723,
-        123, 5000000, 750000, 1000000, 1095, 0, false,
-        25000, 20000, 15000, 1500, 95000,
-        1000000, 100000, 250000, 730, 0, true,
-        40000, 15000, 12000, 1000, 90,
-        1000000, 10000000, 100000, 40000,
-        1000000000000000000, 1200, 100, 365, true,
+        123,
+        5000000,
+        750000,
+        1000000,
+        1095,
+        0,
+        false,
+        25000,
+        20000,
+        15000,
+        1500,
+        95000,
+        1000000,
+        100000,
+        250000,
+        730,
+        0,
+        true,
+        40000,
+        15000,
+        12000,
+        1000,
+        90,
+        1000000,
+        10000000,
+        100000,
+        40000,
+        1000000000000000000,
+        1200,
+        100,
+        365,
+        true,
     );
 }

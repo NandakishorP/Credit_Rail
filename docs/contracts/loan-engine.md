@@ -2,6 +2,8 @@
 
 The `LoanEngine` is the canonical source of truth for all loan obligations within the Credit Rail protocol. It manages loan lifecycle state, lazy interest accrual, repayment accounting, and ZK proof verification. It does not handle LP accounting — that is delegated entirely to `TranchePool`.
 
+The contract is deployed behind an `ERC1967Proxy` using the UUPS (Universal Upgradeable Proxy Standard) pattern. Access control is managed via `AccessControlUpgradeable` with six granular roles (see [Role Architecture](#role-architecture) below).
+
 ---
 
 ## Responsibilities
@@ -101,7 +103,7 @@ s_nullifierHashes[nullifierHash] = true;
 
 ## Role Architecture
 
-`LoanEngine` uses OpenZeppelin `AccessControl` with five roles:
+`LoanEngine` uses OpenZeppelin `AccessControlUpgradeable` with five operational roles (plus `DEFAULT_ADMIN_ROLE` for upgrade authorization and role management):
 
 | Role | Who Holds It | What They Can Do |
 |---|---|---|
