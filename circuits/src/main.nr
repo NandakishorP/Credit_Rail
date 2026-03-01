@@ -2526,6 +2526,28 @@ fn test_verify_borrower_commitment_invalid() {
     verify_borrower_commitment(fake_commitment, secret, rev, ebitda, nw, age);
 }
 
+#[test(should_fail_with = "Borrower commitment mismatch")]
+fn test_verify_borrower_commitment_tampered_data() {
+    let secret = 123;
+    let rev = 100;
+    let ebitda = 50;
+    let nw = 200;
+    let age = 365;
+
+    // 1. Compute the valid commitment for the real data
+    let real_commitment = poseidon2::Poseidon2::hash(
+        [secret, rev as Field, ebitda as Field, nw as Field, age as Field],
+        5,
+    );
+
+    // 2. A malicious admin tries to reuse the real commitment
+    // but drastically inflates the borrower's revenue (from 100 to 90000) inside the circuit
+    let tampered_rev = 90000;
+
+    // 3. The circuit should catch that the data no longer matches the commitment!
+    verify_borrower_commitment(real_commitment, secret, tampered_rev, ebitda, nw, age);
+}
+
 #[test]
 fn test_compute_policy_hash_deterministic() {
     // Just verify it computes something non-zero given inputs
