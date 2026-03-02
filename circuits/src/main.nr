@@ -3352,3 +3352,13 @@ fn test_main_fail_policy_hash_mismatch() {
         true,
     );
 }
+
+#[test(should_fail_with = "Underwriter PK cannot be the zero point")]
+fn test_schnorr_zero_pk() {
+    // Attempt to verify with the identity/zero point as PK
+    let sig_s_low = 239691899743278106023958643179483275456;
+    let sig_s_high = 20285776104987388408700744573459738998;
+    let sig_e = 2263663622233631258871148244031462747863520636951402879255806273135809089081;
+
+    verify_schnorr_signature(0, 0, sig_s_low, sig_s_high, sig_e, 0xdeadbeef);
+}
