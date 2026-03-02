@@ -41,22 +41,30 @@ All transitions are strictly enforced. No reversal. No skipping. `WRITTEN_OFF` i
 
 ```solidity
 struct Loan {
-    LoanState state;
+    // Identity
+    uint256 loanId;
     bytes32 borrowerCommitment;     // Hash binding private borrower data
     uint256 policyVersion;          // Frozen policy version used at origination
     uint8 tierId;                   // Pricing tier within the policy
+    // Economics
     uint256 principalIssued;        // Original principal amount
     uint256 principalOutstanding;   // Remaining principal
     uint256 aprBps;                 // Annual interest rate in basis points
     uint256 originationFeeBps;      // One-time fee in basis points
-    uint256 termDays;               // Loan term in days
+    // Interest accounting
     uint256 interestAccrued;        // Cumulative interest not yet paid
     uint256 interestPaid;           // Total interest paid to date
     uint256 lastAccrualTimestamp;   // Timestamp of last interest accrual
+    // Timing
     uint256 startTimestamp;         // When the loan was activated
-    bytes32 nullifierHash;          // Anti-replay hash
-    bytes32 underwriterKeyX;        // Underwriter Grumpkin public key X
-    bytes32 underwriterKeyY;        // Underwriter Grumpkin public key Y
+    uint256 maturityTimestamp;      // When the loan matures
+    uint256 termDays;               // Loan term in days
+    // State
+    LoanState state;
+    uint256 totalRecovered;         // Total recovered post-default
+    // Allocation tracking
+    uint256 seniorPrincipalAllocated;  // Senior tranche contribution
+    uint256 juniorPrincipalAllocated;  // Junior tranche contribution
 }
 ```
 
@@ -107,13 +115,13 @@ s_nullifierHashes[nullifierHash] = true;
 
 | Role | Who Holds It | What They Can Do |
 |---|---|---|
-| `UNDERWRITER_ROLE` | Fund admin | `createLoan()` — submit ZK proof to originate a loan |
+| `FUND_MANAGER_ROLE` | Fund admin | `createLoan()` — submit ZK proof to originate a loan |
 | `SERVICER_ROLE` | Servicer | `activateLoan()`, `repayLoan()`, `declareDefault()` |
 | `RISK_ADMIN_ROLE` | Risk team | `writeOffLoan()`, `declareDefault()` |
 | `CONFIG_ADMIN_ROLE` | Governance / multisig | Manage whitelists, update `maxOriginationFeeBps`, set underwriter authorizations |
 | `EMERGENCY_ADMIN_ROLE` | Multisig | `pause()`, `unpause()` |
 
-> Note: `UNDERWRITER_ROLE` in the contract refers to the **fund admin** who submits the on-chain transaction. The off-chain underwriter is a separate entity whose authority is captured by the Schnorr signature verified inside the ZK circuit.
+> Note: The `FUND_MANAGER_ROLE` refers to the **fund admin** who submits the on-chain transaction. The off-chain underwriter is a separate entity whose authority is captured by the Schnorr signature verified inside the ZK circuit.
 
 ---
 

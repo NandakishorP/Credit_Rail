@@ -60,29 +60,29 @@ import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
 The `policyScopeHash` is a Poseidon hash of 21 policy parameters that creates a binding commitment to the frozen policy version:
 
 ```typescript
-// Parameters hashed (in order):
+// Parameters hashed (in order, must match circuit's compute_policy_hash):
 const policyInputs = [
-  policy.min_revenue,
+  policy.min_annual_revenue,
   policy.min_ebitda,
-  policy.min_net_worth,
-  policy.min_age,
-  policy.max_defaults,
+  policy.min_tangible_net_worth,
+  policy.min_business_age_days,
+  policy.max_defaults_36_months,
   policy.bankruptcy_excluded ? 1 : 0,
   policy.max_debt_to_ebitda,
   policy.min_interest_coverage,
   policy.min_current_ratio,
-  policy.max_leverage,
-  policy.min_margin_bps,
-  tier.min_principal,
-  tier.max_principal,
-  tier.min_apr_bps,
-  tier.max_apr_bps,
-  tier.min_term_days,
-  tier.max_term_days,
-  tier.max_fee_bps,
-  tierId,
-  policyId,
-  attestation_timestamp
+  policy.min_ebitda_margin_bps,
+  policy.max_attestation_age_days,
+  tier.id,
+  tier.min_revenue,
+  tier.max_revenue,
+  tier.min_ebitda,
+  tier.max_debt_to_ebitda,
+  tier.max_loan_to_ebitda,
+  tier.interest_rate_bps,
+  tier.origination_fee_bps,
+  tier.term_days,
+  tier.active ? 1 : 0
 ];
 ```
 
@@ -142,7 +142,7 @@ Multiple TypeScript scripts were created for testing:
 │                                                    │            │
 │  ┌─────────────┐    ┌─────────────┐    ┌──────────▼──────────┐ │
 │  │ Poseidon2   │◀───│CreditPolicy │◀───│   Loan Created      │ │
-│  │  (Hash)     │    │ (Frozen)    │    │   State: ACTIVE     │ │
+│  │  (Hash)     │    │ (Frozen)    │    │   State: CREATED    │ │
 │  └─────────────┘    └─────────────┘    └─────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```

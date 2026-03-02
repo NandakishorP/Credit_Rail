@@ -116,7 +116,11 @@ The off-chain signing in `grumpkin.ts` produces the `(s, e)` pair. The circuit r
 
 **Signature message:**
 The underwriter signs a Poseidon2 hash of 12 fields:
-- 4 eligibility values + 4 ratio values + `industry_hash` + `attestation_timestamp` + 2 additional borrower identifiers
+- 4 eligibility values (`annual_revenue`, `ebitda`, `tangible_net_worth`, `business_age_days`)
+- 4 ratio values (`defaults_last_36_months`, `has_bankruptcy`, `debt_to_ebitda`, `interest_coverage`)
+- 2 additional metrics (`current_ratio`, `ebitda_margin_bps`)
+- `industry_hash` (binding the attestation to a specific industry)
+- `attestation_timestamp` (preventing replay of stale attestations)
 
 The `borrower_secret` is deliberately **not** included in the signed message — the underwriter does not know the borrower's secret (it is the borrower's private randomness). The underwriter signs only the verifiable financial facts.
 

@@ -1,4 +1,3 @@
- 
 # Institutional Private Credit Rail
 Credit Rail is an on-chain accounting and risk allocation engine for institutional private credit. It connects off-chain underwriting decisions to on-chain capital allocation, using zero-knowledge proofs to verify loan compliance without exposing any sensitive borrower data.
 
@@ -20,7 +19,7 @@ Credit Rail solves this with three components working together:
 Each loan originates through a Noir ZK circuit. The borrower's financial data — revenue, EBITDA, debt ratios, business age — is never posted on-chain. Off-chain, an underwriter reviews the borrower's financials through traditional due diligence and cryptographically signs the data using a Schnorr signature over the Grumpkin curve (BN254 embedded curve, ~10x cheaper in constraints than secp256k1 ECDSA). The fund admin then takes this signed data, feeds it as private inputs into the Noir circuit, and generates a ZK proof using the UltraHonk proving system. The proof attests that: the borrower's data meets every threshold in the frozen credit policy, the underwriter's signature over the raw data is valid, and the loan parameters match the selected pricing tier exactly. The on-chain `LoanEngine` verifies this proof against the `HonkVerifier` contract without ever seeing the underlying borrower financials. The off-chain underwriter and the on-chain transaction submitter are intentionally separate roles — the circuit enforces that a real underwriter signed off on the data, while the fund admin is responsible for executing the on-chain commitment.
 
 **2. Immutable Credit Policy**
-The risk parameters of the fund — minimum revenue, maximum debt-to-EBITDA, allowed industries, pricing tiers — are stored in the `CreditPolicy` contract. Before a policy version can be used to originate loans, it must be frozen. Freezing computes a Poseidon2 hash of all 21 parameters, the `policyScopeHash`. This hash is embedded in every ZK proof that references that policy. There is no way to retroactively change the rules a loan was written under — not even for an admin.
+The risk parameters of the fund — minimum revenue, maximum debt-to-EBITDA, allowed industries, pricing tiers — are stored in the `CreditPolicy` contract. Before a policy version can be used to originate loans, it must be frozen. A Poseidon2 hash of all 21 parameters — the `policyScopeHash` — is computed off-chain and set on-chain before freezing. This hash is embedded in every ZK proof that references that policy. There is no way to retroactively change the rules a loan was written under — not even for an admin.
 
 **3. Tranched Capital Pool**
 Liquidity is organized into three tranches in the `TranchePool`:

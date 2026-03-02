@@ -141,7 +141,7 @@ ACTIVE → FROZEN → INACTIVE
 ACTIVE → INACTIVE
 ```
 
-Once frozen, a policy is permanently immutable. The `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — is computed at freeze time and stored on-chain. Every ZK proof must embed this hash as a public input, binding the proof cryptographically to an exact policy version. Even the fund administrator cannot modify the rules a loan was underwritten under.
+Once frozen, a policy is permanently immutable. The `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — is computed off-chain and set on-chain before freezing via `setPolicyScopeHash()`. Every ZK proof must embed this hash as a public input, binding the proof cryptographically to an exact policy version. Even the fund administrator cannot modify the rules a loan was underwritten under.
 
 **What a Policy Contains:**
 
@@ -175,7 +175,7 @@ Three pure math helpers used internally by `TranchePool`:
 
 | Role | Who Holds It | What They Can Do |
 |---|---|---|
-| `UNDERWRITER_ROLE` | Fund admin | `createLoan()` — submit ZK proofs for loan origination |
+| `FUND_MANAGER_ROLE` | Fund admin | `createLoan()` — submit ZK proofs for loan origination |
 | `SERVICER_ROLE` | Servicer | `activateLoan()`, `repayLoan()`, `declareDefault()` |
 | `RISK_ADMIN_ROLE` | Risk team | `writeOffLoan()`, `declareDefault()` |
 | `CONFIG_ADMIN_ROLE` | Governance / multisig | Manage whitelists, update max origination fee |

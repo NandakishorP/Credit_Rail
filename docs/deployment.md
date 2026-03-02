@@ -59,15 +59,15 @@ Constructor args: none. The deployer becomes `policyAdmin`.
 
 ### Step 2: Deploy `TranchePool`
 
-Constructor args:
+Initialized via proxy with:
 ```
-TranchePool(
-    address _usdcToken,         // ERC20 token address
-    uint256 _seniorAprBps,      // e.g. 800 (8% APR)
-    uint256 _juniorAprBps,      // e.g. 1200 (12% APR)
-    uint256 _equityAprBps       // e.g. 1500 (15% APR)
+TranchePool.initialize(
+    address stableCoin_,        // ERC20 token address (e.g. USDC)
+    address initialAdmin        // Receives all admin roles
 )
 ```
+
+Senior/Junior APR targets and allocation ratios are configured separately via `CONFIG_ADMIN_ROLE` setters after initialization.
 
 At this point, the pool is in `OPEN` state. No `loanEngine` is set yet — it will be set in Step 5.
 
@@ -110,14 +110,16 @@ For local anvil-zksync, deploy via `DeployFullSystem.s.sol` which handles this a
 
 ### Step 5: Deploy `LoanEngine`
 
-Constructor args:
+Initialized via proxy with:
 ```
-LoanEngine(
-    address _creditPolicy,      // CreditPolicy address from Step 1
-    address _tranchePool,       // TranchePool address from Step 2
-    address _verifier,          // HonkVerifier address from Step 3
-    address _poseidon2,         // Poseidon2 address from Step 4
-    uint256 _maxOriginationFeeBps  // e.g. 500 (5% max fee cap)
+LoanEngine.initialize(
+    address _creditPolicy,         // CreditPolicy proxy address from Step 1
+    address _loanProofVerifier,    // HonkVerifier address from Step 3
+    uint256 _maxOriginationFeeBps, // e.g. 500 (5% max fee cap)
+    address _tranchePool,          // TranchePool proxy address from Step 2
+    address _stableCoin,           // USDC token address
+    address _poseidon2,            // Poseidon2 address from Step 4
+    address _initialAdmin          // Receives all admin roles
 )
 ```
 
@@ -149,22 +151,25 @@ ProtocolController(
 Transfer all admin rights to `ProtocolController`:
 
 ```bash
-# 1. CreditPolicy (policyAdmin)
-cast send $CREDIT_POLICY_ADDRESS "transferAdmin(address)" $PROTOCOL_CONTROLLER_ADDRESS \
+# 1. CreditPolicy — transfer admin to ProtocolController
+cast send $CREDIT_POLICY_ADDRESS "changePolicyAdmin(address)" $PROTOCOL_CONTROLLER_ADDRESS \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
-# 2. TranchePool (owner)
-cast send $TRANCHE_POOL_ADDRESS "transferOwnership(address)" $PROTOCOL_CONTROLLER_ADDRESS \
+# 2. TranchePool — grant DEFAULT_ADMIN_ROLE to ProtocolController
+cast send $TRANCHE_POOL_ADDRESS \
+  "grantRole(bytes32,address)" \
+  $(cast keccak "DEFAULT_ADMIN_ROLE") \
+  $PROTOCOL_CONTROLLER_ADDRESS \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
-# 3. LoanEngine (DEFAULT_ADMIN_ROLE)
+# 3. LoanEngine — grant DEFAULT_ADMIN_ROLE to ProtocolController
 cast send $LOAN_ENGINE_ADDRESS \
   "grantRole(bytes32,address)" \
   $(cast keccak "DEFAULT_ADMIN_ROLE") \
   $PROTOCOL_CONTROLLER_ADDRESS \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
-# (Optional: revoke DEFAULT_ADMIN_ROLE from deployer)
+# (Optional: revoke DEFAULT_ADMIN_ROLE from deployer on each contract)
 ```
 
 > ⚠️ This is the critical step. After this, all core protocol changes require a timelock proposal. Do not skip this in production.
@@ -174,11 +179,11 @@ cast send $LOAN_ENGINE_ADDRESS \
 ### Step 8: Grant Roles on `LoanEngine`
 
 ```bash
-# UNDERWRITER_ROLE
+# FUND_MANAGER_ROLE
 cast send $LOAN_ENGINE_ADDRESS \
   "grantRole(bytes32,address)" \
-  $(cast keccak "UNDERWRITER_ROLE") \
-  $UNDERWRITER_ADDRESS \
+  $(cast keccak "FUND_MANAGER_ROLE") \
+  $FUND_MANAGER_ADDRESS \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
 # SERVICER_ROLE
