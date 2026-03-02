@@ -1,0 +1,118 @@
+name: Security Analysis
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # Every night at 3:00 AM UTC
+  workflow_dispatch:       # Manual trigger
+  push:
+    branches: [main]
+    paths:
+      - "contracts/src/**"
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  #  Slither — Static Analysis
+  # ──────────────────────────────────────────────────────────────
+  slither:
+    name: Slither Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install foundry-zksync
+        run: |
+          mkdir -p $HOME/.foundry/bin
+          VERSION=$(curl -sL "https://api.github.com/repos/matter-labs/foundry-zksync/releases/latest" \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          curl -L "https://github.com/matter-labs/foundry-zksync/releases/download/${VERSION}/foundry_zksync_${VERSION#foundry-zksync-}_linux_amd64.tar.gz" \
+            -o /tmp/foundry-zksync.tar.gz
+          tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
+          chmod +x $HOME/.foundry/bin/*
+          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: forge install
+
+      - name: Build
+        run: forge build --zksync
+
+      - name: Install Slither
+        run: pip3 install slither-analyzer
+
+      - name: Run Slither
+        run: |
+          slither src/ \
+            --filter-paths "test/|script/|lib/" \
+            --exclude naming-convention,solc-version,pragma \
+            --sarif results.sarif \
+          || true  # Don't fail the job, report findings
+
+      - name: Upload Slither SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: contracts/results.sarif
+        continue-on-error: true
+
+  # ──────────────────────────────────────────────────────────────
+  #  Echidna — Property-Based Fuzzing
+  # ──────────────────────────────────────────────────────────────
+  echidna:
+    name: Echidna Property Fuzzing
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install foundry-zksync
+        run: |
+          mkdir -p $HOME/.foundry/bin
+          VERSION=$(curl -sL "https://api.github.com/repos/matter-labs/foundry-zksync/releases/latest" \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          curl -L "https://github.com/matter-labs/foundry-zksync/releases/download/${VERSION}/foundry_zksync_${VERSION#foundry-zksync-}_linux_amd64.tar.gz" \
+            -o /tmp/foundry-zksync.tar.gz
+          tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
+          chmod +x $HOME/.foundry/bin/*
+          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: forge install
+
+      - name: Install Echidna
+        run: |
+          ECHIDNA_VERSION="2.2.5"
+          curl -L "https://github.com/crytic/echidna/releases/download/v${ECHIDNA_VERSION}/echidna-${ECHIDNA_VERSION}-x86_64-linux.tar.gz" \
+            -o /tmp/echidna.tar.gz
+          tar -xzf /tmp/echidna.tar.gz -C /usr/local/bin
+          chmod +x /usr/local/bin/echidna
+
+      - name: Install solc
+        run: |
+          SOLC_VERSION="0.8.24"
+          curl -L "https://github.com/ethereum/solidity/releases/download/v${SOLC_VERSION}/solc-static-linux" \
+            -o /usr/local/bin/solc
+          chmod +x /usr/local/bin/solc
+
+      - name: Run Echidna
+        run: |
+          cd test/fuzz/echidna
+          echidna EchidnaTest.sol \
+            --config echidna.yaml \
+            --contract EchidnaTest

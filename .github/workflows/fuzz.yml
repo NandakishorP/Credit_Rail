@@ -1,0 +1,52 @@
+name: Invariant Fuzzing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/src/**"
+      - "contracts/test/fuzz/**"
+  workflow_dispatch:  # Manual trigger
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  foundry-invariant:
+    name: Foundry Invariant Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install foundry-zksync
+        run: |
+          mkdir -p $HOME/.foundry/bin
+          VERSION=$(curl -sL "https://api.github.com/repos/matter-labs/foundry-zksync/releases/latest" \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          echo "Installing foundry-zksync $VERSION"
+          curl -L "https://github.com/matter-labs/foundry-zksync/releases/download/${VERSION}/foundry_zksync_${VERSION#foundry-zksync-}_linux_amd64.tar.gz" \
+            -o /tmp/foundry-zksync.tar.gz
+          tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
+          chmod +x $HOME/.foundry/bin/*
+          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: forge install
+
+      - name: Build
+        run: forge build --zksync
+
+      - name: Invariant fuzzing (5,000 runs)
+        run: |
+          forge test \
+            --match-path "test/fuzz/invariant/*.t.sol" \
+            --fuzz-runs 5000 \
+            -v

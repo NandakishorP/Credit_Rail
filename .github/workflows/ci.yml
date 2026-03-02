@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  #  Solidity: Build, Lint, Unit Tests
+  # ──────────────────────────────────────────────────────────────
+  solidity:
+    name: Solidity — Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install foundry-zksync
+        run: |
+          mkdir -p $HOME/.foundry/bin
+          VERSION=$(curl -sL "https://api.github.com/repos/matter-labs/foundry-zksync/releases/latest" \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          echo "Installing foundry-zksync $VERSION"
+          curl -L "https://github.com/matter-labs/foundry-zksync/releases/download/${VERSION}/foundry_zksync_${VERSION#foundry-zksync-}_linux_amd64.tar.gz" \
+            -o /tmp/foundry-zksync.tar.gz
+          tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
+          chmod +x $HOME/.foundry/bin/*
+          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: forge install
+
+      - name: Check formatting
+        run: forge fmt --check
+        continue-on-error: true  # Warn but don't block until team adopts fmt
+
+      - name: Build (zkSync)
+        run: forge build --zksync
+
+      - name: Unit tests
+        run: forge test --match-path "test/unit/*.t.sol" -v
+
+  # ──────────────────────────────────────────────────────────────
+  #  Noir: Compile & Circuit Unit Tests
+  # ──────────────────────────────────────────────────────────────
+  noir:
+    name: Noir — Compile & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: circuits
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Noir toolchain
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/refs/heads/main/install | bash
+          echo "$HOME/.nargo/bin" >> $GITHUB_PATH
+
+      - name: Install nargo
+        run: |
+          export PATH="$HOME/.nargo/bin:$PATH"
+          noirup
+
+      - name: Compile circuit
+        run: |
+          export PATH="$HOME/.nargo/bin:$PATH"
+          nargo compile
+
+      - name: Run circuit tests
+        run: |
+          export PATH="$HOME/.nargo/bin:$PATH"
+          nargo test
