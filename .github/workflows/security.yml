@@ -103,6 +103,9 @@ jobs:
           tar -xzf /tmp/echidna.tar.gz -C /usr/local/bin
           chmod +x /usr/local/bin/echidna
 
+      - name: Install crytic-compile
+        run: pip3 install crytic-compile
+
       - name: Install solc
         run: |
           SOLC_VERSION="0.8.30"
