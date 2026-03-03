@@ -18,7 +18,7 @@ Credit Rail solves this with a Noir ZK circuit that the Fund Manager runs off-ch
 
 A proof must be tied to a *specific, immutable* version of the credit policy — otherwise an underwriter could generate a valid proof against a loose policy and then tighten the policy post-origination to mask the violation.
 
-The solution: `CreditPolicy.sol` computes a `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — at freeze time. The Noir circuit embeds this hash as a public input. `LoanEngine.createLoan()` independently recomputes the hash from on-chain state and rejects any proof where they don't match. The policy and the proof are cryptographically bound.
+The solution: the `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — is computed off-chain and set on-chain via `setPolicyScopeHash()` before the policy is frozen. The Noir circuit embeds this hash as a public input. `LoanEngine.createLoan()` independently recomputes the loan hash from on-chain state and rejects any proof where the hashes don't match. The policy and the proof are cryptographically bound.
 
 **3. Underwriter signature scheme: Schnorr over Grumpkin**
 
@@ -161,7 +161,7 @@ nargo compile    # Compiles to target/circuits.json
 ```bash
 cd economic-modelling
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install numpy matplotlib
 python3 simulate_scenario.py
 ```
 
@@ -179,7 +179,16 @@ npx tsx create_loan_simple.ts
 
 | Doc | Contents |
 |---|---|
+| [`docs/overview.md`](./docs/overview.md) | High-level introduction, core components, tech stack |
 | [`docs/architecture.md`](./docs/architecture.md) | System topology, call graph, role architecture |
-| [`docs/ZK_PROOF_INTEGRATION.md`](./docs/ZK_PROOF_INTEGRATION.md) | Circuit internals, Poseidon2 integration, E2E pipeline |
+| [`docs/circuits/circuit-design.md`](./docs/circuits/circuit-design.md) | ZK circuit internals, constraint taxonomy, Schnorr scheme |
+| [`docs/ZK_PROOF_INTEGRATION.md`](./docs/ZK_PROOF_INTEGRATION.md) | E2E proof pipeline, Poseidon2 integration, deployment |
+| [`docs/contracts/`](./docs/contracts/) | Per-contract deep dives (LoanEngine, TranchePool, CreditPolicy, ProtocolController, InterestMath) |
+| [`docs/ECONOMIC_MODEL.md`](./docs/ECONOMIC_MODEL.md) | Waterfall math, interest accrual, stress test results |
+| [`docs/testing.md`](./docs/testing.md) | Testing pyramid, all frameworks, invariant list, CI pipeline |
+| [`docs/deployment.md`](./docs/deployment.md) | Step-by-step deployment guide, environment variables |
 | [`docs/THREAT_MODEL.md`](./docs/THREAT_MODEL.md) | Trust boundaries, attack vectors, mitigations |
-| [`docs/ECONOMIC_MODEL.md`](./docs/ECONOMIC_MODEL.md) | Waterfall math, stress test results |
+| [`docs/security/`](./docs/security/) | ZK circuit review, trust assumptions, invariant definitions |
+| [`docs/DESIGN_TRADEOFFS.md`](./docs/DESIGN_TRADEOFFS.md) | 10 major architectural trade-offs with rationale |
+| [`docs/V2_PROPOSAL.md`](./docs/V2_PROPOSAL.md) | V2 roadmap with code-level specs and migration strategy |
+| [`docs/glossary.md`](./docs/glossary.md) | Term definitions for all stakeholders |
