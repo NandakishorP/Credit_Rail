@@ -14,7 +14,7 @@ cryticArgs:
   - "--compile-force-framework"
   - "solc"
   - "--solc-remaps"
-  - "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/ erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/ forge-std/=lib/forge-std/src/ halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/ openzeppelin-contracts/=lib/openzeppelin-contracts/ src/interfaces/ICreditPolicy.sol:../CreditPolicy.sol=test/fuzz/echidna/patched_src/CreditPolicy.sol test/fuzz/echidna/EchidnaHandler.sol:../../../src/CreditPolicy.sol=test/fuzz/echidna/patched_src/CreditPolicy.sol"
+  - "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/ @openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/ @poseidon2-evm/=lib/poseidon2-evm/src/ erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/ forge-std/=lib/forge-std/src/ halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/ openzeppelin-contracts/=lib/openzeppelin-contracts/"
 
 # The test contract directly deploys everything, so deployer doesn't matter
 deployer: "0x1000000000000000000000000000000000000001"
