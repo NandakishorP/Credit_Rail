@@ -157,7 +157,7 @@ contract DeployAndSetup is Script {
         usdc.approve(address(pool), 10_000_000e18);
         usdc.transfer(address(pool), 5_000_000e18);
 
-        pool.setPoolState(ITranchePool.PoolState.COMMITED);
+        pool.setPoolState(ITranchePool.PoolState.COMMITTED);
         console.log("Pool committed with capital");
 
         vm.stopBroadcast();

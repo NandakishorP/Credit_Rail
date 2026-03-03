@@ -280,7 +280,7 @@ contract MedusaTest {
             tranchePool.getPoolState() == ITranchePool.PoolState.OPEN &&
             tranchePool.getTotalIdleValue() > 0
         ) {
-            tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+            tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
             totalDeposited = tranchePool.getTotalIdleValue();
         }
     }
@@ -292,7 +292,7 @@ contract MedusaTest {
         uint256 userIndex
     ) external {
         if (
-            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITTED &&
             tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED
         ) return;
 
@@ -383,7 +383,7 @@ contract MedusaTest {
         if (loan.state != ILoanEngine.LoanState.CREATED) return;
 
         if (
-            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITTED &&
             tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED
         ) return;
 

@@ -144,9 +144,9 @@ contract CreateLoanWithProof is Script {
         console2.log("  Current pool state:", uint256(currentState));
 
         if (currentState == ITranchePool.PoolState.OPEN) {
-            // Need to transition to COMMITED for loan origination
+            // Need to transition to COMMITTED for loan origination
             console2.log(
-                "  Pool in OPEN state - transition to COMMITED for loan origination"
+                "  Pool in OPEN state - transition to COMMITTED for loan origination"
             );
         }
 

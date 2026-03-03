@@ -325,7 +325,7 @@ contract EchidnaHandler {
         if (tranchePool.getPoolState() != ITranchePool.PoolState.OPEN) return;
         if (tranchePool.getTotalIdleValue() == 0) return;
 
-        try tranchePool.setPoolState(ITranchePool.PoolState.COMMITED) {
+        try tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED) {
             totalDeposited = tranchePool.getTotalIdleValue();
         } catch {}
     }
@@ -349,7 +349,7 @@ contract EchidnaHandler {
     ) public {
         ITranchePool.PoolState state = tranchePool.getPoolState();
         if (
-            state != ITranchePool.PoolState.COMMITED &&
+            state != ITranchePool.PoolState.COMMITTED &&
             state != ITranchePool.PoolState.DEPLOYED
         ) return;
 
@@ -431,7 +431,7 @@ contract EchidnaHandler {
 
         ITranchePool.PoolState poolState = tranchePool.getPoolState();
         if (
-            poolState != ITranchePool.PoolState.COMMITED &&
+            poolState != ITranchePool.PoolState.COMMITTED &&
             poolState != ITranchePool.PoolState.DEPLOYED
         ) return;
 

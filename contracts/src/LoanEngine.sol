@@ -228,7 +228,7 @@ contract LoanEngine is
         ITranchePool.PoolState poolState = i_tranchePool.getPoolState();
         if (
             poolState != ITranchePool.PoolState.DEPLOYED &&
-            poolState != ITranchePool.PoolState.COMMITED
+            poolState != ITranchePool.PoolState.COMMITTED
         ) {
             revert LoanEngine__PoolNotDeployed();
         }

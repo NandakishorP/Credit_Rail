@@ -369,8 +369,8 @@ contract TranchePool is
         address deployer,
         address feeManager
     ) external onlyLoanEngine(msg.sender) returns (uint256, uint256, uint256) {
-        if (poolState != PoolState.COMMITED && poolState != PoolState.DEPLOYED)
-            revert TranchePool__PoolIsNotCommited();
+        if (poolState != PoolState.COMMITTED && poolState != PoolState.DEPLOYED)
+            revert TranchePool__PoolIsNotCommitted();
 
         uint256 totalAmount = totalDisbursement + fees;
 
@@ -430,7 +430,7 @@ contract TranchePool is
         }
         if (remaining > 0) revert TranchePool__InsufficientLiquidity();
 
-        if (poolState == PoolState.COMMITED) {
+        if (poolState == PoolState.COMMITTED) {
             poolState = PoolState.DEPLOYED;
             emit PoolStateUpdated(PoolState.DEPLOYED);
         }

@@ -147,9 +147,9 @@ echo "   Deposited 500K USDC to Junior Tranche"
 cast send "$POOL" "depositEquityTranche(uint256)" "250000000000000000000000" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
 echo "   Deposited 250K USDC to Equity Tranche"
 
-# Set pool state to COMMITED
+# Set pool state to COMMITTED
 cast send "$POOL" "setPoolState(uint8)" 1 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null
-echo "   Set pool state to COMMITED"
+echo "   Set pool state to COMMITTED"
 
 # Set pool state to DEPLOYED
 cast send "$POOL" "setPoolState(uint8)" 2 --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" > /dev/null

@@ -4,7 +4,7 @@
  * Prerequisites:
  * - All contracts deployed to anvil-zksync
  * - CreditPolicy v1 frozen
- * - TranchePool in COMMITED state with funds
+ * - TranchePool in COMMITTED state with funds
  * 
  * Run the full_deploy.sh script first to set up everything.
  */

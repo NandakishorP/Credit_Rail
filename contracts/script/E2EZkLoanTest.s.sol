@@ -186,7 +186,7 @@ contract E2EZkLoanTest is Script {
         console2.log("      Policy created and frozen");
 
         // Transition pool to DEPLOYED state
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
         tranchePool.setPoolState(ITranchePool.PoolState.DEPLOYED);
         console2.log("      TranchePool transitioned to DEPLOYED");
 

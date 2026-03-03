@@ -9,7 +9,7 @@ import {VmSafe} from "forge-std/Vm.sol";
 contract TestTranchePool_Deposits is TestTranchePoolBase {
     function testDepositSeniorTrancheRevertsIfPoolIsNotOpen() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
         vm.startPrank(seniorUser1);
         ERC20Mock(usdt).approve(address(tranchePool), 10_00_000 * USDT);
         vm.expectRevert(ITranchePool.TranchePool__PoolIsNotOpen.selector);
@@ -264,7 +264,7 @@ contract TestTranchePool_Deposits is TestTranchePoolBase {
 
     function testDepositJuniorTrancheRevertIfNotOpen() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
         vm.startPrank(juniorUser1);
         ERC20Mock(usdt).approve(address(tranchePool), 10_00_000 * USDT);
         vm.expectRevert(ITranchePool.TranchePool__PoolIsNotOpen.selector);
@@ -518,7 +518,7 @@ contract TestTranchePool_Deposits is TestTranchePoolBase {
     // equity tranche deposit tests
     function testDepositEquityTrancheRevertIfNotOpen() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
         vm.startPrank(equityUser1);
         ERC20Mock(usdt).approve(address(tranchePool), 10_00_000 * USDT);
         vm.expectRevert(ITranchePool.TranchePool__PoolIsNotOpen.selector);

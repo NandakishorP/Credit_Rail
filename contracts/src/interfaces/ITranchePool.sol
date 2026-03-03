@@ -19,7 +19,7 @@ interface ITranchePool {
     error TranchePool__WithdrawNotAllowed(PoolState state);
     error TranchePool__ZeroValueError();
     error TranchePool__MaxDepositCapExceeded(uint256 maxCap, uint256 amount);
-    error TranchePool__PoolIsNotCommited();
+    error TranchePool__PoolIsNotCommitted();
     error TranchePool__PrincipalRepaymentExceeded();
     error TranchePool__ZeroAddressError();
     error TranchePool__DeployedCapitalExists();
@@ -102,7 +102,7 @@ interface ITranchePool {
 
     enum PoolState {
         OPEN, // deposits allowed
-        COMMITED,
+        COMMITTED,
         DEPLOYED, // capital deployed, deposits paused
         CLOSED // withdrawals only
     }

@@ -111,7 +111,7 @@ contract TestTranchePoolBase is Test {
 
     function _allocateCapital() internal {
         vm.prank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
 
         uint256 totalDisbursement = 1_00_00_000 * USDT;
         uint256 fees = 10_000 * USDT;

@@ -257,7 +257,7 @@ contract Handler is Test {
             tranchePool.getTotalIdleValue() > 0
         ) {
             vm.prank(deployer);
-            tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+            tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
             totalDeposited = tranchePool.getTotalIdleValue();
         }
     }
@@ -269,7 +269,7 @@ contract Handler is Test {
         uint256 userIndex
     ) public {
         if (
-            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITTED &&
             tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED
         ) {
             return;
@@ -398,7 +398,7 @@ contract Handler is Test {
             return;
         }
         if (
-            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITED &&
+            tranchePool.getPoolState() != ITranchePool.PoolState.COMMITTED &&
             tranchePool.getPoolState() != ITranchePool.PoolState.DEPLOYED
         ) {
             return;

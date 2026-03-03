@@ -51,13 +51,13 @@ contract TestTranchePool_Withdrawals is TestTranchePoolBase {
         vm.stopPrank();
 
         vm.prank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
 
         vm.prank(seniorUser1);
         vm.expectRevert(
             abi.encodeWithSelector(
                 ITranchePool.TranchePool__WithdrawNotAllowed.selector,
-                ITranchePool.PoolState.COMMITED
+                ITranchePool.PoolState.COMMITTED
             )
         );
         tranchePool.withdrawSeniorTranche(1_00_000 * USDT);

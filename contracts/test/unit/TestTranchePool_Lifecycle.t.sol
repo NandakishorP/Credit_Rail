@@ -264,19 +264,19 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
                         POOL STATE TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_SetPoolState_ToCommited_Success() public {
+    function test_SetPoolState_ToCommitted_Success() public {
         vm.prank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
 
         assertEq(
             uint256(tranchePool.getPoolState()),
-            uint256(ITranchePool.PoolState.COMMITED)
+            uint256(ITranchePool.PoolState.COMMITTED)
         );
     }
 
     function test_SetPoolState_ToDeployed_Success() public {
         vm.startPrank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
         tranchePool.setPoolState(ITranchePool.PoolState.DEPLOYED);
         vm.stopPrank();
 
@@ -312,7 +312,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
     function test_SetPoolState_RevertIf_Backwards() public {
         vm.startPrank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -429,7 +429,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         TranchePool emptyPool = TranchePool(address(emptyProxy));
         vm.startPrank(deployer);
         emptyPool.setLoanEngine(loanEngine);
-        emptyPool.setPoolState(ITranchePool.PoolState.COMMITED);
+        emptyPool.setPoolState(ITranchePool.PoolState.COMMITTED);
         emptyPool.setPoolState(ITranchePool.PoolState.DEPLOYED);
         vm.stopPrank();
 

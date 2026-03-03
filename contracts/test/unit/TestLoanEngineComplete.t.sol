@@ -200,9 +200,9 @@ contract TestLoanEngineComplete is Test {
         // Users deposit to tranches
         _makeDeposits();
 
-        // Set pool to COMMITED state
+        // Set pool to COMMITTED state
         vm.prank(deployer);
-        tranchePool.setPoolState(ITranchePool.PoolState.COMMITED);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
     }
 
     function _computeLoanHash(
