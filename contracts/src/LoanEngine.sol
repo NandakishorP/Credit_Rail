@@ -237,6 +237,10 @@ contract LoanEngine is
             revert LoanEngine__PolicyNotFrozen(params.policyVersion);
         }
 
+        if (!i_creditPolicy.isPolicyActive(params.policyVersion)) {
+            revert LoanEngine__PolicyNotActive(params.policyVersion); // (Create this error)
+        }
+
         if (
             i_creditPolicy.isIndustryExcluded(
                 params.policyVersion,

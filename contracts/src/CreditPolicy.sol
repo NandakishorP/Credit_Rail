@@ -538,6 +538,11 @@ contract CreditPolicy is
         grantRole(POLICY_EDITOR_ROLE, newAdmin);
         grantRole(INDUSTRY_ADMIN_ROLE, newAdmin);
 
+        revokeRole(POLICY_ADMIN_ROLE, msg.sender);
+        revokeRole(POLICY_EDITOR_ROLE, msg.sender);
+        revokeRole(INDUSTRY_ADMIN_ROLE, msg.sender);
+        revokeRole(DEFAULT_ADMIN_ROLE, msg.sender);
+
         emit PolicyAdminChanged(newAdmin);
     }
 

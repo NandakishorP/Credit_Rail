@@ -55,6 +55,7 @@ interface ILoanEngine {
     error LoanEngine__IndustryExcluded(uint256 policyVersion, bytes32 industry);
     error LoanEngine__InvalidPublicInputsLength();
     error LoanEngine__ZeroAddress();
+    error LoanEngine__PolicyNotActive(uint256 policyVersion);
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -108,10 +109,22 @@ interface ILoanEngine {
     );
 
     event MaxOriginationFeeBpsUpdated(uint256 newMaxFeeBps);
-    event WhitelistedOffRampingEntityUpdated(address indexed entity, bool isWhitelisted);
-    event WhitelistedRecoveryAgentUpdated(address indexed agent, bool isWhitelisted);
-    event WhitelistedRepaymentAgentUpdated(address indexed agent, bool isWhitelisted);
-    event WhitelistedFeeManagerUpdated(address indexed manager, bool isWhitelisted);
+    event WhitelistedOffRampingEntityUpdated(
+        address indexed entity,
+        bool isWhitelisted
+    );
+    event WhitelistedRecoveryAgentUpdated(
+        address indexed agent,
+        bool isWhitelisted
+    );
+    event WhitelistedRepaymentAgentUpdated(
+        address indexed agent,
+        bool isWhitelisted
+    );
+    event WhitelistedFeeManagerUpdated(
+        address indexed manager,
+        bool isWhitelisted
+    );
 
     enum LoanState {
         NONE,

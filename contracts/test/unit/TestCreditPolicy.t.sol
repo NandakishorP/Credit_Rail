@@ -613,14 +613,21 @@ contract TestCreditPolicy is Test {
         creditPolicy.changePolicyAdmin(seniorUser1);
     }
 
-    function testOldAdminKeepsAccessAfterAdminChange() public {
+    function testOldAdminLosesAccessAfterAdminChange() public {
         vm.prank(deployer);
         creditPolicy.changePolicyAdmin(seniorUser1);
 
-        // deployer still has roles until explicitly revoked
+        // deployer should no longer have roles
+        bytes32 role = creditPolicy.POLICY_ADMIN_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)",
+                deployer,
+                role
+            )
+        );
         vm.prank(deployer);
         creditPolicy.createPolicy(99);
-        assertTrue(creditPolicy.policyCreated(99));
     }
 
     function testNewAdminCanCreatePolicy() public {
