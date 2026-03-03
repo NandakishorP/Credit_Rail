@@ -10,8 +10,9 @@ from model.flows import on_recovery
 # Set precision to 28 digits
 getcontext().prec = 28
 
-# Add the current directory to sys.path so we can import model
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add the parent directory to sys.path so we can import model
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT)
 
 from model.state import SystemState, TrancheState, LoanState
 from model.flows import allocate_capital, repay_loan, apply_loss
@@ -184,7 +185,7 @@ def run_stress_grid():
 
     ITERATIONS = 50 
     
-    results_file = "private_credit_analysis.csv"
+    results_file = os.path.join(ROOT, "results", "private_credit_analysis.csv")
     
     with open(results_file, 'w', newline='') as csvfile:
         fieldnames = ['scenario', 'default_rate', 'recovery_rate', 'iteration', 'senior_return', 'junior_return', 'equity_return', 'total_final_value']

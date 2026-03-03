@@ -1,13 +1,17 @@
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESULTS = os.path.join(ROOT, "results")
+
 # Check if file exists
 try:
-    df = pd.read_csv('stress_test_results.csv')
+    df = pd.read_csv(os.path.join(RESULTS, 'stress_test_results.csv'))
 except FileNotFoundError:
-    print("Error: stress_test_results.csv not found. Run simulate_scenario.py first.")
+    print("Error: results/stress_test_results.csv not found. Run simulate_scenario.py first.")
     sys.exit(1)
 
 # Convert rates to percentages for better readability
@@ -56,6 +60,6 @@ plt.ylabel('Return (%)')
 plt.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('stress_test_visualization.png')
-print("Visualization saved to stress_test_visualization.png")
+plt.savefig(os.path.join(RESULTS, 'stress_test_visualization.png'))
+print("Visualization saved to results/stress_test_visualization.png")
 # plt.show() # Uncomment to show interactive window

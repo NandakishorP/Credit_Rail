@@ -1,11 +1,15 @@
+import os
 import pandas as pd
 import sys
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESULTS = os.path.join(ROOT, "results")
+
 # Check if file exists
 try:
-    df = pd.read_csv('stress_test_results.csv')
+    df = pd.read_csv(os.path.join(RESULTS, 'stress_test_results.csv'))
 except FileNotFoundError:
-    print("Error: stress_test_results.csv not found. Run simulate_scenario.py first.")
+    print("Error: results/stress_test_results.csv not found. Run simulate_scenario.py first.")
     sys.exit(1)
 
 # Group by Scenario and calculate Mean and Std Dev
@@ -36,9 +40,9 @@ final_table = summary[[
 # Output to Markdown file
 markdown_table = final_table.to_markdown(index=False)
 
-with open('stress_test_summary.md', 'w') as f:
+with open(os.path.join(RESULTS, 'stress_test_summary.md'), 'w') as f:
     f.write("# Stress Test Analysis Summary\n\n")
     f.write(markdown_table)
 
-print("Analysis complete. Summary saved to 'stress_test_summary.md'.")
+print("Analysis complete. Summary saved to 'results/stress_test_summary.md'.")
 print("\n" + markdown_table)

@@ -2,42 +2,50 @@
 
 Python simulation of Credit Rail's tranche-based capital accounting. Used to validate conservation laws and stress-test the waterfall mechanics before encoding invariants in Solidity.
 
-## Core Model
+## Directory Structure
 
-| File | Purpose |
-|---|---|
-| `model/state.py` | `SystemState`, `TrancheState`, `LoanState` dataclasses |
-| `model/flows.py` | `allocate_capital`, `repay_loan`, `apply_loss`, `on_recovery` |
-| `model/time.py` | `accrue_loan_interest` — time-weighted interest accrual |
-
-## Scripts
-
-| Script | What It Does |
-|---|---|
-| `verify_inferences.py` | Runs 6 conservation law assertions across scenario paths |
-| `simulate_scenario.py` | Monte Carlo stress testing (1,000+ paths per scenario) |
-| `visualize_stress_test.py` | Matplotlib visualization of stress test results |
-| `analyze_results.py` | Aggregates `stress_test_results.csv` → `stress_test_summary.md` |
-| `analyze_structure.py` | Aggregates `private_credit_analysis.csv` → `structural_analysis_summary.md` |
-
-## Results
-
-| File | Contents |
-|---|---|
-| `Model_Inferences.md` | 6 key economic inferences (value conservation, interest mechanics, loss/recovery) |
-| `economic_deep_dive.md` | Detailed analysis of waterfall behavior under stress |
-| `stress_test_summary.md` | Return distribution by default/recovery rate |
-| `structural_analysis_summary.md` | Cross-scenario fund structure comparison |
-| `stress_test_visualization.png` | Visualization of Monte Carlo results |
+```
+economic-modelling/
+├── model/                          # Core simulation engine
+│   ├── state.py                    #   SystemState, TrancheState, LoanState
+│   ├── flows.py                    #   allocate_capital, repay_loan, apply_loss, on_recovery
+│   └── time.py                     #   accrue_loan_interest (time-weighted)
+├── scripts/                        # Runnable analysis scripts
+│   ├── verify_inferences.py        #   Conservation law assertions (6 tests)
+│   ├── simulate_scenario.py        #   Monte Carlo stress testing (1,000+ paths)
+│   ├── visualize_stress_test.py    #   Matplotlib heatmaps + violin plots
+│   ├── analyze_results.py          #   Aggregates stress_test_results.csv → summary
+│   └── analyze_structure.py        #   Aggregates private_credit_analysis.csv → summary
+└── results/                        # Generated outputs (committed for reference)
+    ├── Model_Inferences.md         #   6 key economic inferences
+    ├── economic_deep_dive.md       #   Detailed waterfall analysis
+    ├── economic_stress_test_report.md  # Stress test methodology + findings
+    ├── stress_test_summary.md      #   Return distribution by default/recovery rate
+    ├── structural_analysis_summary.md  # Cross-scenario fund comparison
+    ├── stress_test_results.csv     #   Raw Monte Carlo data
+    ├── private_credit_analysis.csv #   Raw multi-scenario data
+    ├── structural_analysis_results.csv # Raw structural analysis data
+    └── stress_test_visualization.png   # Heatmap + violin plot charts
+```
 
 ## Quick Start
 
 ```bash
 python3 -m venv venv && source venv/bin/activate
-pip install numpy matplotlib
-python3 verify_inferences.py      # Validate conservation laws
-python3 simulate_scenario.py      # Run Monte Carlo stress tests
-python3 visualize_stress_test.py  # Generate charts
+pip install numpy matplotlib pandas seaborn tabulate
+
+# Validate conservation laws
+python3 scripts/verify_inferences.py
+
+# Run Monte Carlo stress tests
+python3 scripts/simulate_scenario.py
+
+# Generate charts
+python3 scripts/visualize_stress_test.py
+
+# Aggregate results into summary tables
+python3 scripts/analyze_results.py
+python3 scripts/analyze_structure.py
 ```
 
 ## What This Validates

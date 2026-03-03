@@ -162,7 +162,7 @@ nargo compile    # Compiles to target/circuits.json
 cd economic-modelling
 python3 -m venv venv && source venv/bin/activate
 pip install numpy matplotlib
-python3 simulate_scenario.py
+python3 scripts/simulate_scenario.py
 ```
 
 ### End-to-End (ZK proof → on-chain loan creation)

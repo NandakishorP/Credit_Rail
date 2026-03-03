@@ -1,11 +1,15 @@
+import os
 import pandas as pd
 import sys
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESULTS = os.path.join(ROOT, "results")
+
 # Check if file exists
 try:
-    df = pd.read_csv('private_credit_analysis.csv')
+    df = pd.read_csv(os.path.join(RESULTS, 'private_credit_analysis.csv'))
 except FileNotFoundError:
-    print("Error: private_credit_analysis.csv not found.")
+    print("Error: results/private_credit_analysis.csv not found.")
     sys.exit(1)
 
 # Group by Scenario, Default, Recovery
@@ -23,15 +27,12 @@ summary['Def/Rec'] = summary.apply(lambda x: f"{x['default_rate']:.1%} / {x['rec
 summary['Junior Return'] = summary['junior_return_mean'].apply(lambda x: f"{x:.2%}") + " ±" + summary['junior_return_std'].apply(lambda x: f"{x:.2%}")
 summary['Equity Return'] = summary['equity_return_mean'].apply(lambda x: f"{x:.1%}") + " ±" + summary['equity_return_std'].apply(lambda x: f"{x:.1%}")
 
-# Pivot for cleaner comparison (Focus on 4% Def / 0% Rec first)
-# But a flat table is fine too.
-
 final_table = summary[[
     'Scenario', 'Def/Rec', 'Junior Return', 'Equity Return'
 ]]
 
 print(final_table.to_markdown(index=False))
 
-with open('structural_analysis_summary.md', 'w') as f:
+with open(os.path.join(RESULTS, 'structural_analysis_summary.md'), 'w') as f:
     f.write("# Structural Analysis Summary\n\n")
     f.write(final_table.to_markdown(index=False))

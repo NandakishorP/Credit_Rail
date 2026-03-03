@@ -2,8 +2,9 @@ import sys
 import os
 from decimal import Decimal
 
-# Add the current directory to sys.path so we can import the model
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add the parent directory to sys.path so we can import the model
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT)
 
 from model.state import SystemState, TrancheState, LoanState, total_value
 from model.flows import allocate_capital, repay_loan, apply_loss, on_recovery
@@ -200,7 +201,7 @@ def verify_inferences():
 
 if __name__ == "__main__":
     md_content = verify_inferences()
-    with open("Model_Inferences.md", "w") as f:
+    with open(os.path.join(ROOT, "results", "Model_Inferences.md"), "w") as f:
         f.write("# Protocol Inferences from Economic Model\n\n")
         f.write(md_content)
     print("Inferences generated in Model_Inferences.md")
