@@ -1,13 +1,20 @@
 # OS
 .DS_Store
 
-# Ecosystem
+# Python
 __pycache__/
+**/__pycache__/
 *.pyc
-node_modules/
+*.pyo
 .pytest_cache/
 venv/
+
+# Node
+node_modules/
+
+# Environment
 .env
+*.log
 
 # Contracts (Foundry & Fuzzers)
 contracts/out/
@@ -20,10 +27,10 @@ contracts/medusa-corpus/
 contracts/medusa-logs/
 contracts/crytic-export/
 contracts/pytypes/
+contracts/tests/
 contracts/.wake/
 contracts/slither_results.json
 contracts/*.txt
-anvil-zksync.log
 
 # Circuits (Noir)
 circuits/target/
