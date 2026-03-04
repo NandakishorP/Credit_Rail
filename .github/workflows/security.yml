@@ -31,11 +31,11 @@ jobs:
           submodules: recursive
 
       - name: Install foundry-zksync
+        env:
+          FOUNDRY_ZKSYNC_VERSION: v0.1.9
         run: |
           mkdir -p $HOME/.foundry/bin
-          VERSION=$(curl -sL "https://api.github.com/repos/matter-labs/foundry-zksync/releases/latest" \
-            | grep '"tag_name"' | cut -d'"' -f4)
-          curl -L "https://github.com/matter-labs/foundry-zksync/releases/download/${VERSION}/foundry_zksync_${VERSION#foundry-zksync-}_linux_amd64.tar.gz" \
+          curl -fsSL "https://github.com/matter-labs/foundry-zksync/releases/download/foundry-zksync-${FOUNDRY_ZKSYNC_VERSION}/foundry_zksync_${FOUNDRY_ZKSYNC_VERSION}_linux_amd64.tar.gz" \
             -o /tmp/foundry-zksync.tar.gz
           tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
           chmod +x $HOME/.foundry/bin/*
@@ -82,11 +82,11 @@ jobs:
           submodules: recursive
 
       - name: Install foundry-zksync
+        env:
+          FOUNDRY_ZKSYNC_VERSION: v0.1.9
         run: |
           mkdir -p $HOME/.foundry/bin
-          VERSION=$(curl -sL "https://api.github.com/repos/matter-labs/foundry-zksync/releases/latest" \
-            | grep '"tag_name"' | cut -d'"' -f4)
-          curl -L "https://github.com/matter-labs/foundry-zksync/releases/download/${VERSION}/foundry_zksync_${VERSION#foundry-zksync-}_linux_amd64.tar.gz" \
+          curl -fsSL "https://github.com/matter-labs/foundry-zksync/releases/download/foundry-zksync-${FOUNDRY_ZKSYNC_VERSION}/foundry_zksync_${FOUNDRY_ZKSYNC_VERSION}_linux_amd64.tar.gz" \
             -o /tmp/foundry-zksync.tar.gz
           tar -xzf /tmp/foundry-zksync.tar.gz -C $HOME/.foundry/bin
           chmod +x $HOME/.foundry/bin/*

@@ -3,6 +3,46 @@ use std::embedded_curve_ops::EmbeddedCurvePoint;
 use std::embedded_curve_ops::EmbeddedCurveScalar;
 use std::embedded_curve_ops::multi_scalar_mul;
 
+//==============================================================
+//                        CONSTANTS
+//==============================================================
+
+/// Seconds in one day (24 * 60 * 60)
+global SECONDS_PER_DAY: u64 = 86_400;
+
+/// Maximum attestation age in days (~27 years). Guards against
+/// overflow when converting days to seconds: 9999 * 86400 < u64::MAX.
+global MAX_ATTESTATION_AGE_DAYS: u64 = 10_000;
+
+/// Maximum value of a u64 (2^64 - 1). Used for overflow checks.
+global U64_MAX: u64 = 18_446_744_073_709_551_615;
+
+/// Byte width for 128-bit limb decomposition (256 = 2^8).
+global BYTE_SHIFT: Field = 256;
+
+/// 100% expressed in basis points. No legitimate loan exceeds this.
+global MAX_BPS: u64 = 10_000;
+
+/// Maximum loan term in days (10 years).
+global MAX_LOAN_TERM_DAYS: u64 = 3_650;
+
+/// Overflow ceiling for monetary u64 inputs (1 quadrillion).
+/// Ensures scaled arithmetic stays within u64 bounds.
+/// Max result: 1e15 * 1e4 = 1e19 (fits u64: ~1.84e19).
+global MAX_MONETARY_VALUE: u64 = 1_000_000_000_000_000;
+
+/// Maximum tier loan-to-EBITDA ratio in 1e18 fixed-point (10x).
+/// Descaled by RATIO_DESCALE_DIVISOR, max result = 10_000.
+global MAX_TIER_LOAN_TO_EBITDA_RATIO: u64 = 10_000_000_000_000_000_000;
+
+/// Scaling factor for loan principal in the loan-to-EBITDA comparison.
+/// loan_principal * LOAN_SCALE_FACTOR <= borrower_ebitda * descaled_ratio
+global LOAN_SCALE_FACTOR: u64 = 1_000;
+
+/// Divisor to descale 1e18 fixed-point ratios by 1e15, producing
+/// a value in the range [0, 10_000] for safe u64 multiplication.
+global RATIO_DESCALE_DIVISOR: u64 = 1_000_000_000_000_000;
+
 /// Credit Policy Compliance Circuit
 ///
 /// Proves that a loan request adheres to a frozen credit policy version.
@@ -315,12 +355,11 @@ fn verify_attestation_age(
     assert(current_timestamp >= attestation_timestamp, "Attestation time in future");
 
     // Guard against overflow: Ensure policy max age is reasonable (e.g., < 27 years)
-    assert(policy_max_attestation_age_days < 10000, "Policy age too large");
-    let max_age_seconds = policy_max_attestation_age_days * 86400;
+    assert(policy_max_attestation_age_days < MAX_ATTESTATION_AGE_DAYS, "Policy age too large");
+    let max_age_seconds = policy_max_attestation_age_days * SECONDS_PER_DAY;
 
     // Guard against u64 overflow in addition
-    // 0xffffffffffffffff = 18446744073709551615
-    assert(attestation_timestamp <= 18446744073709551615 - max_age_seconds, "Timestamp overflow");
+    assert(attestation_timestamp <= U64_MAX - max_age_seconds, "Timestamp overflow");
 
     assert(current_timestamp <= attestation_timestamp + max_age_seconds, "Attestation expired");
 }
@@ -367,11 +406,11 @@ fn verify_schnorr_signature(
     // High 128 bits = bytes [0..16], low 128 bits = bytes [16..32]
     let mut e_hi_acc: Field = 0;
     for i in 0..16 {
-        e_hi_acc = e_hi_acc * 256 + e_bytes[i] as Field;
+        e_hi_acc = e_hi_acc * BYTE_SHIFT + e_bytes[i] as Field;
     }
     let mut e_lo_acc: Field = 0;
     for i in 16..32 {
-        e_lo_acc = e_lo_acc * 256 + e_bytes[i] as Field;
+        e_lo_acc = e_lo_acc * BYTE_SHIFT + e_bytes[i] as Field;
     }
     let e_scalar = EmbeddedCurveScalar { lo: e_lo_acc, hi: e_hi_acc };
 
@@ -539,13 +578,13 @@ fn validate_policy_compliance(
     // Prevent nonsensical proofs that are technically valid but economically meaningless
     assert(loan_principal > 0, "Loan principal must be non-zero");
     assert(borrower_ebitda > 0, "Borrower EBITDA must be non-zero");
-    assert(loan_apr_bps < 10000, "APR exceeds 100%"); // No legitimate loan > 100% APR
+    assert(loan_apr_bps < MAX_BPS, "APR exceeds 100%");
     assert(loan_term_days > 0, "Loan term must be non-zero");
-    assert(loan_term_days <= 3650, "Loan term exceeds 10 years"); // 10 year max
+    assert(loan_term_days <= MAX_LOAN_TERM_DAYS, "Loan term exceeds 10 years");
 
     // ---- Overflow guards ----
-    assert(loan_principal < 1_000_000_000_000_000, "Loan principal too large");
-    assert(borrower_ebitda < 1_000_000_000_000_000, "EBITDA too large");
+    assert(loan_principal < MAX_MONETARY_VALUE, "Loan principal too large");
+    assert(borrower_ebitda < MAX_MONETARY_VALUE, "EBITDA too large");
 
     // Loan-to-EBITDA check: loan_principal / borrower_ebitda <= tier_max_loan_to_ebitda / 1e18
     // Cross-multiply: loan_principal * 1e18 <= borrower_ebitda * tier_max_loan_to_ebitda
@@ -556,11 +595,11 @@ fn validate_policy_compliance(
     //   Left max:  1e15 * 1,000      = 1e18  (fits u64: max ~1.84e19)
     //   Right max: 1e15 * 10,000     = 1e19  (fits u64: max ~1.84e19)
     assert(
-        tier_max_loan_to_ebitda < 10_000_000_000_000_000_000,
+        tier_max_loan_to_ebitda < MAX_TIER_LOAN_TO_EBITDA_RATIO,
         "Tier loan-to-EBITDA ratio too large",
-    ); // < 10x
-    let loan_scaled = loan_principal * 1_000;
-    let tier_ratio_descaled = tier_max_loan_to_ebitda / 1_000_000_000_000_000; // divide by 1e15
+    );
+    let loan_scaled = loan_principal * LOAN_SCALE_FACTOR;
+    let tier_ratio_descaled = tier_max_loan_to_ebitda / RATIO_DESCALE_DIVISOR;
     let max_loan = borrower_ebitda * tier_ratio_descaled;
     assert(loan_scaled <= max_loan, "Loan-to-EBITDA exceeds tier maximum");
 
@@ -2484,7 +2523,7 @@ fn test_verify_attestation_age_valid() {
 fn test_verify_attestation_age_expired() {
     let now: u64 = 200000;
     let attested: u64 = 100000;
-    let max_age_days: u64 = 1; // 86400 seconds
+    let max_age_days: u64 = 1; // 86400 seconds.
     // 100000 + 86400 = 186400 < 200000. Expired.
     verify_attestation_age(now, attested, max_age_days);
 }
