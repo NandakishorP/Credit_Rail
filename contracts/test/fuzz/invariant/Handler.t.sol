@@ -18,7 +18,7 @@ contract Handler is Test {
     ERC20Mock usdt;
     CreditPolicy creditPolicy;
     address deployer = makeAddr("deployer");
-    uint256 public USDT = 1e18;
+    uint256 public USDT = 1e6;
     bool allowFullDeployment = true;
     // 100m$ is the expected principal from lp's
     uint256 public expectedPrincipal = 10_00_00_000 * USDT;

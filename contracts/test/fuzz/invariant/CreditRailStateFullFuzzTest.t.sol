@@ -24,7 +24,7 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
     TranchePool public tranchePool;
     LoanEngine public loanEngine;
     CreditPolicy public creditPolicy;
-    uint256 public USDT = 1e18;
+    uint256 public USDT = 1e6;
     address public deployer = makeAddr("deployer");
 
     function setUp() public {

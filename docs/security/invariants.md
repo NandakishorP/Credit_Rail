@@ -13,7 +13,7 @@ Invariants are tested across four frameworks:
 | Framework | File | Strategy |
 |---|---|---|
 | Foundry Invariant | `test/fuzz/invariant/CreditRailStateFullFuzzTest.t.sol` | Stateful handler with ghost accounting |
-| Foundry Handler | `test/fuzz/invariant/Handler.t.sol` | Drives all 18 state transition selectors |
+| Foundry Handler | `test/fuzz/invariant/Handler.t.sol` | Drives all 18 state transition selectors (20 invariants total) |
 | Echidna | `test/fuzz/echidna/EchidnaTest.sol` | Property-based corpus fuzzing |
 | Medusa | `test/medusa/MedusaTest.sol` | Coverage-guided stateful fuzzing |
 
@@ -369,6 +369,8 @@ function invariant__interestIndexMonotonicity() public view {
 
 When the pool is in `OPEN` state (no capital has been deployed, no interest has arrived), each tranche's total shares must exactly equal its idle value. Shares are minted 1:1 on deposit and no interest has been distributed yet, so any drift indicates a deposit or withdrawal bug.
 
+This is enforced by **two separate invariant functions** in the test suite — one for senior, one for junior + equity.
+
 ```solidity
 function invariant__seniorShareToIdleOpen() public view {
     if (tranchePool.getPoolState() == ITranchePool.PoolState.OPEN) {
@@ -395,6 +397,30 @@ function invariant__allocationRatiosSumTo100OrLess() public view {
     assertLe(
         tranchePool.getSeniorAllocationRatio() + tranchePool.getJuniorAllocationRatio(),
         100
+    );
+}
+```
+
+---
+
+### Invariant 19 — Unclaimed Interest + Idle Value Equals Token Balance
+
+The pool's actual ERC20 token balance must exactly equal the sum of all idle capital plus all unclaimed (distributed but not yet claimed) interest across the three tranches. This is a stricter, interest-aware complement to Invariant 3.
+
+```
+TokenBalance(TranchePool) == TotalIdle + TotalUnclaimedInterest
+```
+
+**Bugs it catches:** Interest distribution minting new tokens rather than redistributing existing ones. Idle accounting drifting from the actual balance after mass claims. Race conditions between `onInterestAccrued()` and `claimInterest()` that leave the pool overcounted.
+
+```solidity
+function invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance()
+    public
+    view
+{
+    assertEq(
+        tranchePool.getTotalUnclaimedInterest() + tranchePool.getTotalIdleValue(),
+        ERC20Mock(usdt).balanceOf(address(tranchePool))
     );
 }
 ```
