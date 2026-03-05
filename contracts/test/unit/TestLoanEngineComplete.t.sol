@@ -29,7 +29,7 @@ contract TestLoanEngineComplete is Test {
     address repaymentAgent = makeAddr("repaymentAgent");
     address recoveryAgent = makeAddr("recoveryAgent");
     address feeManager = makeAddr("feeManager");
-    uint256 public USDT = 1e18;
+    uint256 public USDT = 1e6;
 
     // Test loan parameters
     bytes32 testBorrowerCommitment =

@@ -102,6 +102,13 @@ contract LoanEngine is
         }
     }
 
+    /// @dev Reverts if `value` exceeds the u64 range expected by the Noir ZK circuit.
+    function _requireU64(string memory field, uint256 value) internal pure {
+        if (value > type(uint64).max) {
+            revert LoanEngine__ValueExceedsU64(field, value);
+        }
+    }
+
     ICreditPolicy public i_creditPolicy;
     IVerifier public i_loanProofVerifier;
     ITranchePool public i_tranchePool;
@@ -222,9 +229,23 @@ contract LoanEngine is
         bytes calldata proofData,
         bytes32[] calldata publicInputs
     ) external onlyRole(FUND_MANAGER_ROLE) whenNotPaused {
+        if (i_loanProofVerifier.verify(proofData, publicInputs) == false) {
+            revert LoanEngine__InvalidProof();
+        }
         if (publicInputs.length != TOTAL_PUBLIC_INPUTS) {
             revert LoanEngine__InvalidPublicInputsLength();
         }
+
+        // ── u64 range guards ──────────────────────────────────────────
+        // The Noir circuit types these loan parameters as u64. Values
+        // exceeding type(uint64).max would cause a Poseidon2 hash mismatch
+        // (Field.toField wraps the raw uint256; the circuit casts u64→Field).
+        _requireU64("principalIssued", params.principalIssued);
+        _requireU64("aprBps", params.aprBps);
+        _requireU64("originationFeeBps", params.originationFeeBps);
+        _requireU64("termDays", params.termDays);
+        _requireU64("proofTimestamp", params.proofTimestamp);
+
         ITranchePool.PoolState poolState = i_tranchePool.getPoolState();
         if (
             poolState != ITranchePool.PoolState.DEPLOYED &&
@@ -347,10 +368,6 @@ contract LoanEngine is
 
         if (params.principalIssued > i_tranchePool.getTotalIdleValue()) {
             revert LoanEngine__InsufficientPoolLiquidity();
-        }
-
-        if (i_loanProofVerifier.verify(proofData, publicInputs) == false) {
-            revert LoanEngine__InvalidProof();
         }
 
         Loan memory newLoan = Loan({

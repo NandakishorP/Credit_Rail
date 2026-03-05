@@ -56,6 +56,7 @@ interface ILoanEngine {
     error LoanEngine__InvalidPublicInputsLength();
     error LoanEngine__ZeroAddress();
     error LoanEngine__PolicyNotActive(uint256 policyVersion);
+    error LoanEngine__ValueExceedsU64(string field, uint256 value);
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS

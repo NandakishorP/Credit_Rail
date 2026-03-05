@@ -44,6 +44,7 @@ contract CreditPolicy is
     error CreditPolicy__InvalidIndustryHash();
     error CreditPolicy__PolicyNotActive(uint256 version);
     error CreditPolicy__InvalidTierCount(uint256 count);
+    error CreditPolicy__ValueExceedsU64(string field, uint256 value);
 
     /*//////////////////////////////////////////////////////////////
                          ACCESS CONTROL ROLES
@@ -76,6 +77,16 @@ contract CreditPolicy is
 
     function _policyExists(uint256 version) internal view {
         if (!policyCreated[version]) revert CreditPolicy__InvalidVersion();
+    }
+
+    /// @dev Reverts if `value` exceeds the u64 range expected by the Noir ZK circuit.
+    ///      All numeric policy parameters that feed into `compute_policy_hash()` in the
+    ///      circuit are typed as `u64`. Storing a value > type(uint64).max on-chain would
+    ///      make proof generation impossible, bricking the policy version.
+    function _requireU64(string memory field, uint256 value) internal pure {
+        if (value > type(uint64).max) {
+            revert CreditPolicy__ValueExceedsU64(field, value);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -306,6 +317,12 @@ contract CreditPolicy is
         policyExists(version)
         policyEditable(version)
     {
+        _requireU64("minAnnualRevenue", data.minAnnualRevenue);
+        _requireU64("minEBITDA", data.minEBITDA);
+        _requireU64("minTangibleNetWorth", data.minTangibleNetWorth);
+        _requireU64("minBusinessAgeDays", data.minBusinessAgeDays);
+        _requireU64("maxDefaultsLast36Months", data.maxDefaultsLast36Months);
+
         eligibility[version] = data;
         lastUpdated[version] = block.timestamp;
         eligibilitySet[version] = true;
@@ -328,6 +345,11 @@ contract CreditPolicy is
         policyExists(version)
         policyEditable(version)
     {
+        _requireU64("maxTotalDebtToEBITDA", data.maxTotalDebtToEBITDA);
+        _requireU64("minInterestCoverageRatio", data.minInterestCoverageRatio);
+        _requireU64("minCurrentRatio", data.minCurrentRatio);
+        _requireU64("minEBITDAMarginBps", data.minEBITDAMarginBps);
+
         ratios[version] = data;
         lastUpdated[version] = block.timestamp;
         ratiosSet[version] = true;
@@ -372,6 +394,8 @@ contract CreditPolicy is
         policyExists(version)
         policyEditable(version)
     {
+        _requireU64("maxAttestationAgeDays", data.maxAttestationAgeDays);
+
         attestation[version] = data;
         lastUpdated[version] = block.timestamp;
         attestationSet[version] = true;
@@ -424,6 +448,16 @@ contract CreditPolicy is
         if (tierId >= maxTiers) {
             revert CreditPolicy__InvalidTierCount(tierId);
         }
+
+        _requireU64("tier.minRevenue", tier.minRevenue);
+        _requireU64("tier.maxRevenue", tier.maxRevenue);
+        _requireU64("tier.minEBITDA", tier.minEBITDA);
+        _requireU64("tier.maxDebtToEBITDA", tier.maxDebtToEBITDA);
+        _requireU64("tier.maxLoanToEBITDA", tier.maxLoanToEBITDA);
+        _requireU64("tier.interestRateBps", tier.interestRateBps);
+        _requireU64("tier.originationFeeBps", tier.originationFeeBps);
+        _requireU64("tier.termDays", tier.termDays);
+
         loanTiers[version][tierId] = tier;
         tierExists[version][tierId] = true;
         if (tierId >= totalTiers[version]) {
