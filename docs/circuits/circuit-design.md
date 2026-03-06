@@ -1,12 +1,12 @@
 # Circuit Design
 
-The Credit Rail ZK circuit is implemented in Noir and compiled using the UltraHonk proving system. It is approximately 3,000 lines including a comprehensive test suite. The circuit serves as the cryptographic bridge between off-chain underwriting and on-chain loan origination — it proves that a borrower meets a frozen credit policy without revealing any of the underlying financial data on-chain.
+The Credit Rail ZK circuit is implemented in Noir and compiled using the UltraHonk proving system. It is approximately 3,500 lines including a comprehensive test suite. The circuit serves as the cryptographic bridge between off-chain underwriting and on-chain loan origination — it proves that a borrower meets a frozen credit policy without revealing any of the underlying financial data on-chain.
 
 ---
 
 ## Public vs Private Inputs
 
-The circuit has exactly **3 public inputs** (visible on-chain) and approximately **40 private inputs** (never leave the prover's machine).
+The circuit has exactly **3 public inputs** (visible on-chain) and **47 private inputs** (never leave the prover's machine).
 
 ### Public Inputs
 
@@ -81,11 +81,14 @@ nullifierHash = Poseidon2(loanId, borrower_secret, loan_principal, attestation_t
 | Field | Why It's Needed |
 |---|---|
 | `loanId` | Binds the nullifier to a specific on-chain loan. Different loanIds produce different nullifiers. |
-| `borrower_secret` | Prevents a third party from constructing the same nullifier without the borrower's secret. |
+| `borrower_secret` | Cryptographically binds the nullifier to the borrower's private commitment entropy, making the nullifier un-forgeable and collision-resistant. |
 | `loan_principal` | Binds the nullifier to the specific loan amount. Prevents reusing a proof for a different principal. |
 | `attestation_timestamp` | Binds to the time of the underwriter attestation. Prevents using an old attestation for a new loan. |
 
-Removing any single field creates a vulnerability. Without `loanId`, the same proof could be submitted twice for two different loans. Without `borrower_secret`, anyone who observed the proof could compute the nullifier independently and frontrun the submission to grief the borrower.
+**Important Architecture Note:**
+In public ZK systems (like Tornado Cash), nullifier secrets prevent random mempool observers from computing the nullifier and frontrunning a transaction to grief the user. However, because Credit Rail's `createLoan` is heavily permissioned (`onlyRole(FUND_MANAGER_ROLE)`), public frontrunning is structurally impossible. 
+
+Here, `borrower_secret` is included in the nullifier to prevent theoretical collision attacks and to ensure that the un-spendable tag (`s_nullifierHashes`) is inextricably linked to the borrower's 32-byte private entropy, not just public transaction parameters.
 
 The `nullifierHash` is stored permanently on-chain in `LoanEngine.s_nullifierHashes` after first use.
 
@@ -162,13 +165,19 @@ This must match the `policyScopeHash` stored on-chain for the referenced policy 
 
 ## The On-chain / Off-chain Split for Industry Exclusion
 
-Industry exclusion is **not** checked inside the circuit. It is checked on-chain in `LoanEngine.createLoan()`.
+The excluded industry list is checked on-chain in `LoanEngine.createLoan()` rather than inside the Noir circuit.
 
 **Why?**
 
-The excluded industry list is dynamic — the fund administrator can add or remove industries without creating a new frozen policy version. If industry exclusion were checked inside the circuit, it would need to be part of the 21-parameter policy hash. Changing the exclusion list would then require a new frozen policy and new proofs for all pending loans.
+The primary reason is how the data is structured. The 21 standard policy parameters are singular values that can be easily combined into a single, unified `policy_version_hash`. 
 
-By checking industry exclusion on-chain using the `industry_hash` public input, the exclusion list can be updated independently of the frozen policy parameters. The circuit still commits to the industry via the `industry_hash` public input — it's just that the check against the exclusion list happens in Solidity, not in Noir.
+However, a policy can have multiple excluded industries. In `CreditPolicy.sol`, these are stored in a mapping: `mapping(uint256 => mapping(bytes32 => bool))`. 
+
+Because different excluded industries have different distinct hashes, there is no clean way to combine a dynamic number of industry hashes into the single `policy_version_hash` without changing the fundamental design of the hash (e.g., you can't just hash a dynamic Solidity mapping inside a fixed-length Noir Poseidon array). 
+
+If you tried to include them, you would either need to artificially limit the number of excluded industries (to fit a fixed-size array) or store multiple different policy hashes on-chain for the same policy version.
+
+Instead, the simplest and most elegant solution is to have the circuit take the borrower's `industry_hash` as a public input, binding it cryptographically to the underwriter's signature. Then, the on-chain verifier (`LoanEngine.sol`) simply checks if that specific `industry_hash` is marked as `true` in the `CreditPolicy`'s exclusion mapping.
 
 ---
 
