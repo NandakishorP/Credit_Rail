@@ -45,6 +45,7 @@ contract CreditPolicy is
     error CreditPolicy__PolicyNotActive(uint256 version);
     error CreditPolicy__InvalidTierCount(uint256 count);
     error CreditPolicy__ValueExceedsU64(string field, uint256 value);
+    error CreditPolicy__ZeroAddress();
 
     /*//////////////////////////////////////////////////////////////
                          ACCESS CONTROL ROLES
@@ -190,7 +191,12 @@ contract CreditPolicy is
         uint256 timestamp
     );
 
-    event PolicyAdminChanged(address newAdmin);
+    event DefaultAdminChanged(
+        address indexed previousAdmin,
+        address indexed newAdmin
+    );
+    event OperationalRolesGranted(address indexed account);
+    event OperationalRolesRevoked(address indexed account);
 
     event PolicyDocumentSet(
         uint256 version,
@@ -561,23 +567,75 @@ contract CreditPolicy is
         emit PolicyScopeHashSet(version, hash, block.timestamp);
     }
 
-    /// @notice Transfer admin rights — use AccessControl.grantRole/revokeRole instead.
-    /// @dev Kept for backward compatibility during migration.
-    /// @param newAdmin The address to become the new default admin.
-    function changePolicyAdmin(
+    /// @notice Transfer the DEFAULT_ADMIN_ROLE to a new address.
+    /// @dev Grants DEFAULT_ADMIN_ROLE to `newAdmin` and revokes it from the caller.
+    ///      This is the most sensitive operation — it controls who can authorize
+    ///      contract upgrades and manage all other roles. Use with extreme caution.
+    /// @param newAdmin The address to become the new default admin (must not be zero).
+    function changeDefaultAdmin(
         address newAdmin
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newAdmin == address(0)) revert CreditPolicy__ZeroAddress();
+
+        address previousAdmin = msg.sender;
         grantRole(DEFAULT_ADMIN_ROLE, newAdmin);
-        grantRole(POLICY_ADMIN_ROLE, newAdmin);
-        grantRole(POLICY_EDITOR_ROLE, newAdmin);
-        grantRole(INDUSTRY_ADMIN_ROLE, newAdmin);
+        revokeRole(DEFAULT_ADMIN_ROLE, previousAdmin);
 
-        revokeRole(POLICY_ADMIN_ROLE, msg.sender);
-        revokeRole(POLICY_EDITOR_ROLE, msg.sender);
-        revokeRole(INDUSTRY_ADMIN_ROLE, msg.sender);
-        revokeRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        emit DefaultAdminChanged(previousAdmin, newAdmin);
+    }
 
-        emit PolicyAdminChanged(newAdmin);
+    /// @notice Grant POLICY_ADMIN_ROLE to an address (can create/freeze policies).
+    /// @param account The address to receive the role (must not be zero).
+    function grantPolicyAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert CreditPolicy__ZeroAddress();
+        grantRole(POLICY_ADMIN_ROLE, account);
+    }
+
+    /// @notice Revoke POLICY_ADMIN_ROLE from an address.
+    /// @param account The address to lose the role (must not be zero).
+    function revokePolicyAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert CreditPolicy__ZeroAddress();
+        revokeRole(POLICY_ADMIN_ROLE, account);
+    }
+
+    /// @notice Grant POLICY_EDITOR_ROLE to an address (can edit policy sections).
+    /// @param account The address to receive the role (must not be zero).
+    function grantPolicyEditorRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert CreditPolicy__ZeroAddress();
+        grantRole(POLICY_EDITOR_ROLE, account);
+    }
+
+    /// @notice Revoke POLICY_EDITOR_ROLE from an address.
+    /// @param account The address to lose the role (must not be zero).
+    function revokePolicyEditorRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert CreditPolicy__ZeroAddress();
+        revokeRole(POLICY_EDITOR_ROLE, account);
+    }
+
+    /// @notice Grant INDUSTRY_ADMIN_ROLE to an address (can manage industry exclusions).
+    /// @param account The address to receive the role (must not be zero).
+    function grantIndustryAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert CreditPolicy__ZeroAddress();
+        grantRole(INDUSTRY_ADMIN_ROLE, account);
+    }
+
+    /// @notice Revoke INDUSTRY_ADMIN_ROLE from an address.
+    /// @param account The address to lose the role (must not be zero).
+    function revokeIndustryAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert CreditPolicy__ZeroAddress();
+        revokeRole(INDUSTRY_ADMIN_ROLE, account);
     }
 
     /*//////////////////////////////////////////////////////////////

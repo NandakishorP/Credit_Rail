@@ -592,32 +592,96 @@ contract TestCreditPolicy is Test {
                         ADMIN TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function testChangePolicyAdmin() public {
+    function testChangeDefaultAdmin() public {
         vm.prank(deployer);
-        creditPolicy.changePolicyAdmin(seniorUser1);
+        creditPolicy.changeDefaultAdmin(seniorUser1);
         assertTrue(
             creditPolicy.hasRole(creditPolicy.DEFAULT_ADMIN_ROLE(), seniorUser1)
         );
+        assertFalse(
+            creditPolicy.hasRole(creditPolicy.DEFAULT_ADMIN_ROLE(), deployer)
+        );
     }
 
-    function testChaingePolicyAdminRevertsIfNotAdmin() public {
+    function testChangeDefaultAdminRevertsIfNotAdmin() public {
         vm.prank(seniorUser1);
         vm.expectRevert();
-        creditPolicy.changePolicyAdmin(seniorUser2);
+        creditPolicy.changeDefaultAdmin(seniorUser2);
     }
 
-    function testChangePolicyAdminEmitsEvent() public {
+    function testChangeDefaultAdminRevertsIfZeroAddress() public {
+        vm.prank(deployer);
+        vm.expectRevert(CreditPolicy.CreditPolicy__ZeroAddress.selector);
+        creditPolicy.changeDefaultAdmin(address(0));
+    }
+
+    function testChangeDefaultAdminEmitsEvent() public {
         vm.prank(deployer);
         vm.expectEmit(true, true, false, false);
-        emit CreditPolicy.PolicyAdminChanged(seniorUser1);
-        creditPolicy.changePolicyAdmin(seniorUser1);
+        emit CreditPolicy.DefaultAdminChanged(deployer, seniorUser1);
+        creditPolicy.changeDefaultAdmin(seniorUser1);
     }
 
-    function testOldAdminLosesAccessAfterAdminChange() public {
+    function testGrantAndRevokePolicyAdminRole() public {
+        // Grant
         vm.prank(deployer);
-        creditPolicy.changePolicyAdmin(seniorUser1);
+        creditPolicy.grantPolicyAdminRole(seniorUser1);
+        assertTrue(
+            creditPolicy.hasRole(creditPolicy.POLICY_ADMIN_ROLE(), seniorUser1)
+        );
 
-        // deployer should no longer have roles
+        // Revoke
+        vm.prank(deployer);
+        creditPolicy.revokePolicyAdminRole(seniorUser1);
+        assertFalse(
+            creditPolicy.hasRole(creditPolicy.POLICY_ADMIN_ROLE(), seniorUser1)
+        );
+    }
+
+    function testGrantPolicyAdminRevertsIfNotAdmin() public {
+        vm.prank(seniorUser1);
+        vm.expectRevert();
+        creditPolicy.grantPolicyAdminRole(seniorUser2);
+    }
+
+    function testGrantAndRevokePolicyEditorRole() public {
+        vm.startPrank(deployer);
+        creditPolicy.grantPolicyEditorRole(seniorUser1);
+        assertTrue(
+            creditPolicy.hasRole(creditPolicy.POLICY_EDITOR_ROLE(), seniorUser1)
+        );
+
+        creditPolicy.revokePolicyEditorRole(seniorUser1);
+        assertFalse(
+            creditPolicy.hasRole(creditPolicy.POLICY_EDITOR_ROLE(), seniorUser1)
+        );
+        vm.stopPrank();
+    }
+
+    function testGrantAndRevokeIndustryAdminRole() public {
+        vm.startPrank(deployer);
+        creditPolicy.grantIndustryAdminRole(seniorUser1);
+        assertTrue(
+            creditPolicy.hasRole(
+                creditPolicy.INDUSTRY_ADMIN_ROLE(),
+                seniorUser1
+            )
+        );
+
+        creditPolicy.revokeIndustryAdminRole(seniorUser1);
+        assertFalse(
+            creditPolicy.hasRole(
+                creditPolicy.INDUSTRY_ADMIN_ROLE(),
+                seniorUser1
+            )
+        );
+        vm.stopPrank();
+    }
+
+    function testRevokedAdminCannotCreatePolicy() public {
+        vm.prank(deployer);
+        creditPolicy.revokePolicyAdminRole(deployer);
+
         bytes32 role = creditPolicy.POLICY_ADMIN_ROLE();
         vm.expectRevert(
             abi.encodeWithSignature(
@@ -630,24 +694,21 @@ contract TestCreditPolicy is Test {
         creditPolicy.createPolicy(99);
     }
 
-    function testNewAdminCanCreatePolicy() public {
+    function testNewPolicyAdminCanCreatePolicy() public {
         vm.prank(deployer);
-        creditPolicy.changePolicyAdmin(seniorUser1);
+        creditPolicy.grantPolicyAdminRole(seniorUser1);
 
         vm.prank(seniorUser1);
         creditPolicy.createPolicy(99);
 
         assertEq(creditPolicy.policyCreated(99), true);
-        assertTrue(
-            creditPolicy.hasRole(creditPolicy.POLICY_ADMIN_ROLE(), seniorUser1)
-        );
     }
 
-    function testNewAdminCanManageExistingPolicy() public {
+    function testNewPolicyEditorCanManageExistingPolicy() public {
         _createPolicy(1);
 
         vm.prank(deployer);
-        creditPolicy.changePolicyAdmin(seniorUser1);
+        creditPolicy.grantPolicyEditorRole(seniorUser1);
 
         vm.prank(seniorUser1);
         creditPolicy.updateEligibility(1, _createEligibilityCriteria());

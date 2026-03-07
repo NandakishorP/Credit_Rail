@@ -108,7 +108,19 @@ interface ICreditPolicy {
         uint8 tierId
     ) external view returns (bool);
 
-    function changePolicyAdmin(address newAdmin) external;
+    function changeDefaultAdmin(address newAdmin) external;
+
+    function grantPolicyAdminRole(address account) external;
+
+    function revokePolicyAdminRole(address account) external;
+
+    function grantPolicyEditorRole(address account) external;
+
+    function revokePolicyEditorRole(address account) external;
+
+    function grantIndustryAdminRole(address account) external;
+
+    function revokeIndustryAdminRole(address account) external;
 
     function isPolicyActive(uint256 version) external view returns (bool);
 
