@@ -694,6 +694,90 @@ contract LoanEngine is
         _unpause();
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              ROLE MANAGEMENT
+    //////////////////////////////////////////////////////////////*/
+
+    function changeDefaultAdmin(
+        address newAdmin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newAdmin == address(0)) revert LoanEngine__ZeroAddress();
+        address previousAdmin = msg.sender;
+        grantRole(DEFAULT_ADMIN_ROLE, newAdmin);
+        revokeRole(DEFAULT_ADMIN_ROLE, previousAdmin);
+        emit DefaultAdminChanged(previousAdmin, newAdmin);
+    }
+
+    function grantFundManagerRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        grantRole(FUND_MANAGER_ROLE, account);
+    }
+
+    function revokeFundManagerRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        revokeRole(FUND_MANAGER_ROLE, account);
+    }
+
+    function grantServicerRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        grantRole(SERVICER_ROLE, account);
+    }
+
+    function revokeServicerRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        revokeRole(SERVICER_ROLE, account);
+    }
+
+    function grantRiskAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        grantRole(RISK_ADMIN_ROLE, account);
+    }
+
+    function revokeRiskAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        revokeRole(RISK_ADMIN_ROLE, account);
+    }
+
+    function grantConfigAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        grantRole(CONFIG_ADMIN_ROLE, account);
+    }
+
+    function revokeConfigAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        revokeRole(CONFIG_ADMIN_ROLE, account);
+    }
+
+    function grantEmergencyAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        grantRole(EMERGENCY_ADMIN_ROLE, account);
+    }
+
+    function revokeEmergencyAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert LoanEngine__ZeroAddress();
+        revokeRole(EMERGENCY_ADMIN_ROLE, account);
+    }
+
     /// @notice Add or remove an off-ramping entity (receives loan disbursements).
     /// @param entity       The address to whitelist or de-whitelist.
     /// @param isWhitelisted True to authorize, false to revoke.

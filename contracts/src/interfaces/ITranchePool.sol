@@ -100,12 +100,39 @@ interface ITranchePool {
         uint256 amount
     );
 
+    event DefaultAdminChanged(
+        address indexed previousAdmin,
+        address indexed newAdmin
+    );
+
     enum PoolState {
         OPEN, // deposits allowed
         COMMITTED,
         DEPLOYED, // capital deployed, deposits paused
         CLOSED // withdrawals only
     }
+
+    function changeDefaultAdmin(address newAdmin) external;
+
+    function grantPoolAdminRole(address account) external;
+
+    function revokePoolAdminRole(address account) external;
+
+    function grantConfigAdminRole(address account) external;
+
+    function revokeConfigAdminRole(address account) external;
+
+    function grantWhitelistAdminRole(address account) external;
+
+    function revokeWhitelistAdminRole(address account) external;
+
+    function grantEmergencyAdminRole(address account) external;
+
+    function revokeEmergencyAdminRole(address account) external;
+
+    function grantTreasuryRole(address account) external;
+
+    function revokeTreasuryRole(address account) external;
 
     // logic functions
 

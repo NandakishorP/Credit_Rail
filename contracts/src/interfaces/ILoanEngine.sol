@@ -62,6 +62,11 @@ interface ILoanEngine {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    event DefaultAdminChanged(
+        address indexed previousAdmin,
+        address indexed newAdmin
+    );
+
     event LoanCreated(
         uint256 indexed loanId,
         bytes32 indexed borrowerCommitment,
@@ -238,6 +243,28 @@ interface ILoanEngine {
     function pause() external;
 
     function unpause() external;
+
+    function changeDefaultAdmin(address newAdmin) external;
+
+    function grantFundManagerRole(address account) external;
+
+    function revokeFundManagerRole(address account) external;
+
+    function grantServicerRole(address account) external;
+
+    function revokeServicerRole(address account) external;
+
+    function grantRiskAdminRole(address account) external;
+
+    function revokeRiskAdminRole(address account) external;
+
+    function grantConfigAdminRole(address account) external;
+
+    function revokeConfigAdminRole(address account) external;
+
+    function grantEmergencyAdminRole(address account) external;
+
+    function revokeEmergencyAdminRole(address account) external;
 
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS

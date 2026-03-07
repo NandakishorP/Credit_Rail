@@ -1080,6 +1080,90 @@ contract TranchePool is
         _unpause();
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              ROLE MANAGEMENT
+    //////////////////////////////////////////////////////////////*/
+
+    function changeDefaultAdmin(
+        address newAdmin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newAdmin == address(0)) revert TranchePool__ZeroAddressError();
+        address previousAdmin = msg.sender;
+        grantRole(DEFAULT_ADMIN_ROLE, newAdmin);
+        revokeRole(DEFAULT_ADMIN_ROLE, previousAdmin);
+        emit DefaultAdminChanged(previousAdmin, newAdmin);
+    }
+
+    function grantPoolAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        grantRole(POOL_ADMIN_ROLE, account);
+    }
+
+    function revokePoolAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        revokeRole(POOL_ADMIN_ROLE, account);
+    }
+
+    function grantConfigAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        grantRole(CONFIG_ADMIN_ROLE, account);
+    }
+
+    function revokeConfigAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        revokeRole(CONFIG_ADMIN_ROLE, account);
+    }
+
+    function grantWhitelistAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        grantRole(WHITELIST_ADMIN_ROLE, account);
+    }
+
+    function revokeWhitelistAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        revokeRole(WHITELIST_ADMIN_ROLE, account);
+    }
+
+    function grantEmergencyAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        grantRole(EMERGENCY_ADMIN_ROLE, account);
+    }
+
+    function revokeEmergencyAdminRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        revokeRole(EMERGENCY_ADMIN_ROLE, account);
+    }
+
+    function grantTreasuryRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        grantRole(TREASURY_ROLE, account);
+    }
+
+    function revokeTreasuryRole(
+        address account
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (account == address(0)) revert TranchePool__ZeroAddressError();
+        revokeRole(TREASURY_ROLE, account);
+    }
+
     /// @notice Sweep protocol revenue (unclaimed leftover interest) to a treasury address.
     /// @param to Address to receive the revenue.
     /// @param amount Amount to sweep (must be <= s_protocolRevenue).

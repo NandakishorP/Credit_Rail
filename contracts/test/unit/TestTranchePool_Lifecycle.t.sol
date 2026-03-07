@@ -552,4 +552,46 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
             "Equity interest incorrect"
         );
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        ROLE MANAGEMENT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ChangeDefaultAdmin() public {
+        vm.prank(deployer);
+        tranchePool.changeDefaultAdmin(seniorUser1);
+        assertTrue(
+            tranchePool.hasRole(tranchePool.DEFAULT_ADMIN_ROLE(), seniorUser1)
+        );
+        assertFalse(
+            tranchePool.hasRole(tranchePool.DEFAULT_ADMIN_ROLE(), deployer)
+        );
+    }
+
+    function test_GrantAndRevokeRoles_Optimized() public {
+        vm.startPrank(deployer);
+
+        tranchePool.grantPoolAdminRole(seniorUser1);
+        tranchePool.revokePoolAdminRole(seniorUser1);
+
+        tranchePool.grantConfigAdminRole(seniorUser1);
+        tranchePool.revokeConfigAdminRole(seniorUser1);
+
+        tranchePool.grantWhitelistAdminRole(seniorUser1);
+        tranchePool.revokeWhitelistAdminRole(seniorUser1);
+
+        tranchePool.grantEmergencyAdminRole(seniorUser1);
+        tranchePool.revokeEmergencyAdminRole(seniorUser1);
+
+        tranchePool.grantTreasuryRole(seniorUser1);
+        tranchePool.revokeTreasuryRole(seniorUser1);
+
+        vm.stopPrank();
+    }
+
+    function test_ChangeDefaultAdmin_RevertsIfZeroAddress() public {
+        vm.prank(deployer);
+        vm.expectRevert(ITranchePool.TranchePool__ZeroAddressError.selector);
+        tranchePool.changeDefaultAdmin(address(0));
+    }
 }

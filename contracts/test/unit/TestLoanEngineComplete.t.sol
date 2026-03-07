@@ -1513,6 +1513,49 @@ contract TestLoanEngineComplete is Test {
         return 1;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        ROLE MANAGEMENT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ChangeDefaultAdmin() public {
+        vm.prank(deployer);
+        loanEngine.changeDefaultAdmin(seniorUser1);
+        assertTrue(
+            loanEngine.hasRole(loanEngine.DEFAULT_ADMIN_ROLE(), seniorUser1)
+        );
+        assertFalse(
+            loanEngine.hasRole(loanEngine.DEFAULT_ADMIN_ROLE(), deployer)
+        );
+    }
+
+    function test_GrantAndRevokeRoles_Optimized() public {
+        vm.startPrank(deployer);
+
+        // Single block of compact code per role avoids huge bytecode
+        loanEngine.grantFundManagerRole(seniorUser1);
+        loanEngine.revokeFundManagerRole(seniorUser1);
+
+        loanEngine.grantServicerRole(seniorUser1);
+        loanEngine.revokeServicerRole(seniorUser1);
+
+        loanEngine.grantRiskAdminRole(seniorUser1);
+        loanEngine.revokeRiskAdminRole(seniorUser1);
+
+        loanEngine.grantConfigAdminRole(seniorUser1);
+        loanEngine.revokeConfigAdminRole(seniorUser1);
+
+        loanEngine.grantEmergencyAdminRole(seniorUser1);
+        loanEngine.revokeEmergencyAdminRole(seniorUser1);
+
+        vm.stopPrank();
+    }
+
+    function test_ChangeDefaultAdmin_RevertsIfZeroAddress() public {
+        vm.prank(deployer);
+        vm.expectRevert(ILoanEngine.LoanEngine__ZeroAddress.selector);
+        loanEngine.changeDefaultAdmin(address(0));
+    }
+
     function _createEligibilityCriteria()
         internal
         pure
