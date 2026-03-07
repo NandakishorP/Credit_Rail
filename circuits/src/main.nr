@@ -776,7 +776,7 @@ fn test_fail_debt_ratio_high() {
 //   ratios: debt_to_ebitda=25000(2.5x), int_coverage=20000(2.0x), current=15000(1.5x), margin=1500bps
 //   policy: min_rev=1M, min_ebitda=100K, min_nw=250K, min_age=730d, max_defaults=0, bankruptcy_excluded
 //   policy ratios: max_debt=40000(4.0x), min_coverage=15000(1.5x), min_current=12000(1.2x), min_margin=1000bps
-//   tier: rev=[1M,10M], ebitda>=100K, max_debt=40000, max_loan=1e18(1.0x), apr=1200, fee=100, term=365, active
+//   tier: rev=[1M,10M], ebitda>=100K, max_debt=40000, max_loan=1000(1.0x in 1e3), apr=1200, fee=100, term=365, active
 //   loan: principal=500K, apr=1200, fee=100, term=365
 // ============================================================
 

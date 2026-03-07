@@ -1,6 +1,6 @@
 # Circuit Design
 
-The Credit Rail ZK circuit is implemented in Noir and compiled using the UltraHonk proving system. It is approximately 3,500 lines including a comprehensive test suite. The circuit serves as the cryptographic bridge between off-chain underwriting and on-chain loan origination — it proves that a borrower meets a frozen credit policy without revealing any of the underlying financial data on-chain.
+The Credit Rail ZK circuit is implemented in Noir and compiled using the UltraHonk proving system. It is approximately 3,400 lines including a comprehensive test suite. The circuit serves as the cryptographic bridge between off-chain underwriting and on-chain loan origination — it proves that a borrower meets a frozen credit policy without revealing any of the underlying financial data on-chain.
 
 ---
 
@@ -181,9 +181,36 @@ Instead, the simplest and most elegant solution is to have the circuit take the 
 
 ---
 
+## Fixed-Point Arithmetic Conventions
+
+Because ZK circuits (and Solidity) have no floating-point numbers, all fractional values use fixed-point integer scaling. The circuit uses two different scaling conventions depending on the variable's role:
+
+| Convention | Scale Factor | Example | Used For |
+|---|---|---|---|
+| **Basis Points (1e4)** | 10,000 | 3.5x → `35,000` | Static comparison ratios (`debt_to_ebitda`, `interest_coverage`, `current_ratio`, `ebitda_margin_bps`, APR, fees) |
+| **1e3 Fixed-Point** | 1,000 | 3.5x → `3,500` | Generative multiplier (`tier_max_loan_to_ebitda`) |
+
+**Why two conventions?**
+
+Basis point ratios (1e4) are only ever used for direct comparisons inside the circuit (e.g., `assert(borrower_debt_to_ebitda <= tier_max_debt_to_ebitda)`). They never participate in multiplication against monetary values, so 4 decimal places of precision is sufficient and matches TradFi conventions.
+
+`tier_max_loan_to_ebitda` is different — it is multiplied against `borrower_ebitda` to compute the maximum allowed loan amount. Its scaling must be chosen so that the cross-multiplication fits within `u64` bounds:
+
+```
+loan_principal * 1,000 <= borrower_ebitda * tier_max_loan_to_ebitda
+```
+
+**Overflow analysis** (all monetary inputs capped at < 1e15 by `MAX_MONETARY_VALUE`):
+- Left side max: `1e15 * 1,000 = 1e18` (fits `u64`, max ~1.84e19)
+- Right side max: `1e15 * 10,000 = 1e19` (fits `u64`, max ~1.84e19)
+
+The 1e3 convention provides 3 decimal places of ratio precision (e.g., 3.567x = `3,567`), which is more than sufficient for institutional loan-to-EBITDA limits. The values never interact with ERC20 token math in Solidity — the `CreditPolicy.sol` contract only stores and hashes them — so the standard DeFi WAD (1e18) precision is unnecessary.
+
+---
+
 ## Test Coverage
 
-The circuit ships with approximately 2,400 lines of tests in `src/main.nr`. Test categories:
+The circuit ships with 78 test functions (~2,400 lines) in `src/main.nr`. Test categories:
 
 | Category | Examples |
 |---|---|
