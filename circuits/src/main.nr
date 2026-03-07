@@ -31,17 +31,14 @@ global MAX_LOAN_TERM_DAYS: u64 = 3_650;
 /// Max result: 1e15 * 1e4 = 1e19 (fits u64: ~1.84e19).
 global MAX_MONETARY_VALUE: u64 = 1_000_000_000_000_000;
 
-/// Maximum tier loan-to-EBITDA ratio in 1e18 fixed-point (10x).
-/// Descaled by RATIO_DESCALE_DIVISOR, max result = 10_000.
-global MAX_TIER_LOAN_TO_EBITDA_RATIO: u64 = 10_000_000_000_000_000_000;
-
 /// Scaling factor for loan principal in the loan-to-EBITDA comparison.
-/// loan_principal * LOAN_SCALE_FACTOR <= borrower_ebitda * descaled_ratio
+/// tier_max_loan_to_ebitda uses 1e3 fixed-point (e.g., 2.5x = 2_500).
+/// Cross-multiply: loan_principal * 1_000 <= borrower_ebitda * tier_max_loan_to_ebitda
+///
+/// Overflow analysis (all monetary inputs < 1e15, tier ratio <= 10_000):
+///   Left max:  1e15 * 1_000  = 1e18  (fits u64: max ~1.84e19)
+///   Right max: 1e15 * 10_000 = 1e19  (fits u64: max ~1.84e19)
 global LOAN_SCALE_FACTOR: u64 = 1_000;
-
-/// Divisor to descale 1e18 fixed-point ratios by 1e15, producing
-/// a value in the range [0, 10_000] for safe u64 multiplication.
-global RATIO_DESCALE_DIVISOR: u64 = 1_000_000_000_000_000;
 
 /// Credit Policy Compliance Circuit
 ///
@@ -586,21 +583,16 @@ fn validate_policy_compliance(
     assert(loan_principal < MAX_MONETARY_VALUE, "Loan principal too large");
     assert(borrower_ebitda < MAX_MONETARY_VALUE, "EBITDA too large");
 
-    // Loan-to-EBITDA check: loan_principal / borrower_ebitda <= tier_max_loan_to_ebitda / 1e18
-    // Cross-multiply: loan_principal * 1e18 <= borrower_ebitda * tier_max_loan_to_ebitda
-    // Direct 1e18 multiply overflows u64, so divide both sides by 1e15:
-    //   loan_principal * 1,000 <= borrower_ebitda * (tier_max / 1e15)
+    // Loan-to-EBITDA check: loan_principal / borrower_ebitda <= tier_max_loan_to_ebitda / 1e3
+    // Cross-multiply to avoid division truncation:
+    //   loan_principal * 1_000 <= borrower_ebitda * tier_max_loan_to_ebitda
     //
-    // Overflow analysis (all inputs < 1e15, tier ratio < 10e18):
-    //   Left max:  1e15 * 1,000      = 1e18  (fits u64: max ~1.84e19)
-    //   Right max: 1e15 * 10,000     = 1e19  (fits u64: max ~1.84e19)
-    assert(
-        tier_max_loan_to_ebitda < MAX_TIER_LOAN_TO_EBITDA_RATIO,
-        "Tier loan-to-EBITDA ratio too large",
-    );
+    // tier_max_loan_to_ebitda uses 1e3 fixed-point (e.g., 2.5x = 2_500, 10x = 10_000).
+    // Overflow analysis (all monetary inputs < 1e15, tier ratio <= 10_000):
+    //   Left max:  1e15 * 1_000  = 1e18  (fits u64: max ~1.84e19)
+    //   Right max: 1e15 * 10_000 = 1e19  (fits u64: max ~1.84e19)
     let loan_scaled = loan_principal * LOAN_SCALE_FACTOR;
-    let tier_ratio_descaled = tier_max_loan_to_ebitda / RATIO_DESCALE_DIVISOR;
-    let max_loan = borrower_ebitda * tier_ratio_descaled;
+    let max_loan = borrower_ebitda * tier_max_loan_to_ebitda;
     assert(loan_scaled <= max_loan, "Loan-to-EBITDA exceeds tier maximum");
 
     //==============================================================
@@ -649,7 +641,7 @@ fn test_policy_compliance_valid() {
     let tier_max_revenue: u64 = 10_000_000;
     let tier_min_ebitda: u64 = 100_000;
     let tier_max_debt_to_ebitda: u64 = 40000;
-    let tier_max_loan_to_ebitda: u64 = 1_000_000_000_000_000_000; // 1.0x in 1e18 scaling
+    let tier_max_loan_to_ebitda: u64 = 1_000; // 1.0x in 1e3 scaling
     let tier_interest_rate_bps: u64 = 1200;
     let tier_origination_fee_bps: u64 = 100;
     let tier_term_days: u64 = 365;
@@ -723,7 +715,7 @@ fn test_fail_revenue_low() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000, // tier_max_loan_to_ebitda (1.0x in 1e18)
+        1_000, // tier_max_loan_to_ebitda (1.0x in 1e3)
         1200,
         100,
         365,
@@ -765,7 +757,7 @@ fn test_fail_debt_ratio_high() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000, // tier_max_loan_to_ebitda (1.0x in 1e18)
+        1_000, // tier_max_loan_to_ebitda (1.0x in 1e3)
         1200,
         100,
         365,
@@ -815,7 +807,7 @@ fn test_fail_ebitda_low() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -854,7 +846,7 @@ fn test_fail_net_worth_low() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -893,7 +885,7 @@ fn test_fail_business_age_low() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -932,7 +924,7 @@ fn test_fail_too_many_defaults() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -971,7 +963,7 @@ fn test_fail_bankruptcy() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1010,7 +1002,7 @@ fn test_fail_interest_coverage_low() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1049,7 +1041,7 @@ fn test_fail_current_ratio_low() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1088,7 +1080,7 @@ fn test_fail_ebitda_margin_low() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1127,7 +1119,7 @@ fn test_fail_tier_inactive() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1166,7 +1158,7 @@ fn test_fail_revenue_below_tier() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1205,7 +1197,7 @@ fn test_fail_revenue_above_tier() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1244,7 +1236,7 @@ fn test_fail_ebitda_below_tier() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1283,7 +1275,7 @@ fn test_fail_debt_exceeds_tier() {
         10_000_000,
         100_000,
         30000, // Tier max 3.0x (less than policy max)
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1322,7 +1314,7 @@ fn test_fail_principal_too_large() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1361,7 +1353,7 @@ fn test_fail_ebitda_too_large() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1373,7 +1365,11 @@ fn test_fail_ebitda_too_large() {
     );
 }
 
-#[test(should_fail_with = "Tier loan-to-EBITDA ratio too large")]
+// With 1e3 scaling, there is no separate "ratio too large" guard.
+// Instead, extremely large ratios cause u64 overflow in the multiplication.
+// This test verifies that an absurdly large ratio (e.g., 18_446_744_073_710)
+// causes an overflow when multiplied by borrower_ebitda.
+#[test(should_fail_with = "attempt to multiply with overflow")]
 fn test_fail_tier_ratio_too_large() {
     validate_policy_compliance(
         5_000_000,
@@ -1400,7 +1396,7 @@ fn test_fail_tier_ratio_too_large() {
         10_000_000,
         100_000,
         40000,
-        10_000_000_000_000_000_000, // 10x -- at the guard limit (strict <)
+        24_595_658_764_947, // Causes overflow: 750_000 * this > u64::MAX
         1200,
         100,
         365,
@@ -1439,7 +1435,7 @@ fn test_fail_loan_to_ebitda_exceeded() {
         10_000_000,
         100_000,
         40000,
-        500_000_000_000_000_000, // 0.5x -- loan 500K / ebitda 750K = 0.67x exceeds 0.5x
+        500, // 0.5x in 1e3 -- loan 500K / ebitda 750K = 0.67x exceeds 0.5x
         1200,
         100,
         365,
@@ -1478,7 +1474,7 @@ fn test_fail_apr_mismatch() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1517,7 +1513,7 @@ fn test_fail_origination_fee_mismatch() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1556,7 +1552,7 @@ fn test_fail_term_mismatch() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1599,7 +1595,7 @@ fn test_fail_zero_principal() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1638,7 +1634,7 @@ fn test_fail_zero_ebitda() {
         10_000_000,
         0, // tier min also 0
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1677,7 +1673,7 @@ fn test_fail_apr_too_high() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         15000, // tier rate 150% -- matches loan APR so tier check passes
         100,
         365,
@@ -1716,7 +1712,7 @@ fn test_fail_zero_term() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         0, // tier term 0 -- matches loan so tier check passes
@@ -1755,7 +1751,7 @@ fn test_fail_term_too_long() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         3651, // tier term matches loan
@@ -1799,7 +1795,7 @@ fn test_boundary_revenue_at_policy_min() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1839,7 +1835,7 @@ fn test_boundary_revenue_one_below_policy_min() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1879,7 +1875,7 @@ fn test_boundary_revenue_at_tier_max() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1919,7 +1915,7 @@ fn test_boundary_revenue_one_above_tier_max() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1959,7 +1955,7 @@ fn test_boundary_debt_ratio_at_max() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -1999,7 +1995,7 @@ fn test_boundary_debt_ratio_one_above_max() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -2039,7 +2035,7 @@ fn test_boundary_apr_at_max() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         9999, // tier rate = 99.99%
         100,
         365,
@@ -2079,7 +2075,7 @@ fn test_boundary_apr_at_100_percent() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         10000, // tier rate = 100%
         100,
         365,
@@ -2119,7 +2115,7 @@ fn test_boundary_term_at_max() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         3650, // tier term matches
@@ -2162,7 +2158,7 @@ fn test_boundary_principal_just_under_limit() {
         10_000_000,
         100_000,
         40000,
-        2_000_000_000_000_000_000, // 2.0x
+        2_000, // 2.0x in 1e3
         1200,
         100,
         365,
@@ -2205,7 +2201,7 @@ fn test_boundary_ebitda_just_under_limit() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -2217,7 +2213,9 @@ fn test_boundary_ebitda_just_under_limit() {
     );
 }
 
-// --- Tier ratio at 10e18 - 1 (should PASS guard) ---
+// --- Tier ratio at 10x (should PASS) ---
+// With 1e3 scaling, 10x = 10_000. Max safe value:
+// borrower_ebitda (< 1e15) * 10_000 = 1e19 (fits u64)
 #[test]
 fn test_boundary_tier_ratio_just_under_limit() {
     validate_policy_compliance(
@@ -2245,7 +2243,7 @@ fn test_boundary_tier_ratio_just_under_limit() {
         10_000_000,
         100_000,
         40000,
-        9_999_999_999_999_999_999, // 10e18 - 1 (just under 10x)
+        10_000, // 10.0x in 1e3
         1200,
         100,
         365,
@@ -2285,7 +2283,7 @@ fn test_boundary_interest_coverage_at_min() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -2325,7 +2323,7 @@ fn test_boundary_interest_coverage_one_below_min() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -2365,7 +2363,7 @@ fn test_boundary_business_age_at_min() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -2405,7 +2403,7 @@ fn test_boundary_business_age_one_below_min() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -3039,7 +3037,7 @@ fn test_bankruptcy_not_excluded_allows_bankrupt_borrower() {
         10_000_000,
         100_000,
         40000,
-        1_000_000_000_000_000_000,
+        1_000,
         1200,
         100,
         365,
@@ -3071,7 +3069,7 @@ fn test_policy_hash_changes_with_single_param() {
         10000000,
         100000,
         40000,
-        1000000000000000000,
+        1000,
         1200,
         100,
         365,
@@ -3096,7 +3094,7 @@ fn test_policy_hash_changes_with_single_param() {
         10000000,
         100000,
         40000,
-        1000000000000000000,
+        1000,
         1200,
         100,
         365,
@@ -3122,7 +3120,7 @@ fn test_policy_hash_changes_with_single_param() {
         10000000,
         100000,
         40000,
-        1000000000000000000,
+        1000,
         1200,
         100,
         365,
@@ -3148,7 +3146,7 @@ fn test_policy_hash_changes_with_single_param() {
         10000000,
         100000,
         40000,
-        1000000000000000000,
+        1000,
         1200,
         100,
         365,
@@ -3168,7 +3166,7 @@ fn test_main_integration_happy_path() {
     // Full end-to-end: calls main() with all valid inputs
     main(
         // Public inputs
-        13092986158241335727976825583457317324074370493817574499628845613236736334438, // policy_version_hash
+        13811313783171695448271171591737696365928257006464129396737635951942518613008, // policy_version_hash
         402538460424446851722261610110794666385356654680636238801022324790394451883, // loan_hash
         17192326775865708290513230403267052356039504450017621353910650748243352732394, // nullifierHash
         9565104342849014344519519188506829113523896995659714250752383551693562949437, // borrower_commitment
@@ -3216,7 +3214,7 @@ fn test_main_integration_happy_path() {
         10000000, // tier_max_revenue
         100000, // tier_min_ebitda
         40000, // tier_max_debt_to_ebitda
-        1000000000000000000, // tier_max_loan_to_ebitda
+        1000, // tier_max_loan_to_ebitda
         1200, // tier_interest_rate_bps
         100, // tier_origination_fee_bps
         365, // tier_term_days
@@ -3228,7 +3226,7 @@ fn test_main_integration_happy_path() {
 fn test_main_fail_loan_hash_mismatch() {
     // Same valid inputs but wrong loan_hash
     main(
-        13092986158241335727976825583457317324074370493817574499628845613236736334438,
+        13811313783171695448271171591737696365928257006464129396737635951942518613008,
         999999, // WRONG loan_hash
         17192326775865708290513230403267052356039504450017621353910650748243352732394,
         9565104342849014344519519188506829113523896995659714250752383551693562949437,
@@ -3272,7 +3270,7 @@ fn test_main_fail_loan_hash_mismatch() {
         10000000,
         100000,
         40000,
-        1000000000000000000,
+        1000,
         1200,
         100,
         365,
@@ -3284,7 +3282,7 @@ fn test_main_fail_loan_hash_mismatch() {
 fn test_main_fail_nullifier_mismatch() {
     // Same valid inputs but wrong nullifierHash
     main(
-        13092986158241335727976825583457317324074370493817574499628845613236736334438,
+        13811313783171695448271171591737696365928257006464129396737635951942518613008,
         402538460424446851722261610110794666385356654680636238801022324790394451883,
         888888, // WRONG nullifierHash
         9565104342849014344519519188506829113523896995659714250752383551693562949437,
@@ -3328,7 +3326,7 @@ fn test_main_fail_nullifier_mismatch() {
         10000000,
         100000,
         40000,
-        1000000000000000000,
+        1000,
         1200,
         100,
         365,
@@ -3384,7 +3382,7 @@ fn test_main_fail_policy_hash_mismatch() {
         10000000,
         100000,
         40000,
-        1000000000000000000,
+        1000,
         1200,
         100,
         365,
