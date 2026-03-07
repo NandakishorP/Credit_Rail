@@ -215,6 +215,7 @@ contract EchidnaHandler {
             keccak256("document"),
             "ipfs://policyDocHash"
         );
+        creditPolicy.setPolicyScopeHash(1, keccak256("scope"));
         creditPolicy.freezePolicy(1);
     }
 

@@ -104,6 +104,14 @@ contract EchidnaTest {
         _invariant_interestIndexMonotonicity();
         _invariant_poolStateValidityDeployedCapital();
         _invariant_loanInterestAccounting();
+        _invariant_lossWaterfallOrdering();
+        _invariant_interestWaterfallSeniorPriority();
+        _invariant_juniorShareToIdleOpen();
+        _invariant_allocationRatiosSumTo100OrLess();
+        _invariant_originationFeeBounded();
+        _invariant_aprSanityBound();
+        _invariant_globalConservationLaw();
+        _invariant_poolSolvency();
     }
 
     // =========================================================================
@@ -303,6 +311,112 @@ contract EchidnaTest {
                 assert(loan.interestAccrued == 0);
             }
         }
+    }
+
+    // =========================================================================
+    // INVARIANT 13: Loss Waterfall Ordering
+    // =========================================================================
+    function _invariant_lossWaterfallOrdering() internal view {
+        TranchePool tp = handler.tranchePool();
+        if (tp.getSeniorPrincipalShortfall() > 0) {
+            assert(tp.getEquityTrancheDeployedValue() == 0);
+        }
+        if (tp.getJuniorPrincipalShortfall() > 0) {
+            assert(tp.getEquityTrancheDeployedValue() == 0);
+        }
+    }
+
+    // =========================================================================
+    // INVARIANT 14: Interest Waterfall Senior Priority
+    // =========================================================================
+    function _invariant_interestWaterfallSeniorPriority() internal view {
+        TranchePool tp = handler.tranchePool();
+        uint256 seniorAccrued = tp.seniorAccruedInterest();
+        uint256 seniorTarget = tp.seniorTargetInterest();
+        uint256 juniorAccrued = tp.juniorAccruedInterest();
+        uint256 juniorTarget = tp.juniorTargetInterest();
+
+        assert(seniorAccrued <= seniorTarget);
+        assert(juniorAccrued <= juniorTarget);
+    }
+
+    // =========================================================================
+    // INVARIANT 15: Junior Share To Idle (OPEN state)
+    // =========================================================================
+    function _invariant_juniorShareToIdleOpen() internal view {
+        TranchePool tp = handler.tranchePool();
+        if (tp.getPoolState() == ITranchePool.PoolState.OPEN) {
+            assert(tp.getTotalJuniorShares() == tp.getJuniorTrancheIdleValue());
+            assert(tp.getTotalEquityShares() == tp.getEquityTrancheIdleValue());
+        }
+    }
+
+    // =========================================================================
+    // INVARIANT 16: Allocation Ratios Bound By 100%
+    // =========================================================================
+    function _invariant_allocationRatiosSumTo100OrLess() internal view {
+        TranchePool tp = handler.tranchePool();
+        assert(
+            tp.getSeniorAllocationRatio() + tp.getJuniorAllocationRatio() <= 100
+        );
+    }
+
+    // =========================================================================
+    // INVARIANT 17: Origination Fee Bounded
+    // =========================================================================
+    function _invariant_originationFeeBounded() internal view {
+        LoanEngine le = handler.loanEngine();
+        uint256 nextId = le.getNextLoanId();
+        uint256 maxFee = le.getMaxOriginationFeeBps();
+        for (uint256 i = 1; i < nextId; i++) {
+            ILoanEngine.Loan memory loan = le.getLoanDetails(i);
+            assert(loan.originationFeeBps <= maxFee);
+        }
+    }
+
+    // =========================================================================
+    // INVARIANT 18: APR Sanity Bound
+    // =========================================================================
+    function _invariant_aprSanityBound() internal view {
+        LoanEngine le = handler.loanEngine();
+        uint256 nextId = le.getNextLoanId();
+        for (uint256 i = 1; i < nextId; i++) {
+            ILoanEngine.Loan memory loan = le.getLoanDetails(i);
+            if (loan.state != ILoanEngine.LoanState.NONE) {
+                assert(loan.aprBps > 0);
+                assert(loan.aprBps < 10000);
+            }
+        }
+    }
+
+    // =========================================================================
+    // INVARIANT 19: Global Conservation Law
+    // =========================================================================
+    function _invariant_globalConservationLaw() internal view {
+        TranchePool tp = handler.tranchePool();
+        uint256 poolBalance = ERC20Mock(address(handler.usdt())).balanceOf(
+            address(tp)
+        );
+        uint256 totalLiabilities = tp.getTotalIdleValue() +
+            tp.getTotalUnclaimedInterest() +
+            tp.getProtocolRevenue();
+
+        uint256 tolerance = 10;
+        assert(poolBalance + tolerance >= totalLiabilities);
+        assert(totalLiabilities >= poolBalance);
+    }
+
+    // =========================================================================
+    // INVARIANT 20: Pool Solvency
+    // =========================================================================
+    function _invariant_poolSolvency() internal view {
+        TranchePool tp = handler.tranchePool();
+        uint256 poolBalance = ERC20Mock(address(handler.usdt())).balanceOf(
+            address(tp)
+        );
+        uint256 totalClaims = tp.getTotalIdleValue() +
+            tp.getTotalUnclaimedInterest();
+        assert(poolBalance >= totalClaims);
     }
 
     // =========================================================================
