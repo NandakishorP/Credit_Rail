@@ -207,15 +207,32 @@ function invariant__lossRecoveryWaterfallSymmetry() public view {
 
 ### Invariant 9 — Loss Waterfall Ordering
 
-If a senior tranche has a shortfall, then the equity tranche must have been fully wiped (deployed value == 0) first. Same for junior shortfall. This enforces the strict Equity-first loss absorption order.
+Losses absorb equity → junior → senior (via `deployedValue`). If a senior tranche has a shortfall, every **capitalised** subordinate tranche (one with `totalShares > 0`) must also have a shortfall — because the waterfall would have absorbed their `deployedValue` first.
+
+The check is gated on `totalShares > 0` because:
+- **Uncapitalised tranche edge case:** If equity or junior has zero deposits (`totalShares == 0`), it has zero `deployedValue` when loss hits, so the waterfall skips it. Senior can acquire a shortfall while an uncapitalised subordinate tranche has none — that is correct protocol behaviour, not a bug.
+- **Re-deployment after loss:** New loan activations move idle → deployed, which can increase `deployedValue` from 0 even while a shortfall exists. Therefore we check *shortfalls* (cumulative loss), not `deployedValue == 0`.
+- **Recovery ordering:** Recovery restores senior → junior → equity. Since equity shortfall is the *last* to be cleared, equity's shortfall cannot reach 0 while junior's shortfall is still > 0 (among capitalised tranches).
 
 ```solidity
 function invariant__lossWaterfallOrdering() public view {
-    if (tranchePool.getSeniorPrincipalShortfall() > 0) {
-        assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
+    uint256 seniorShortfall = tranchePool.getSeniorPrincipalShortfall();
+    uint256 juniorShortfall = tranchePool.getJuniorPrincipalShortfall();
+    uint256 equityShortfall = tranchePool.getEquityPrincipalShortfall();
+
+    bool juniorCapitalised = tranchePool.getTotalJuniorShares() > 0;
+    bool equityCapitalised = tranchePool.getTotalEquityShares() > 0;
+
+    if (seniorShortfall > 0) {
+        if (juniorCapitalised) {
+            assertTrue(juniorShortfall > 0, "Senior has shortfall but capitalised junior has none");
+        }
+        if (equityCapitalised) {
+            assertTrue(equityShortfall > 0, "Senior has shortfall but capitalised equity has none");
+        }
     }
-    if (tranchePool.getJuniorPrincipalShortfall() > 0) {
-        assertEq(tranchePool.getEquityTrancheDeployedValue(), 0);
+    if (juniorShortfall > 0 && equityCapitalised) {
+        assertTrue(equityShortfall > 0, "Junior has shortfall but capitalised equity has none");
     }
 }
 ```
