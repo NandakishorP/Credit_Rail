@@ -14,16 +14,56 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 
 /**
  * @title DeployWithGovernance
- * @notice Full production deployment: UUPS proxies + ProtocolController timelock
+ * @notice Full production deployment with proper governance / operations role separation.
  *
- * This script demonstrates the complete deployment and governance handoff:
- *   1. Deploy all core contracts behind ERC1967 proxies
- *   2. Deploy the ProtocolController (TimelockController)
- *   3. Grant DEFAULT_ADMIN_ROLE on all contracts to the ProtocolController
- *   4. Deployer renounces all admin privileges
+ * ROLE SEPARATION:
  *
- * After this script completes, the deployer holds ZERO admin rights.
- * All governance flows through the ProtocolController timelock.
+ *   ┌─────────────────────────────────────────────────────────────────────┐
+ *   │  GOVERNANCE (ProtocolController — timelock + multisig, 48h delay)  │
+ *   │                                                                     │
+ *   │  • DEFAULT_ADMIN_ROLE  — upgrades, role grants/revokes             │
+ *   │  • POOL_ADMIN_ROLE    — pool state changes, setLoanEngine          │
+ *   │  • POLICY_ADMIN_ROLE  — create / freeze / deactivate policies      │
+ *   └─────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─────────────────────────────────────────────────────────────────────┐
+ *   │  OPERATIONS (operations multisig — direct, NO timelock)            │
+ *   │                                                                     │
+ *   │  • FUND_MANAGER_ROLE    — create loans (bounded by ZK proof)       │
+ *   │  • SERVICER_ROLE        — activate / repay / recover loans         │
+ *   │  • RISK_ADMIN_ROLE      — declare defaults, write off loans        │
+ *   │  • CONFIG_ADMIN_ROLE    — whitelists, underwriter keys, fees       │
+ *   │  • WHITELIST_ADMIN_ROLE — LP deposit whitelist                     │
+ *   │  • POLICY_EDITOR_ROLE   — edit unfrozen policy parameters          │
+ *   │  • INDUSTRY_ADMIN_ROLE  — manage industry exclusions               │
+ *   │  • TREASURY_ROLE        — sweep protocol revenue                   │
+ *   └─────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─────────────────────────────────────────────────────────────────────┐
+ *   │  EMERGENCY (guardian wallet — direct, NO timelock)                  │
+ *   │                                                                     │
+ *   │  • EMERGENCY_ADMIN_ROLE — pause / unpause (must be instant)        │
+ *   │  • Can also cancel pending timelock ops on ProtocolController      │
+ *   └─────────────────────────────────────────────────────────────────────┘
+ *
+ * WHY THIS SEPARATION:
+ *   - Governance roles change the protocol itself (upgrades, new contracts,
+ *     lifecycle transitions). These are rare, high-impact, and must be delayed
+ *     so the community / LPs can react.
+ *   - Operational roles run daily business (originate loans, process repayments).
+ *     Putting these behind a 48h delay would make the protocol unusable.
+ *   - Emergency roles must be instant — you can't wait 48h to pause a hack.
+ *
+ * DEPLOYMENT FLOW:
+ *   1. Deploy infrastructure (USDC mock, Poseidon2, HonkVerifier)
+ *   2. Deploy core contracts via UUPS proxies (deployer as initialAdmin)
+ *   3. Wire TranchePool ↔ LoanEngine
+ *   4. Deploy ProtocolController (TimelockController)
+ *   5. Grant GOVERNANCE roles to ProtocolController (timelock)
+ *   6. Grant OPERATIONAL roles to operations multisig (direct)
+ *   7. Grant EMERGENCY roles to guardian (direct)
+ *   8. Deployer renounces ALL roles
+ *   9. Verify final state
  *
  * Usage:
  * forge script script/DeployWithGovernance.s.sol:DeployWithGovernance \
@@ -45,21 +85,27 @@ contract DeployWithGovernance is Script {
         );
         address deployer = vm.addr(deployerPrivateKey);
 
-        // In production, this would be a Gnosis Safe address
+        // ── Governance multisig (proposer + executor on ProtocolController) ──
         address multisig = vm.envOr("MULTISIG_ADDRESS", deployer);
-        // Optional guardian that can cancel pending timelock operations
+
+        // ── Operations multisig (daily loan ops, whitelists, etc.) ──
+        address operationsMultisig = vm.envOr("OPERATIONS_MULTISIG", deployer);
+
+        // ── Guardian (can pause instantly + cancel pending timelock ops) ──
         address guardian = vm.envOr("GUARDIAN_ADDRESS", address(0));
-        // Timelock delay: 48 hours for production, 1 minute for testing
+
+        // ── Timelock delay: 48h production, 60s testing ──
         uint256 timelockDelay = vm.envOr("TIMELOCK_DELAY", uint256(48 hours));
 
         console2.log("============================================");
         console2.log("  Credit Rail: Full Governance Deployment");
         console2.log("============================================");
         console2.log("");
-        console2.log("Deployer:", deployer);
-        console2.log("Multisig:", multisig);
-        console2.log("Guardian:", guardian);
-        console2.log("Timelock Delay:", timelockDelay, "seconds");
+        console2.log("Deployer:            ", deployer);
+        console2.log("Governance Multisig: ", multisig);
+        console2.log("Operations Multisig: ", operationsMultisig);
+        console2.log("Guardian:            ", guardian);
+        console2.log("Timelock Delay:      ", timelockDelay, "seconds");
         console2.log("");
 
         vm.startBroadcast(deployerPrivateKey);
@@ -141,46 +187,92 @@ contract DeployWithGovernance is Script {
         console2.log("[7/7] ProtocolController:", protocolController);
 
         // ====================================================
-        // PHASE 4: Transfer Admin Rights to ProtocolController
+        // PHASE 4: Grant GOVERNANCE roles to ProtocolController
+        //          (these go through the 48h timelock)
         // ====================================================
         console2.log("");
-        console2.log("--- Phase 4: Admin Transfer ---");
+        console2.log(
+            "--- Phase 4: Governance Roles -> ProtocolController (timelock) ---"
+        );
 
         bytes32 DEFAULT_ADMIN_ROLE = 0x00;
 
-        // --- CreditPolicy: grant all roles to ProtocolController ---
         CreditPolicy cp = CreditPolicy(creditPolicyProxy);
-        cp.grantRole(DEFAULT_ADMIN_ROLE, protocolController);
-        cp.grantRole(cp.POLICY_ADMIN_ROLE(), protocolController);
-        cp.grantRole(cp.POLICY_EDITOR_ROLE(), protocolController);
-        cp.grantRole(cp.INDUSTRY_ADMIN_ROLE(), protocolController);
-        console2.log("  CreditPolicy: granted all roles to controller");
-
-        // --- TranchePool: grant all roles to ProtocolController ---
         TranchePool tp = TranchePool(tranchePoolProxy);
-        tp.grantRole(DEFAULT_ADMIN_ROLE, protocolController);
-        tp.grantRole(tp.POOL_ADMIN_ROLE(), protocolController);
-        tp.grantRole(tp.CONFIG_ADMIN_ROLE(), protocolController);
-        tp.grantRole(tp.WHITELIST_ADMIN_ROLE(), protocolController);
-        tp.grantRole(tp.EMERGENCY_ADMIN_ROLE(), protocolController);
-        tp.grantRole(tp.TREASURY_ROLE(), protocolController);
-        console2.log("  TranchePool:  granted all roles to controller");
-
-        // --- LoanEngine: grant all roles to ProtocolController ---
         LoanEngine le = LoanEngine(loanEngineProxy);
+
+        // DEFAULT_ADMIN_ROLE on all contracts (upgrades + role management)
+        cp.grantRole(DEFAULT_ADMIN_ROLE, protocolController);
+        tp.grantRole(DEFAULT_ADMIN_ROLE, protocolController);
         le.grantRole(DEFAULT_ADMIN_ROLE, protocolController);
-        le.grantRole(le.FUND_MANAGER_ROLE(), protocolController);
-        le.grantRole(le.SERVICER_ROLE(), protocolController);
-        le.grantRole(le.RISK_ADMIN_ROLE(), protocolController);
-        le.grantRole(le.CONFIG_ADMIN_ROLE(), protocolController);
-        le.grantRole(le.EMERGENCY_ADMIN_ROLE(), protocolController);
-        console2.log("  LoanEngine:   granted all roles to controller");
+
+        // POOL_ADMIN_ROLE (pool state transitions — rare, high-impact)
+        tp.grantRole(tp.POOL_ADMIN_ROLE(), protocolController);
+
+        // POLICY_ADMIN_ROLE (create/freeze/deactivate policies — rare, high-impact)
+        cp.grantRole(cp.POLICY_ADMIN_ROLE(), protocolController);
+
+        console2.log("  All contracts: DEFAULT_ADMIN_ROLE  -> controller");
+        console2.log("  TranchePool:   POOL_ADMIN_ROLE     -> controller");
+        console2.log("  CreditPolicy:  POLICY_ADMIN_ROLE   -> controller");
 
         // ====================================================
-        // PHASE 5: Deployer Renounces All Admin Privileges
+        // PHASE 5: Grant OPERATIONAL roles to operations multisig
+        //          (these are direct — no timelock delay)
         // ====================================================
         console2.log("");
-        console2.log("--- Phase 5: Deployer Renounces ---");
+        console2.log(
+            "--- Phase 5: Operational Roles -> Operations Multisig (direct) ---"
+        );
+
+        // LoanEngine operational roles
+        le.grantRole(le.FUND_MANAGER_ROLE(), operationsMultisig);
+        le.grantRole(le.SERVICER_ROLE(), operationsMultisig);
+        le.grantRole(le.RISK_ADMIN_ROLE(), operationsMultisig);
+        le.grantRole(le.CONFIG_ADMIN_ROLE(), operationsMultisig);
+        console2.log(
+            "  LoanEngine:    FUND_MANAGER / SERVICER / RISK_ADMIN / CONFIG_ADMIN -> ops"
+        );
+
+        // TranchePool operational roles
+        tp.grantRole(tp.CONFIG_ADMIN_ROLE(), operationsMultisig);
+        tp.grantRole(tp.WHITELIST_ADMIN_ROLE(), operationsMultisig);
+        tp.grantRole(tp.TREASURY_ROLE(), operationsMultisig);
+        console2.log(
+            "  TranchePool:   CONFIG_ADMIN / WHITELIST_ADMIN / TREASURY -> ops"
+        );
+
+        // CreditPolicy operational roles
+        cp.grantRole(cp.POLICY_EDITOR_ROLE(), operationsMultisig);
+        cp.grantRole(cp.INDUSTRY_ADMIN_ROLE(), operationsMultisig);
+        console2.log("  CreditPolicy:  POLICY_EDITOR / INDUSTRY_ADMIN -> ops");
+
+        // ====================================================
+        // PHASE 6: Grant EMERGENCY roles to guardian
+        //          (must be instant — no timelock)
+        // ====================================================
+        console2.log("");
+        console2.log("--- Phase 6: Emergency Roles -> Guardian (direct) ---");
+
+        if (guardian != address(0)) {
+            le.grantRole(le.EMERGENCY_ADMIN_ROLE(), guardian);
+            tp.grantRole(tp.EMERGENCY_ADMIN_ROLE(), guardian);
+            console2.log("  LoanEngine:    EMERGENCY_ADMIN -> guardian");
+            console2.log("  TranchePool:   EMERGENCY_ADMIN -> guardian");
+        } else {
+            // No guardian — grant emergency to operations multisig as fallback
+            le.grantRole(le.EMERGENCY_ADMIN_ROLE(), operationsMultisig);
+            tp.grantRole(tp.EMERGENCY_ADMIN_ROLE(), operationsMultisig);
+            console2.log(
+                "  WARNING: No guardian set, EMERGENCY_ADMIN -> ops multisig (fallback)"
+            );
+        }
+
+        // ====================================================
+        // PHASE 7: Deployer Renounces ALL Roles
+        // ====================================================
+        console2.log("");
+        console2.log("--- Phase 7: Deployer Renounces ---");
 
         // CreditPolicy
         cp.renounceRole(DEFAULT_ADMIN_ROLE, deployer);
@@ -210,10 +302,10 @@ contract DeployWithGovernance is Script {
         vm.stopBroadcast();
 
         // ====================================================
-        // PHASE 6: Verification
+        // PHASE 8: Verification
         // ====================================================
         console2.log("");
-        console2.log("--- Verification ---");
+        console2.log("--- Phase 8: Verification ---");
 
         // Verify deployer has NO admin
         bool deployerHasAdmin;
@@ -233,7 +325,7 @@ contract DeployWithGovernance is Script {
         require(!deployerHasAdmin, "FAIL: deployer still admin on LoanEngine");
         console2.log("  LoanEngine:   deployer has NO admin  [OK]");
 
-        // Verify ProtocolController IS admin
+        // Verify ProtocolController IS admin (governance)
         bool controllerIsAdmin;
 
         controllerIsAdmin = cp.hasRole(DEFAULT_ADMIN_ROLE, protocolController);
@@ -251,6 +343,19 @@ contract DeployWithGovernance is Script {
         require(controllerIsAdmin, "FAIL: controller not admin on LoanEngine");
         console2.log("  LoanEngine:   controller IS admin    [OK]");
 
+        // Verify operations multisig has operational roles
+        require(
+            le.hasRole(le.SERVICER_ROLE(), operationsMultisig),
+            "FAIL: ops missing SERVICER_ROLE"
+        );
+        console2.log("  LoanEngine:   ops has SERVICER       [OK]");
+
+        require(
+            tp.hasRole(tp.WHITELIST_ADMIN_ROLE(), operationsMultisig),
+            "FAIL: ops missing WHITELIST_ADMIN_ROLE"
+        );
+        console2.log("  TranchePool:  ops has WHITELIST_ADMIN [OK]");
+
         // ====================================================
         // Summary
         // ====================================================
@@ -259,16 +364,35 @@ contract DeployWithGovernance is Script {
         console2.log("  Deployment Complete");
         console2.log("============================================");
         console2.log("");
-        console2.log("  CreditPolicy:       ", creditPolicyProxy);
-        console2.log("  TranchePool:         ", tranchePoolProxy);
-        console2.log("  LoanEngine:          ", loanEngineProxy);
-        console2.log("  ProtocolController:  ", protocolController);
+        console2.log("  CreditPolicy:        ", creditPolicyProxy);
+        console2.log("  TranchePool:          ", tranchePoolProxy);
+        console2.log("  LoanEngine:           ", loanEngineProxy);
+        console2.log("  ProtocolController:   ", protocolController);
         console2.log("");
-        console2.log("  Deployer admin:       RENOUNCED");
-        console2.log("  Governance via:       ProtocolController (timelock)");
-        console2.log("  Timelock delay:      ", timelockDelay, "seconds");
+        console2.log("  Deployer admin:        RENOUNCED");
         console2.log("");
-        console2.log("  All future admin operations must be scheduled,");
-        console2.log("  delayed, and executed through the ProtocolController.");
+        console2.log("  GOVERNANCE (48h timelock):");
+        console2.log("    DEFAULT_ADMIN / POOL_ADMIN / POLICY_ADMIN");
+        console2.log("    -> ProtocolController:", protocolController);
+        console2.log("");
+        console2.log("  OPERATIONS (direct, no delay):");
+        console2.log("    FUND_MANAGER / SERVICER / RISK_ADMIN / CONFIG_ADMIN");
+        console2.log(
+            "    WHITELIST_ADMIN / POLICY_EDITOR / INDUSTRY_ADMIN / TREASURY"
+        );
+        console2.log("    -> Operations Multisig:", operationsMultisig);
+        console2.log("");
+        console2.log("  EMERGENCY (instant):");
+        console2.log("    EMERGENCY_ADMIN (pause/unpause)");
+        if (guardian != address(0)) {
+            console2.log("    -> Guardian:", guardian);
+        } else {
+            console2.log(
+                "    -> Operations Multisig (fallback):",
+                operationsMultisig
+            );
+        }
+        console2.log("");
+        console2.log("  Timelock delay:       ", timelockDelay, "seconds");
     }
 }

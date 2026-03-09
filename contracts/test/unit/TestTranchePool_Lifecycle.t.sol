@@ -379,7 +379,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
     function test_SetMaxCap_RevertIf_Zero() public {
         vm.prank(deployer);
         vm.expectRevert(ITranchePool.TranchePool__ZeroValueError.selector);
-        tranchePool.setMaxAllocationCapSeniorTranche(0);
+        tranchePool.setMaxDepositCapSeniorTranche(0);
     }
 
     function test_SetLoanEngine_Success() public {

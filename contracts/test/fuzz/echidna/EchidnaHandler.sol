@@ -78,9 +78,9 @@ contract EchidnaHandler {
         tranchePool = TranchePool(address(tpProxy));
 
         // Configure tranches (matching Foundry)
-        tranchePool.setMaxAllocationCapSeniorTranche(5_00_00_000 * USDT);
-        tranchePool.setMaxAllocationCapJuniorTranche(3_00_00_000 * USDT);
-        tranchePool.setMaxAllocationCapEquityTranche(2_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapSeniorTranche(5_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapJuniorTranche(3_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapEquityTranche(2_00_00_000 * USDT);
         tranchePool.setMinimumDepositAmountSeniorTranche(10_00_000 * USDT);
         tranchePool.setMinimumDepositAmountJuniorTranche(50_00_000 * USDT);
         tranchePool.setMinimumDepositAmountEquityTranche(1_00_00_000 * USDT);

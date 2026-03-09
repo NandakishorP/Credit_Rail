@@ -30,14 +30,16 @@ PRIVATE_KEY=0x...                       # Deployer private key (holds all admin 
 USDC_ADDRESS=0x...                      # ERC20 token used as pool currency
                                         # For local: deploy ERC20Mock via script
 
-# Timelock (set after ProtocolController deployment)
-TIMELOCK_DELAY=172800                   # 48 hours in seconds (for production)
-# TIMELOCK_DELAY=600                    # 10 minutes (for testing)
+# Governance (ProtocolController — 48h timelock)
+MULTISIG_ADDRESS=0x...                  # Gnosis Safe: proposer + executor on timelock
+GUARDIAN_ADDRESS=0x...                  # Can cancel pending ops + pause instantly
+TIMELOCK_DELAY=172800                   # 48 hours in seconds (production)
+# TIMELOCK_DELAY=600                    # 10 minutes (testing)
 
-# Roles (set these to multisig addresses for production)
-UNDERWRITER_ADDRESS=0x...               # Will receive UNDERWRITER_ROLE
-SERVICER_ADDRESS=0x...                  # Will receive SERVICER_ROLE
-RISK_ADMIN_ADDRESS=0x...                # Will receive RISK_ADMIN_ROLE
+# Operations (direct, no timelock — daily loan/pool ops)
+OPERATIONS_MULTISIG=0x...              # Receives FUND_MANAGER, SERVICER, RISK_ADMIN,
+                                        # CONFIG_ADMIN, WHITELIST_ADMIN, POLICY_EDITOR,
+                                        # INDUSTRY_ADMIN, TREASURY roles
 ```
 
 ---
@@ -148,58 +150,84 @@ ProtocolController(
 
 ### Step 7: Transfer Administration to ProtocolController
 
-Transfer all admin rights to `ProtocolController`:
+Grant **governance roles only** to the `ProtocolController` (timelock). These are rare, high-impact operations that must be delayed:
 
 ```bash
-# 1. CreditPolicy — transfer admin to ProtocolController
-cast send $CREDIT_POLICY_ADDRESS "changePolicyAdmin(address)" $PROTOCOL_CONTROLLER_ADDRESS \
+# DEFAULT_ADMIN_ROLE on all contracts (upgrades + role management)
+cast send $CREDIT_POLICY_ADDRESS "grantRole(bytes32,address)" 0x00 $PROTOCOL_CONTROLLER \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $TRANCHE_POOL_ADDRESS "grantRole(bytes32,address)" 0x00 $PROTOCOL_CONTROLLER \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $LOAN_ENGINE_ADDRESS "grantRole(bytes32,address)" 0x00 $PROTOCOL_CONTROLLER \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
-# 2. TranchePool — grant DEFAULT_ADMIN_ROLE to ProtocolController
-cast send $TRANCHE_POOL_ADDRESS \
-  "grantRole(bytes32,address)" \
-  $(cast keccak "DEFAULT_ADMIN_ROLE") \
-  $PROTOCOL_CONTROLLER_ADDRESS \
+# POOL_ADMIN_ROLE (pool state transitions — rare, high-impact)
+cast send $TRANCHE_POOL_ADDRESS "grantPoolAdminRole(address)" $PROTOCOL_CONTROLLER \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
-# 3. LoanEngine — grant DEFAULT_ADMIN_ROLE to ProtocolController
-cast send $LOAN_ENGINE_ADDRESS \
-  "grantRole(bytes32,address)" \
-  $(cast keccak "DEFAULT_ADMIN_ROLE") \
-  $PROTOCOL_CONTROLLER_ADDRESS \
+# POLICY_ADMIN_ROLE (create/freeze/deactivate policies — rare, high-impact)
+cast send $CREDIT_POLICY_ADDRESS "grantPolicyAdminRole(address)" $PROTOCOL_CONTROLLER \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
-
-# (Optional: revoke DEFAULT_ADMIN_ROLE from deployer on each contract)
 ```
 
-> ⚠️ This is the critical step. After this, all core protocol changes require a timelock proposal. Do not skip this in production.
+> ⚠️ After this, upgrades, role changes, pool state transitions, and policy freezing all require a timelock proposal. Do not skip this in production.
 
 ---
 
-### Step 8: Grant Roles on `LoanEngine`
+### Step 8: Grant Operational Roles to Operations Multisig
+
+Grant **operational roles** to a separate operations multisig (or hot wallet). These are daily operations that must execute immediately — no timelock delay:
 
 ```bash
-# FUND_MANAGER_ROLE
-cast send $LOAN_ENGINE_ADDRESS \
-  "grantRole(bytes32,address)" \
-  $(cast keccak "FUND_MANAGER_ROLE") \
-  $FUND_MANAGER_ADDRESS \
+# LoanEngine operational roles
+cast send $LOAN_ENGINE_ADDRESS "grantFundManagerRole(address)" $OPS_MULTISIG \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $LOAN_ENGINE_ADDRESS "grantServicerRole(address)" $OPS_MULTISIG \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $LOAN_ENGINE_ADDRESS "grantRiskAdminRole(address)" $OPS_MULTISIG \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $LOAN_ENGINE_ADDRESS "grantConfigAdminRole(address)" $OPS_MULTISIG \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
-# SERVICER_ROLE
-cast send $LOAN_ENGINE_ADDRESS \
-  "grantRole(bytes32,address)" \
-  $(cast keccak "SERVICER_ROLE") \
-  $SERVICER_ADDRESS \
+# TranchePool operational roles
+cast send $TRANCHE_POOL_ADDRESS "grantConfigAdminRole(address)" $OPS_MULTISIG \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $TRANCHE_POOL_ADDRESS "grantWhitelistAdminRole(address)" $OPS_MULTISIG \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $TRANCHE_POOL_ADDRESS "grantTreasuryRole(address)" $OPS_MULTISIG \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 
-# RISK_ADMIN_ROLE
-cast send $LOAN_ENGINE_ADDRESS \
-  "grantRole(bytes32,address)" \
-  $(cast keccak "RISK_ADMIN_ROLE") \
-  $RISK_ADMIN_ADDRESS \
+# CreditPolicy operational roles
+cast send $CREDIT_POLICY_ADDRESS "grantPolicyEditorRole(address)" $OPS_MULTISIG \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $CREDIT_POLICY_ADDRESS "grantIndustryAdminRole(address)" $OPS_MULTISIG \
   --private-key $PRIVATE_KEY --rpc-url $RPC_URL
 ```
+
+---
+
+### Step 8b: Grant Emergency Roles to Guardian
+
+The guardian needs instant pause/unpause — no timelock:
+
+```bash
+cast send $LOAN_ENGINE_ADDRESS "grantEmergencyAdminRole(address)" $GUARDIAN \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+cast send $TRANCHE_POOL_ADDRESS "grantEmergencyAdminRole(address)" $GUARDIAN \
+  --private-key $PRIVATE_KEY --rpc-url $RPC_URL
+```
+
+---
+
+### Step 8c: Deployer Renounces ALL Roles
+
+```bash
+# Renounce all roles on CreditPolicy
+cast send $CREDIT_POLICY_ADDRESS "renounceRole(bytes32,address)" 0x00 $DEPLOYER ...
+# (repeat for every role on every contract — see DeployWithGovernance.s.sol Phase 7)
+```
+
+> After this, the deployer holds **zero** roles. Only the ProtocolController, operations multisig, and guardian have access.
 
 ---
 
@@ -272,8 +300,10 @@ The system is now ready for loan origination.
 | USDC | ERC20Mock | Test USDC | Real USDC |
 | Timelock delay | 0 or 60s | 600s | 48h+ |
 | Private key | Anvil default key | Test wallet | Hardware wallet / HSM |
-| Policy admin | Deployer | Deployer | ProtocolController |
-| Roles | All on deployer | Separate addresses | Separate multisigs |
+| Governance (DEFAULT_ADMIN) | Deployer | ProtocolController | ProtocolController (multisig) |
+| Operations multisig | Deployer | Separate address | Gnosis Safe (2-of-3+) |
+| Guardian | address(0) | Separate address | Security team wallet |
+| Role separation | All on deployer | Partial | Full (see DeployWithGovernance) |
 
 ---
 

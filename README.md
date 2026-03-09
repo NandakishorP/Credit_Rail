@@ -1,8 +1,9 @@
 # Credit Rail
 
-A fully permissioned, admin-led institutional private credit protocol. Every on-chain action is gated behind explicit roles — there are no public-facing functions. The Fund Manager generates ZK proofs off-chain using borrower financial data as private inputs, then submits them on-chain to prove policy compliance without exposing raw borrower data. Capital flows through a three-tranche structured finance pool (Senior / Junior / Equity) with waterfall interest distribution, loss absorption, and recovery mechanics enforced entirely by smart contract invariants.
+Private credit on-chain. Borrower financials stay off-chain.
+Policy compliance is ZK-proven, not trusted.
 
-Built on Foundry + Noir, tested with four fuzz frameworks, deployed on zkSync Era.
+Built on Foundry + Noir, tested with three fuzz frameworks, deployed on zkSync Era.
 
 ---
 

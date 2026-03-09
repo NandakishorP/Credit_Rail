@@ -40,13 +40,13 @@ contract TestTranchePool is Test {
         );
         tranchePool = TranchePool(address(proxy));
         // set max to 130m usdt
-        tranchePool.setMaxAllocationCapSeniorTranche(13_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapSeniorTranche(13_00_00_000 * USDT);
         // set to 500k usdt == 1,00,000
         tranchePool.setMinimumDepositAmountSeniorTranche(5_00_000 * USDT);
 
-        tranchePool.setMaxAllocationCapJuniorTranche(5_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapJuniorTranche(5_00_00_000 * USDT);
         tranchePool.setMinimumDepositAmountJuniorTranche(10_00_000 * USDT);
-        tranchePool.setMaxAllocationCapEquityTranche(3_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapEquityTranche(3_00_00_000 * USDT);
 
         tranchePool.setMinimumDepositAmountEquityTranche(50_00_000 * USDT);
         tranchePool.updateWhitelist(seniorUser1, true);

@@ -45,9 +45,9 @@ contract TestTranchePoolBase is Test {
         tranchePool = TranchePool(address(proxy));
 
         // Set max caps
-        tranchePool.setMaxAllocationCapSeniorTranche(13_00_00_000 * USDT);
-        tranchePool.setMaxAllocationCapJuniorTranche(5_00_00_000 * USDT);
-        tranchePool.setMaxAllocationCapEquityTranche(3_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapSeniorTranche(13_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapJuniorTranche(5_00_00_000 * USDT);
+        tranchePool.setMaxDepositCapEquityTranche(3_00_00_000 * USDT);
 
         // Set minimum deposits
         tranchePool.setMinimumDepositAmountSeniorTranche(5_00_000 * USDT);

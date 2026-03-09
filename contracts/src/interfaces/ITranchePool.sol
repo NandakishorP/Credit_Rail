@@ -91,7 +91,7 @@ interface ITranchePool {
     );
     event TrancheAPRUpdated(uint256 indexed trancheId, uint256 newAprBps);
     event LoanEngineUpdated(address indexed newLoanEngine);
-    event MaxAllocationCapUpdated(uint256 indexed trancheId, uint256 newCap);
+    event MaxDepositCapUpdated(uint256 indexed trancheId, uint256 newCap);
     event WhitelistUpdated(address indexed user, bool status);
     event EquityWhitelistUpdated(address indexed user, bool status);
     event InterestClaimed(

@@ -1003,10 +1003,13 @@ contract TranchePool is
     }
 
     /// @notice Set the LoanEngine address that is authorized to call pool callbacks.
+    /// @dev Gated by DEFAULT_ADMIN_ROLE (always behind timelock) because swapping
+    ///      the LoanEngine is a critical infrastructure change — a malicious engine
+    ///      could drain all LP capital via fake loan activations.
     /// @param _loanEngine Address of the deployed LoanEngine contract.
     function setLoanEngine(
         address _loanEngine
-    ) external onlyRole(POOL_ADMIN_ROLE) {
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_loanEngine == address(0)) revert TranchePool__ZeroAddressError();
         loanEngine = _loanEngine;
         emit LoanEngineUpdated(_loanEngine);
@@ -1014,38 +1017,38 @@ contract TranchePool is
 
     /// @notice Set the maximum deposit cap for the senior tranche.
     /// @param amount New cap in stablecoin units.
-    function setMaxAllocationCapSeniorTranche(
+    function setMaxDepositCapSeniorTranche(
         uint256 amount
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount == 0) revert TranchePool__ZeroValueError();
         if (amount < tranches[SENIOR].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
         tranches[SENIOR].maxCap = amount;
-        emit MaxAllocationCapUpdated(SENIOR, amount);
+        emit MaxDepositCapUpdated(SENIOR, amount);
     }
 
     /// @notice Set the maximum deposit cap for the junior tranche.
     /// @param amount New cap in stablecoin units.
-    function setMaxAllocationCapJuniorTranche(
+    function setMaxDepositCapJuniorTranche(
         uint256 amount
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount == 0) revert TranchePool__ZeroValueError();
         if (amount < tranches[JUNIOR].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
         tranches[JUNIOR].maxCap = amount;
-        emit MaxAllocationCapUpdated(JUNIOR, amount);
+        emit MaxDepositCapUpdated(JUNIOR, amount);
     }
 
     /// @notice Set the maximum deposit cap for the equity tranche.
     /// @param amount New cap in stablecoin units.
-    function setMaxAllocationCapEquityTranche(
+    function setMaxDepositCapEquityTranche(
         uint256 amount
     ) external onlyRole(CONFIG_ADMIN_ROLE) {
         if (amount == 0) revert TranchePool__ZeroValueError();
         if (amount < tranches[EQUITY].minDeposit)
             revert TranchePool__InvalidMaxCapAmount();
         tranches[EQUITY].maxCap = amount;
-        emit MaxAllocationCapUpdated(EQUITY, amount);
+        emit MaxDepositCapUpdated(EQUITY, amount);
     }
 
     /// @notice Add or remove an address from the LP whitelist (senior + junior).
@@ -1081,7 +1084,7 @@ contract TranchePool is
     }
 
     /*//////////////////////////////////////////////////////////////
-                              ROLE MANAGEMENT
+                                ROLE MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
     function changeDefaultAdmin(

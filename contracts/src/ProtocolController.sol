@@ -40,7 +40,11 @@ contract ProtocolController is TimelockController {
             _toArray(multisig),      
             guardian                  
         )
-    {}
+    {
+        if (guardian != address(0)) {
+            _grantRole(CANCELLER_ROLE, guardian);
+        }
+    }
 
     /**
      * @dev Helper to convert single address to array for constructor

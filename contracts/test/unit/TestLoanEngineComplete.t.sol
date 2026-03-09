@@ -1441,9 +1441,9 @@ contract TestLoanEngineComplete is Test {
     }
 
     function _setupTranchePool() internal {
-        tranchePool.setMaxAllocationCapSeniorTranche(10_000_000 * USDT);
-        tranchePool.setMaxAllocationCapJuniorTranche(5_000_000 * USDT);
-        tranchePool.setMaxAllocationCapEquityTranche(2_000_000 * USDT);
+        tranchePool.setMaxDepositCapSeniorTranche(10_000_000 * USDT);
+        tranchePool.setMaxDepositCapJuniorTranche(5_000_000 * USDT);
+        tranchePool.setMaxDepositCapEquityTranche(2_000_000 * USDT);
 
         tranchePool.setMinimumDepositAmountSeniorTranche(500_000 * USDT);
         tranchePool.setMinimumDepositAmountJuniorTranche(100_000 * USDT);
