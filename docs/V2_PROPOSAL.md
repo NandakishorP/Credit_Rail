@@ -277,6 +277,17 @@ fn verify_batch(
 }
 ```
 
+### P3.5 Tradable Tranche Shares & Secondary Liquidity
+
+**V1 Problem:** LPs are completely locked into their positions while the pool is `DEPLOYED`. Additionally, if a pool transitions to `CLOSED` and LPs fully withdraw by burning their shares, any delayed loan recovery (e.g., from long-term bankruptcy proceedings) becomes permanently locked in the contract because there are no shares left to claim it.
+
+**V2 Solution:** Tokenize Tranche Shares as standard transferrable ERC-20 tokens and implement snapshot-based capital claims.
+
+1. **ERC-20 Tranche Tokens:** Convert the internal `mapping(address => uint256) shares` into compliant ERC-20 tokens (e.g., `crSENIOR`, `crJUNIOR`). This enables a secondary market, allowing LPs to sell their risk positions and exit early without the underlying loans needing to be liquidated.
+2. **Snapshot-Based Closed Pool Recoveries:** When a pool transitions to `CLOSED`, the protocol takes a snapshot of final token balances. LPs can claim their pro-rata share of `idleValue` *without* burning their tokens. If a late `onRecovery()` event brings new funds into the closed pool months later, the LPs holding the snapshot balances can return and claim their pro-rata share of the newly recovered funds.
+
+**Impact:** Dramatically improves LP liquidity via secondary markets while elegantly solving the "Zero-Share Recovery" lockup edge case by decoupling capital withdrawal from share destruction.
+
 ---
 
 ## Migration Strategy

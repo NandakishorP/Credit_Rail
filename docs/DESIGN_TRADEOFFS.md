@@ -123,6 +123,17 @@ All three core contracts are upgradeable via the UUPS proxy pattern.
 
 **The Cost:** Upgradeability introduces a trust vector — the `DEFAULT_ADMIN_ROLE` (held by `ProtocolController`, a `TimelockController`) can deploy a malicious implementation. This is mitigated by the timelock delay (LPs can exit before the upgrade executes) and the `__gap` storage slots for safe storage layout evolution.
 
+### 3.6 Zero-Share Recovery in Closed Pools
+
+A pool can only transition to the `CLOSED` state once `totalDeployedValue == 0` (all loans are either fully repaid or written-off). Once closed, LPs can withdraw their remaining capital and burn their shares. 
+
+However, if all LPs fully withdraw and their `totalShares` drop to `0`, any subsequent `onRecovery()` events for previously written-off loans will lock the recovered funds in the contract. The funds are added back to the tranche's `idleValue`, but with zero shares remaining and deposits disabled in a `CLOSED` pool, no one can claim them, and the Admin cannot sweep them since they are not tracked as `s_protocolRevenue`.
+
+**Why Not Prevent This:** 
+- Retaining "redeemable value" for burned shares, or automatically classifying zero-share recoveries as sweepable protocol revenue, requires complex storage overhead and edge-case accounting that bloats the core waterfall logic.
+
+**The Cost:** Counterparty recoveries that take years (e.g., protracted bankruptcy court proceedings) cannot be permissionlessly recovered by LPs if they empty the pool too soon. This is mitigated operationally: the Admin can simply wait to distribute out-of-band fiat recoveries directly to LPs off-chain if the on-chain pool is already empty.
+
 ---
 
 ## 4. Off-Chain Infrastructure Trade-Offs
@@ -184,6 +195,7 @@ The actual policy thresholds (min revenue, max debt ratio, etc.) are private inp
 | Soft commitment | No liquidity fragmentation | Deterministic capital reservation |
 | Simple interest | Legal compliance | Compound yield optimization |
 | UUPS upgradeability | Institutional adaptability | Immutability guarantees |
+| Zero-share recovery | Accounting simplicity | Orphaned recovered funds |
 | Servicer oracle | Practical fiat integration | Decentralized verification |
 | Linkable pseudonymity | Concentration risk monitoring | Full anonymity |
 | Private policy thresholds | IP protection | LP transparency |
