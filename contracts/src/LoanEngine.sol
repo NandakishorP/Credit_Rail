@@ -654,6 +654,10 @@ contract LoanEngine is
             revert LoanEngine__LoanIsNotActive(loanId);
         }
 
+        if (timestamp > block.timestamp) {
+            revert LoanEngine__InvalidTimestamp(block.timestamp, timestamp);
+        }
+
         uint256 timeElapsed = timestamp - loan.lastAccrualTimestamp;
         uint256 outstanding = loan.principalOutstanding; // SLOAD once instead of 2x
 

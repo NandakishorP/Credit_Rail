@@ -57,6 +57,10 @@ interface ILoanEngine {
     error LoanEngine__ZeroAddress();
     error LoanEngine__PolicyNotActive(uint256 policyVersion);
     error LoanEngine__ValueExceedsU64(string field, uint256 value);
+    error LoanEngine__InvalidTimestamp(
+        uint256 currentTimestamp,
+        uint256 timestamp
+    );
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
