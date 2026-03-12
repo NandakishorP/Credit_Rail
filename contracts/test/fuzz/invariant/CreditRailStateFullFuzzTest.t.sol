@@ -53,10 +53,11 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         tranchePool.setTargetJuniorAPR(1500);
 
         // Deploy CreditPolicy via proxy
+        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
 
@@ -74,12 +75,10 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
-        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         creditPolicy.freezePolicy(1);
 
         // Deploy LoanEngine via proxy
         MockLoanProofVerifier mockLoanProofVerifier = new MockLoanProofVerifier();
-        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         LoanEngine leImpl = new LoanEngine();
         ERC1967Proxy leProxy = new ERC1967Proxy(
             address(leImpl),

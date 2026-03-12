@@ -344,7 +344,7 @@ contract Handler is Test {
             )
         );
         bytes32[] memory publicInputs = new bytes32[](3);
-        publicInputs[0] = creditPolicy.policyScopeHash(activePolicyVersion);
+        publicInputs[0] = creditPolicy.policyScopeHash(activePolicyVersion, 1);
         publicInputs[2] = nullifierHash; // NULLIFIER_HASH_INDEX
 
         bytes32 keyX = bytes32(uint256(1));

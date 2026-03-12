@@ -69,7 +69,7 @@ contract E2EZkLoanTest is Script {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon2)))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
         console2.log("[4/6] CreditPolicy:", address(creditPolicy));

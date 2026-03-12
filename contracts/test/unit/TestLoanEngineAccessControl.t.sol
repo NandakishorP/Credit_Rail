@@ -36,13 +36,14 @@ contract TestLoanEngineAccessControl is Test {
             abi.encodeCall(TranchePool.initialize, (address(usdt), deployer))
         );
 
+        MockPoseidon2 poseidon = new MockPoseidon2();
+
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon)))
         );
 
-        MockPoseidon2 poseidon = new MockPoseidon2();
         LoanEngine leImpl = new LoanEngine();
         ERC1967Proxy leProxy = new ERC1967Proxy(
             address(leImpl),

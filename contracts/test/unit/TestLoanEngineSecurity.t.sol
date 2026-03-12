@@ -78,17 +78,17 @@ contract TestLoanEngineSecurity is Test {
         tranchePool = TranchePool(address(tpProxy));
 
         // Deploy CreditPolicy
+        mockPoseidon = new MockPoseidon2();
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
 
         _setupCreditPolicy();
 
         // Deploy LoanEngine
-        mockPoseidon = new MockPoseidon2();
         LoanEngine leImpl = new LoanEngine();
         ERC1967Proxy leProxy = new ERC1967Proxy(
             address(leImpl),
@@ -114,7 +114,7 @@ contract TestLoanEngineSecurity is Test {
         );
 
         testPublicInputs = new bytes32[](3);
-        testPublicInputs[0] = creditPolicy.policyScopeHash(1);
+        testPublicInputs[0] = creditPolicy.policyScopeHash(1, 1);
 
         _setupTranchePool();
         _setupWhitelists();
@@ -657,8 +657,6 @@ contract TestLoanEngineSecurity is Test {
             })
         );
         creditPolicy.setPolicyDocument(99, keccak256("doc99"), "ipfs://doc99");
-        bytes32 scopeHash99 = keccak256("policyScope99");
-        creditPolicy.setPolicyScopeHash(99, scopeHash99);
         creditPolicy.freezePolicy(99);
         // Now deactivate to make isPolicyActive==false while frozen==true
         creditPolicy.deActivatePolicy(99);
@@ -668,7 +666,7 @@ contract TestLoanEngineSecurity is Test {
         uint256 nextId = loanEngine.getNextLoanId();
 
         bytes32[] memory inputs = new bytes32[](3);
-        inputs[0] = creditPolicy.policyScopeHash(99);
+        inputs[0] = creditPolicy.policyScopeHash(99, 1);
         inputs[2] = nullifier;
         inputs[1] = bytes32(
             _computeLoanHash(
@@ -779,10 +777,10 @@ contract TestLoanEngineSecurity is Test {
         );
         creditPolicy.excludeIndustry(2, excludedIndustry);
         creditPolicy.setPolicyDocument(2, keccak256("doc2"), "ipfs://doc2");
-        bytes32 scopeHash2 = keccak256("policyScope2");
-        creditPolicy.setPolicyScopeHash(2, scopeHash2);
         creditPolicy.freezePolicy(2);
         vm.stopPrank();
+
+        bytes32 scopeHash2 = creditPolicy.policyScopeHash(2, 1);
 
         bytes32 nullifier = keccak256("excludedIndustryNull");
         uint256 nextId = loanEngine.getNextLoanId();
@@ -1104,7 +1102,6 @@ contract TestLoanEngineSecurity is Test {
             })
         );
         creditPolicy.setPolicyDocument(1, keccak256("doc"), "ipfs://doc");
-        creditPolicy.setPolicyScopeHash(1, keccak256("policyScope1"));
         creditPolicy.freezePolicy(1);
     }
 

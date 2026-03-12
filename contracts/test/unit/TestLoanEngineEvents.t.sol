@@ -75,16 +75,17 @@ contract TestLoanEngineEvents is Test {
         );
         tranchePool = TranchePool(address(tpProxy));
 
+        mockPoseidon = new MockPoseidon2();
+
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
 
         _setupCreditPolicy();
 
-        mockPoseidon = new MockPoseidon2();
         LoanEngine leImpl = new LoanEngine();
         ERC1967Proxy leProxy = new ERC1967Proxy(
             address(leImpl),
@@ -110,7 +111,7 @@ contract TestLoanEngineEvents is Test {
         );
 
         testPublicInputs = new bytes32[](3);
-        testPublicInputs[0] = creditPolicy.policyScopeHash(1);
+        testPublicInputs[0] = creditPolicy.policyScopeHash(1, 1);
 
         _setupTranchePool();
 
@@ -448,7 +449,6 @@ contract TestLoanEngineEvents is Test {
             })
         );
         creditPolicy.setPolicyDocument(1, keccak256("doc"), "ipfs://doc");
-        creditPolicy.setPolicyScopeHash(1, keccak256("policyScope1"));
         creditPolicy.freezePolicy(1);
     }
 

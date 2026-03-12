@@ -30,7 +30,7 @@ contract DeployAndSetup is Script {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon)))
         );
         CreditPolicy policy = CreditPolicy(address(cpProxy));
         console.log("CreditPolicy:", address(policy));
@@ -144,7 +144,6 @@ contract DeployAndSetup is Script {
             keccak256("policy_document_v1"),
             "ipfs://test"
         );
-        policy.setPolicyScopeHash(policyVersion, keccak256("policy_scope_v1"));
         policy.freezePolicy(policyVersion);
         console.log("Policy frozen: version", policyVersion);
 

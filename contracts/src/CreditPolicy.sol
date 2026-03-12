@@ -4,6 +4,8 @@ import {ICreditPolicy} from "./interfaces/ICreditPolicy.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {IPoseidon2} from "./interfaces/IPoseidon2.sol";
+import {Field} from "@poseidon2-evm/Field.sol";
 
 /**
  * @title CreditPolicy
@@ -94,6 +96,7 @@ contract CreditPolicy is
                                 CORE STATE
     //////////////////////////////////////////////////////////////*/
     uint8 internal maxTiers;
+    IPoseidon2 public i_poseidon2;
 
     /*//////////////////////////////////////////////////////////////
                             POLICY LIFECYCLE
@@ -159,7 +162,9 @@ contract CreditPolicy is
     mapping(uint256 => string) public policyDocumentURI;
 
     // Computational hash of policy parameters (must match circuit)
-    mapping(uint256 => bytes32) public policyScopeHash;
+    // Stored per (version, tierId) since each (policy, tier) combination
+    // produces a unique Poseidon2 hash in the Noir circuit.
+    mapping(uint256 => mapping(uint8 => bytes32)) internal _policyScopeHashes;
 
     mapping(uint256 => bool) public eligibilitySet;
     mapping(uint256 => bool) public ratiosSet;
@@ -220,8 +225,10 @@ contract CreditPolicy is
     /// @dev Can only be called once (via proxy). In production, `initialAdmin`
     ///      should be the ProtocolController (timelock + multisig).
     /// @param initialAdmin The address to receive all admin roles.
-    function initialize(address initialAdmin) external initializer {
+    function initialize(address initialAdmin, address poseidon2_) external initializer {
+        if (poseidon2_ == address(0)) revert CreditPolicy__ZeroAddress();
         __AccessControl_init();
+        i_poseidon2 = IPoseidon2(poseidon2_);
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(POLICY_ADMIN_ROLE, initialAdmin);
         _grantRole(POLICY_EDITOR_ROLE, initialAdmin);
@@ -259,9 +266,10 @@ contract CreditPolicy is
 
     /// @notice Freeze a policy version, making it permanently immutable.
     /// @dev Requires all sections to be set: eligibility, ratios, concentration,
-    ///      attestation, covenants, at least one tier, document hash, and scope hash.
-    ///      Once frozen, the policy can never be edited again. This is the state
-    ///      required for `LoanEngine.createLoan()` to accept proofs against it.
+    ///      attestation, covenants, at least one tier, and document hash.
+    ///      Internally computes the Poseidon2 policyScopeHash for each tier,
+    ///      matching the Noir circuit's `compute_policy_hash()` exactly.
+    ///      Once frozen, the policy can never be edited again.
     /// @param version The version number to freeze.
     function freezePolicy(
         uint256 version
@@ -285,8 +293,44 @@ contract CreditPolicy is
         if (policyDocumentHash[version] == bytes32(0)) {
             revert CreditPolicy__IncompletePolicy(version);
         }
-        if (policyScopeHash[version] == bytes32(0)) {
-            revert CreditPolicy__IncompletePolicy(version);
+
+        // Compute Poseidon2 scope hash for each tier (matches Noir circuit's compute_policy_hash)
+        EligibilityCriteria storage e = eligibility[version];
+        FinancialRatios storage r = ratios[version];
+        AttestationRequirements storage a = attestation[version];
+
+        uint8 numTiers = totalTiers[version];
+        for (uint8 t = 0; t < numTiers; t++) {
+            if (!tierExists[version][t]) continue;
+            LoanTier storage tier = loanTiers[version][t];
+
+            // 21 elements — exactly matching Noir's compute_policy_hash order
+            Field.Type[] memory inputs = new Field.Type[](21);
+            inputs[0]  = Field.toField(e.minAnnualRevenue);
+            inputs[1]  = Field.toField(e.minEBITDA);
+            inputs[2]  = Field.toField(e.minTangibleNetWorth);
+            inputs[3]  = Field.toField(e.minBusinessAgeDays);
+            inputs[4]  = Field.toField(e.maxDefaultsLast36Months);
+            inputs[5]  = Field.toField(e.bankruptcyExcluded ? 1 : 0);
+            inputs[6]  = Field.toField(r.maxTotalDebtToEBITDA);
+            inputs[7]  = Field.toField(r.minInterestCoverageRatio);
+            inputs[8]  = Field.toField(r.minCurrentRatio);
+            inputs[9]  = Field.toField(r.minEBITDAMarginBps);
+            inputs[10] = Field.toField(a.maxAttestationAgeDays);
+            // Tier constraints
+            inputs[11] = Field.toField(uint256(t));
+            inputs[12] = Field.toField(tier.minRevenue);
+            inputs[13] = Field.toField(tier.maxRevenue);
+            inputs[14] = Field.toField(tier.minEBITDA);
+            inputs[15] = Field.toField(tier.maxDebtToEBITDA);
+            inputs[16] = Field.toField(tier.maxLoanToEBITDA);
+            inputs[17] = Field.toField(tier.interestRateBps);
+            inputs[18] = Field.toField(tier.originationFeeBps);
+            inputs[19] = Field.toField(tier.termDays);
+            inputs[20] = Field.toField(tier.active ? 1 : 0);
+
+            bytes32 hash = bytes32(Field.toUint256(i_poseidon2.hash(inputs)));
+            _policyScopeHashes[version][t] = hash;
         }
 
         policyFrozen[version] = true;
@@ -545,26 +589,17 @@ contract CreditPolicy is
         emit PolicyDocumentSet(version, hash, uri, block.timestamp);
     }
 
-    /// @notice Set the policy scope hash — a Poseidon2 hash of all policy parameters.
-    /// @dev This hash is what the Noir ZK circuit uses to verify that the proof
-    ///      was generated against the correct frozen policy. It must be computed
-    ///      off-chain (matching the circuit's `compute_policy_hash()`) and set
-    ///      before the policy can be frozen.
-    /// @param version The policy version to update.
-    /// @param hash    The Poseidon2 hash of all policy parameters (computed off-chain).
-    function setPolicyScopeHash(
+    /// @notice Returns the Poseidon2 scope hash for a specific (version, tierId) pair.
+    /// @dev Computed automatically during `freezePolicy()`. Matches the Noir
+    ///      circuit's `compute_policy_hash()` output.
+    /// @param version The policy version.
+    /// @param tierId  The tier index.
+    /// @return The Poseidon2 hash binding all policy + tier parameters.
+    function policyScopeHash(
         uint256 version,
-        bytes32 hash
-    )
-        external
-        onlyRole(POLICY_ADMIN_ROLE)
-        policyExists(version)
-        policyEditable(version)
-    {
-        policyScopeHash[version] = hash;
-        lastUpdated[version] = block.timestamp;
-
-        emit PolicyScopeHashSet(version, hash, block.timestamp);
+        uint8 tierId
+    ) external view returns (bytes32) {
+        return _policyScopeHashes[version][tierId];
     }
 
     /// @notice Transfer the DEFAULT_ADMIN_ROLE to a new address.

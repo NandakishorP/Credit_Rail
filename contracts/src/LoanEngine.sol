@@ -229,11 +229,11 @@ contract LoanEngine is
         bytes calldata proofData,
         bytes32[] calldata publicInputs
     ) external onlyRole(FUND_MANAGER_ROLE) whenNotPaused {
-        if (i_loanProofVerifier.verify(proofData, publicInputs) == false) {
-            revert LoanEngine__InvalidProof();
-        }
         if (publicInputs.length != TOTAL_PUBLIC_INPUTS) {
             revert LoanEngine__InvalidPublicInputsLength();
+        }
+        if (i_loanProofVerifier.verify(proofData, publicInputs) == false) {
+            revert LoanEngine__InvalidProof();
         }
 
         // ── u64 range guards ──────────────────────────────────────────
@@ -294,7 +294,7 @@ contract LoanEngine is
         // publicInputs[0] must correspond to the policy_version_hash from the circuit
         if (
             publicInputs[POLICY_VERSION_HASH_INDEX] !=
-            i_creditPolicy.policyScopeHash(params.policyVersion)
+            i_creditPolicy.policyScopeHash(params.policyVersion, params.tierId)
         ) {
             revert LoanEngine__InvalidPublicInputs();
         }

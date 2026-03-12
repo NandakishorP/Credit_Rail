@@ -131,7 +131,6 @@ interface ICreditPolicy {
         bytes32 industry
     ) external view returns (bool);
 
-    function policyScopeHash(uint256 version) external view returns (bytes32);
+    function policyScopeHash(uint256 version, uint8 tierId) external view returns (bytes32);
 
-    function setPolicyScopeHash(uint256 version, bytes32 hash) external;
 }

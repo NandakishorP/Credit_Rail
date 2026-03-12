@@ -62,7 +62,7 @@ contract DeployFullSystem is Script {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, poseidon2))
         );
         creditPolicy = address(cpProxy);
         console2.log("4. CreditPolicy deployed at:", creditPolicy);

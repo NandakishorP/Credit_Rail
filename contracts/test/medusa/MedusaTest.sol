@@ -82,11 +82,14 @@ contract MedusaTest {
         tranchePool.setSeniorAPR(8);
         tranchePool.setTargetJuniorAPR(15);
 
+        // Deploy MockPoseidon2
+        MockPoseidon2 mockPoseidon = new MockPoseidon2();
+
         // Deploy CreditPolicy via proxy
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
 
@@ -103,12 +106,10 @@ contract MedusaTest {
             keccak256(bytes("document")),
             "ipfs://policyDocHash"
         );
-        creditPolicy.setPolicyScopeHash(1, keccak256(bytes("scope")));
         creditPolicy.freezePolicy(1);
 
         // Deploy LoanEngine via proxy
         MockLoanProofVerifier mockVerifier = new MockLoanProofVerifier();
-        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         LoanEngine leImpl = new LoanEngine();
         ERC1967Proxy leProxy = new ERC1967Proxy(
             address(leImpl),
@@ -672,6 +673,86 @@ contract MedusaTest {
             }
         }
         return true;
+    }
+
+    function invariant_lossWaterfallOrdering() external view returns (bool) {
+        uint256 seniorShortfall = tranchePool.getSeniorPrincipalShortfall();
+        uint256 juniorShortfall = tranchePool.getJuniorPrincipalShortfall();
+        uint256 equityShortfall = tranchePool.getEquityPrincipalShortfall();
+
+        bool juniorCapitalised = tranchePool.getTotalJuniorShares() > 0;
+        bool equityCapitalised = tranchePool.getTotalEquityShares() > 0;
+
+        if (seniorShortfall > 0) {
+            if (juniorCapitalised && juniorShortfall == 0) return false;
+            if (equityCapitalised && equityShortfall == 0) return false;
+        }
+        if (juniorShortfall > 0 && equityCapitalised && equityShortfall == 0) {
+            return false;
+        }
+        return true;
+    }
+
+    function invariant_interestWaterfallSeniorPriority() external view returns (bool) {
+        uint256 seniorAccrued = tranchePool.seniorAccruedInterest();
+        uint256 seniorTarget = tranchePool.seniorTargetInterest();
+        uint256 juniorAccrued = tranchePool.juniorAccruedInterest();
+        uint256 juniorTarget = tranchePool.juniorTargetInterest();
+
+        if (seniorAccrued > seniorTarget) return false;
+        if (juniorAccrued > juniorTarget) return false;
+        return true;
+    }
+
+    function invariant_juniorShareOpen() external view returns (bool) {
+        if (tranchePool.getPoolState() == ITranchePool.PoolState.OPEN) {
+            if (tranchePool.getTotalJuniorShares() != tranchePool.getJuniorTrancheIdleValue()) return false;
+            if (tranchePool.getTotalEquityShares() != tranchePool.getEquityTrancheIdleValue()) return false;
+        }
+        return true;
+    }
+
+    function invariant_allocationRatiosSumTo100OrLess() external view returns (bool) {
+        return (tranchePool.getSeniorAllocationRatio() + tranchePool.getJuniorAllocationRatio()) <= 100;
+    }
+
+    function invariant_originationFeeBounded() external view returns (bool) {
+        uint256 nextId = loanEngine.getNextLoanId();
+        uint256 maxFee = loanEngine.getMaxOriginationFeeBps();
+        for (uint256 i = 1; i < nextId; i++) {
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            if (loan.originationFeeBps > maxFee) return false;
+        }
+        return true;
+    }
+
+    function invariant_aprSanityBound() external view returns (bool) {
+        uint256 nextId = loanEngine.getNextLoanId();
+        for (uint256 i = 1; i < nextId; i++) {
+            ILoanEngine.Loan memory loan = loanEngine.getLoanDetails(i);
+            if (loan.state != ILoanEngine.LoanState.NONE) {
+                if (loan.aprBps == 0 || loan.aprBps >= 10000) return false;
+            }
+        }
+        return true;
+    }
+
+    function invariant_globalConservationLaw() external view returns (bool) {
+        uint256 poolBalance = usdt.balanceOf(address(tranchePool));
+        uint256 totalLiabilities = tranchePool.getTotalIdleValue() +
+            tranchePool.getTotalUnclaimedInterest() +
+            tranchePool.getProtocolRevenue();
+
+        uint256 tolerance = 10;
+        return (poolBalance + tolerance >= totalLiabilities) && (totalLiabilities >= poolBalance);
+    }
+
+    function invariant_poolSolvency() external view returns (bool) {
+        uint256 poolBalance = usdt.balanceOf(address(tranchePool));
+        uint256 totalClaims = tranchePool.getTotalIdleValue() +
+            tranchePool.getTotalUnclaimedInterest();
+        
+        return poolBalance >= totalClaims;
     }
 
     // =========================================================================

@@ -122,10 +122,11 @@ contract TestLoanEngineComplete is Test {
         tranchePool = TranchePool(address(tpProxy));
 
         // Deploy CreditPolicy via proxy
+        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
 
@@ -145,14 +146,13 @@ contract TestLoanEngineComplete is Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
-        // Set policy scope hash to match what we will use in public inputs
-        bytes32 scopeHash = keccak256("policyScope1");
-        creditPolicy.setPolicyScopeHash(1, scopeHash);
 
         creditPolicy.freezePolicy(1);
 
+        // Read the auto-computed scope hash after freezing
+        bytes32 scopeHash = creditPolicy.policyScopeHash(1, 1);
+
         // Deploy LoanEngine via proxy
-        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         LoanEngine leImpl = new LoanEngine();
         ERC1967Proxy leProxy = new ERC1967Proxy(
             address(leImpl),
@@ -309,7 +309,7 @@ contract TestLoanEngineComplete is Test {
         creditPolicy.setLoanTier(2, 1, _createMockTier("Tier 1"));
 
         testPublicInputs[2] = keccak256("nullifier2");
-        testPublicInputs[0] = creditPolicy.policyScopeHash(2);
+        testPublicInputs[0] = creditPolicy.policyScopeHash(2, 1);
         uint256 loanId = loanEngine.getNextLoanId();
         testPublicInputs[1] = bytes32(
             _computeLoanHash(

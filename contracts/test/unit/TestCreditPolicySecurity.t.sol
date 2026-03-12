@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 
 /**
  * @title TestCreditPolicySecurity
@@ -18,12 +19,15 @@ contract TestCreditPolicySecurity is Test {
     address deployer = makeAddr("deployer");
     address attacker = makeAddr("attacker");
 
+    MockPoseidon2 mockPoseidon;
+
     function setUp() public {
         vm.startPrank(deployer);
+        mockPoseidon = new MockPoseidon2();
         CreditPolicy impl = new CreditPolicy();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(proxy));
         creditPolicy.setMaxTiers(5);
@@ -36,7 +40,7 @@ contract TestCreditPolicySecurity is Test {
 
     function test_Initialize_CannotReinitializeProxy() public {
         vm.expectRevert();
-        creditPolicy.initialize(deployer);
+        creditPolicy.initialize(deployer, address(mockPoseidon));
     }
 
     function test_Initialize_RolesGrantedCorrectly() public view {
@@ -213,18 +217,8 @@ contract TestCreditPolicySecurity is Test {
         creditPolicy.setLoanTier(12, 0, _createTier());
     }
 
-    function test_SetPolicyScopeHash_RevertsOnFrozenPolicy() public {
-        _createAndFreezePolicy(13);
-
-        vm.prank(deployer);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CreditPolicy.CreditPolicy__PolicyNotEditable.selector,
-                13
-            )
-        );
-        creditPolicy.setPolicyScopeHash(13, keccak256("newHash"));
-    }
+    // setPolicyScopeHash is no longer a manual operation — it's computed
+    // internally by freezePolicy(). This test is removed.
 
     // =========================================================================
     //                    _requireU64 BOUNDARY TEST
@@ -303,33 +297,7 @@ contract TestCreditPolicySecurity is Test {
         creditPolicy.excludeIndustry(32, keccak256("GAMBLING"));
     }
 
-    // =========================================================================
-    //                    setPolicyScopeHash
-    // =========================================================================
-
-    function test_SetPolicyScopeHash_Success() public {
-        vm.startPrank(deployer);
-        creditPolicy.createPolicy(40);
-        bytes32 hash = keccak256("scopeHash40");
-        creditPolicy.setPolicyScopeHash(40, hash);
-        assertEq(creditPolicy.policyScopeHash(40), hash);
-        vm.stopPrank();
-    }
-
-    function test_SetPolicyScopeHash_RevertsForNonPolicyAdmin() public {
-        vm.prank(deployer);
-        creditPolicy.createPolicy(41);
-
-        vm.prank(attacker);
-        vm.expectRevert();
-        creditPolicy.setPolicyScopeHash(41, keccak256("hash"));
-    }
-
-    function test_SetPolicyScopeHash_RevertsOnNonExistentPolicy() public {
-        vm.prank(deployer);
-        vm.expectRevert(CreditPolicy.CreditPolicy__InvalidVersion.selector);
-        creditPolicy.setPolicyScopeHash(999, keccak256("hash"));
-    }
+    // setPolicyScopeHash tests removed — hash is now computed internally by freezePolicy()
 
     // =========================================================================
     //                    ROLE MANAGEMENT ACCESS CONTROL
@@ -453,16 +421,7 @@ contract TestCreditPolicySecurity is Test {
         vm.stopPrank();
     }
 
-    function test_Event_PolicyScopeHashSet() public {
-        vm.startPrank(deployer);
-        creditPolicy.createPolicy(62);
-        bytes32 hash = keccak256("scope62");
-
-        vm.expectEmit(false, false, false, true);
-        emit CreditPolicy.PolicyScopeHashSet(62, hash, block.timestamp);
-        creditPolicy.setPolicyScopeHash(62, hash);
-        vm.stopPrank();
-    }
+    // PolicyScopeHashSet event test removed — hash is now computed internally
 
     function test_Event_DefaultAdminChanged() public {
         address newAdmin = makeAddr("newAdmin");
@@ -504,7 +463,6 @@ contract TestCreditPolicySecurity is Test {
         creditPolicy.updateCovenants(version, _createCovenants());
         creditPolicy.setLoanTier(version, 0, _createTier());
         creditPolicy.setPolicyDocument(version, keccak256("doc"), "ipfs://doc");
-        creditPolicy.setPolicyScopeHash(version, keccak256("scope"));
     }
 
     function _createEligibility()

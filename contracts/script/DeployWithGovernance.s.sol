@@ -134,7 +134,7 @@ contract DeployWithGovernance is Script {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon2)))
         );
         creditPolicyProxy = address(cpProxy);
         console2.log("[4/7] CreditPolicy proxy:", creditPolicyProxy);

@@ -92,17 +92,19 @@ contract EchidnaHandler {
         // Deploy MockLoanProofVerifier
         verifier = new MockLoanProofVerifier();
 
+        // Deploy MockPoseidon2
+        MockPoseidon2 mockPoseidon = new MockPoseidon2();
+
         // Deploy CreditPolicy via proxy
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (address(this)))
+            abi.encodeCall(CreditPolicy.initialize, (address(this), address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
         _setupCreditPolicy();
 
         // Deploy LoanEngine via proxy
-        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         LoanEngine leImpl = new LoanEngine();
         ERC1967Proxy leProxy = new ERC1967Proxy(
             address(leImpl),
@@ -215,7 +217,6 @@ contract EchidnaHandler {
             keccak256("document"),
             "ipfs://policyDocHash"
         );
-        creditPolicy.setPolicyScopeHash(1, keccak256("scope"));
         creditPolicy.freezePolicy(1);
     }
 

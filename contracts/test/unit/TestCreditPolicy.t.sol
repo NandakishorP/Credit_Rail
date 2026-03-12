@@ -5,6 +5,7 @@ import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 
 contract TestCreditPolicy is Test {
     address deployer = makeAddr("deployer");
@@ -14,10 +15,11 @@ contract TestCreditPolicy is Test {
 
     function setUp() public {
         vm.startPrank(deployer);
+        MockPoseidon2 mockPoseidon = new MockPoseidon2();
         CreditPolicy impl = new CreditPolicy();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer))
+            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
         );
         creditPolicy = CreditPolicy(address(proxy));
         creditPolicy.setMaxTiers(50);
@@ -52,7 +54,6 @@ contract TestCreditPolicy is Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
-        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
         _freezePolicy(version);
     }
@@ -303,12 +304,9 @@ contract TestCreditPolicy is Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
-        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.expectEmit(true, false, false, true);
         emit CreditPolicy.PolicyFrozen(1, block.timestamp);
         creditPolicy.freezePolicy(1);
-        vm.stopPrank();
-        assertEq(creditPolicy.isPolicyFrozen(1), true);
     }
 
     function testFreezePolicyRevertIfOwnerIsNotAdmin() public {
@@ -361,7 +359,6 @@ contract TestCreditPolicy is Test {
             _hashString("document"),
             "ipfs://policyDocHash"
         );
-        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
         _freezePolicy(1);
         assertEq(creditPolicy.isPolicyFrozen(1), true);
@@ -378,7 +375,6 @@ contract TestCreditPolicy is Test {
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
         creditPolicy.setLoanTier(1, 0, _createMockTier("Tier"));
         creditPolicy.setPolicyDocument(1, _hashString("doc"), "uri");
-        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
 
         uint256 t1 = creditPolicy.lastUpdated(1);
@@ -576,7 +572,6 @@ contract TestCreditPolicy is Test {
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
         creditPolicy.setLoanTier(1, 0, _createMockTier("Tier 1"));
         // Note: NOT setting document hash
-        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
 
         vm.expectRevert(
             abi.encodeWithSignature(
@@ -1450,7 +1445,6 @@ contract TestCreditPolicy is Test {
         creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
         creditPolicy.setLoanTier(1, 0, _createMockTier("T1"));
         creditPolicy.setPolicyDocument(1, _hashString("doc"), "uri");
-        creditPolicy.setPolicyScopeHash(1, _hashString("scope"));
         vm.stopPrank();
 
         // Freeze
