@@ -19,7 +19,10 @@ contract TestCreditPolicy is Test {
         CreditPolicy impl = new CreditPolicy();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
+            abi.encodeCall(
+                CreditPolicy.initialize,
+                (deployer, address(mockPoseidon))
+            )
         );
         creditPolicy = CreditPolicy(address(proxy));
         creditPolicy.setMaxTiers(50);
