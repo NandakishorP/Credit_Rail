@@ -114,7 +114,11 @@ Ongoing obligations for borrowers during the loan term.
 
 ## `policyScopeHash`
 
-When a policy is frozen, the contract computes a Poseidon2 hash of **21 policy parameters** and stores it as `policyScopeHash[version]`.
+When a policy is frozen, the contract automatically computes a Poseidon2 hash of the tier parameters and stores it as `_policyScopeHashes[version][tierId]`.
+
+```solidity
+function policyScopeHash(uint256 version, uint8 tierId) external view returns (bytes32);
+```
 
 The 21 parameters hashed are:
 1. `policy_min_annual_revenue`
@@ -139,7 +143,7 @@ The 21 parameters hashed are:
 20. `tier_term_days`
 21. `tier_active`
 
-This hash is the public input `policy_version_hash` embedded in every ZK proof. During `createLoan()`, the `LoanEngine` calls `CreditPolicy.policyScopeHash(policyVersion)` and checks that it matches the proof's public input. If the policy parameters were ever changed after the proof was generated, the hash would not match and the transaction would revert.
+This hash is the public input `policy_version_hash` embedded in every ZK proof. During `createLoan()`, the `LoanEngine` calls `CreditPolicy.policyScopeHash(policyVersion, tierId)` and checks that it matches the proof's public input. If the policy parameters were ever changed after the proof was generated, the hash would not match and the transaction would revert.
 
 This binding makes it impossible to accept a proof generated against one set of risk parameters while a different set is now active.
 

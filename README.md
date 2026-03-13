@@ -19,7 +19,7 @@ Credit Rail solves this with a Noir ZK circuit that the Fund Manager runs off-ch
 
 A proof must be tied to a *specific, immutable* version of the credit policy — otherwise an underwriter could generate a valid proof against a loose policy and then tighten the policy post-origination to mask the violation.
 
-The solution: the `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — is computed off-chain and set on-chain via `setPolicyScopeHash()` before the policy is frozen. The Noir circuit embeds this hash as a public input. `LoanEngine.createLoan()` independently recomputes the loan hash from on-chain state and rejects any proof where the hashes don't match. The policy and the proof are cryptographically bound.
+The solution: the `policyScopeHash` — a Poseidon2 hash of policy parameters — is computed **on-chain automatically** during `freezePolicy()` for each tier. The Noir circuit embeds this hash as a public input. `LoanEngine.createLoan()` queries the `policyScopeHash(version, tierId)` from on-chain state and rejects any proof where the hashes don't match. The policy and the proof are cryptographically bound.
 
 **3. Underwriter signature scheme: Schnorr over Grumpkin**
 
@@ -39,7 +39,7 @@ LP claims use a global interest index pattern (`interestIndex += Δ / totalShare
 Off-chain                              On-chain
 ─────────────────────────────────      ──────────────────────────────────────
 Borrower → Underwriter                 LoanEngine.createLoan()
-           (Schnorr sign)   →  proof      → CreditPolicy.policyScopeHash()
+           (Schnorr sign)   →  proof      → CreditPolicy.policyScopeHash(version, tierId)
            ↓                               → Poseidon2.hash() [recompute loan hash]
            Noir Circuit                    → HonkVerifier.verify()
            (Barretenberg)              LoanEngine.activateLoan()

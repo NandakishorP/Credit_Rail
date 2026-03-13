@@ -40,14 +40,13 @@ The Admin is trusted to:
 
 ### 1.2 Policy Admin Trust
 
-The `policyScopeHash` stored on-chain is **computed off-chain** and set manually by the `POLICY_ADMIN_ROLE` via `setPolicyScopeHash()`. The EVM does not independently verify that this hash matches the actual on-chain policy parameters.
+The `policyScopeHash` stored on-chain is **computed automatically on-chain** during `freezePolicy()` using the `Poseidon2` contract for each tier. The EVM independently verifies that this hash matches the actual on-chain policy parameters.
 
-**Why:** Computing a Poseidon2 hash of 21 policy fields natively in Solidity would cost prohibitive gas (the Poseidon2 EVM implementation is designed for smaller input sets). The hash is computed off-chain using the same Barretenberg backend that the Noir circuit uses.
+**Why:** This mathematically guarantees that the ZK proof is checking exactly the parameters stored on-chain.
 
 **Mitigation:** 
-- The `policyScopeHash` can only be set **before** the policy is frozen. Once frozen, it is permanently immutable.
-- Any external party (LPs, auditors) can independently recompute the Poseidon2 hash from the on-chain policy storage values and verify it matches the stored `policyScopeHash`.
-- **V2 Plan:** Deploy a lightweight on-chain verification that probabilistically samples a subset of policy fields to confirm hash integrity without full recomputation.
+- The `policyScopeHash` is computed inside `freezePolicy()`. Once frozen, it is permanently immutable.
+- Any external party (LPs, auditors) can independently recompute the Poseidon2 hash from the on-chain policy storage values and verify it matches the stored `_policyScopeHashes[version][tier]`.
 
 ---
 

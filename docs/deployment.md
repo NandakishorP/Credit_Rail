@@ -275,7 +275,7 @@ cast send $LOAN_ENGINE_ADDRESS \
 cd zk-scripts && ts-node setup_policy_v2.ts
 ```
 
-This creates policy version 1, sets all parameters, and freezes it. The resulting `policyScopeHash` is stored on-chain.
+This creates policy version 1, sets all parameters, and freezes it. The resulting `policyScopeHash` is automatically computed and stored on-chain during the freeze call.
 
 ---
 

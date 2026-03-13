@@ -65,7 +65,7 @@ LPs trust the *smart contract invariants* (18 invariant tests, see [invariants.m
 | All financial data | **Private** | Core privacy guarantee — revenue, EBITDA, ratios never touch the blockchain |
 | Policy constraints | **Private** | Prevents competitors from reverse-engineering the fund's exact underwriting criteria |
 
-**The Trade-Off:** Making the policy constraints private means LPs cannot independently verify *what* the eligibility thresholds are — only that the proof was generated against the correct frozen `policy_version_hash`. LPs must trust that the `policyScopeHash` was honestly computed from the on-chain policy parameters (see [Finding 7 in zk-circuit-review.md](./security/zk-circuit-review.md#17-the-policyscopehash-is-admin-set-not-computed-on-chain)).
+**The Trade-Off:** Making the policy constraints private means LPs cannot independently verify *what* the eligibility thresholds are — only that the proof was generated against the correct frozen `policy_version_hash`. However, the `policyScopeHash` is now automatically computed from the on-chain policy parameters during policy freezing, eliminating the trust assumption.
 
 ---
 
@@ -180,7 +180,7 @@ The actual policy thresholds (min revenue, max debt ratio, etc.) are private inp
 
 **Why:** The fund's underwriting criteria are proprietary intellectual property. Publishing them would allow competitors to precisely replicate the fund's investment strategy.
 
-**The Cost:** LPs cannot independently verify the policy thresholds. They can verify that the policy hash matches the on-chain frozen version, but they must trust that the hash was honestly computed (see [policyScopeHash trust assumption](./security/zk-circuit-review.md)).
+**The Cost:** LPs cannot independently verify the policy thresholds. They can verify that the policy hash matches the on-chain frozen version, which is now automatically computed on-chain to remove the trust assumption.
 
 ---
 

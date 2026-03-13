@@ -141,7 +141,9 @@ let computed_commitment = poseidon2::Poseidon2::hash([
 
 ### P2.1 On-Chain Policy Hash Verification
 
-**V1 Problem:** The `policyScopeHash` is computed off-chain and manually set by the `POLICY_ADMIN_ROLE`. There is no on-chain verification that it matches the actual policy storage.
+**V1 Problem:** Initially, the `policyScopeHash` was computed off-chain and manually set by the `POLICY_ADMIN_ROLE`. There was no on-chain verification that it matched the actual policy storage.
+
+**Status:** ✅ Resolved in V1. `freezePolicy()` now computes the 21-parameter Poseidon2 hash automatically on-chain. This proposal is kept for historical context.
 
 **V2 Solution:**
 
@@ -172,7 +174,7 @@ function verifyPolicyScopeHash(uint256 version) external view returns (bool) {
 }
 ```
 
-**Alternative V2 Approach:** If gas costs for full 21-field Poseidon2 hashing become acceptable (through EIP precompiles or L2 gas reductions), compute the hash automatically in `freezePolicy()` instead of requiring manual `setPolicyScopeHash()`.
+**Note:** As gas costs for full 21-field Poseidon2 hashing were found to be acceptable on L2, the hash is now computed automatically in `freezePolicy()`, removing the need for `setPolicyScopeHash()`.
 
 ---
 

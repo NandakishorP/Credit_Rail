@@ -97,7 +97,7 @@ accruedInterest += principalOutstanding × aprBps × timeElapsed
 
 `createLoan()` performs three independent on-chain checks before accepting a loan:
 
-1. **Policy hash check** — `CreditPolicy.policyScopeHash(policyVersion)` must match the proof's `policy_version_hash` public input
+1. **Policy hash check** — `CreditPolicy.policyScopeHash(policyVersion, tierId)` must match the proof's `policy_version_hash` public input
 2. **Loan hash check** — `Poseidon2.hash(params)` recomputed on-chain must match the proof's `loan_hash` public input
 3. **Proof verification** — `HonkVerifier.verify(proofData, publicInputs)` must return `true`
 

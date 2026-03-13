@@ -57,7 +57,7 @@ import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
 
 ### 4. Policy Scope Hash Computation
 
-The `policyScopeHash` is a Poseidon hash of 21 policy parameters that creates a binding commitment to the frozen policy version:
+The `policyScopeHash` is a Poseidon hash of policy parameters that creates a binding commitment to the frozen policy version and tier:
 
 ```typescript
 // Parameters hashed (in order, must match circuit's compute_policy_hash):
@@ -341,7 +341,7 @@ credit_rail/
 
 2. **Timestamp Bounds**: Proofs must be within `PROOF_MAX_AGE` seconds of the current block timestamp.
 
-3. **Policy Immutability**: Once a policy version is frozen, its `policyScopeHash` cannot be changed.
+3. **Policy Immutability**: Once a policy version is frozen, its automatically computed `policyScopeHash` cannot be changed.
 
 4. **Underwriter Authorization**: Only registered underwriter public keys can sign valid attestations.
 

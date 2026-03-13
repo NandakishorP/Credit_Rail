@@ -18,7 +18,7 @@ graph TD
     subgraph On-chain
         FundAdmin -->|createLoan + proof + 3 public inputs| LoanEngine[LoanEngine.sol]
         LoanEngine -->|verify proof| HonkVerifier[HonkVerifier.sol]
-        LoanEngine -->|policyScopeHash check| CreditPolicy[CreditPolicy.sol]
+        LoanEngine -->|policyScopeHash(version, tierId) check| CreditPolicy[CreditPolicy.sol]
         LoanEngine -->|recompute loan hash| Poseidon2[Poseidon2.sol]
         LoanEngine -->|allocateCapital / onRepayment / onLoss / onRecovery| TranchePool[TranchePool.sol]
         ProtocolController[ProtocolController.sol] -->|governs| CreditPolicy & LoanEngine & TranchePool
@@ -36,7 +36,7 @@ The exact sequence of on-chain calls across the full loan lifecycle:
 ### Loan Creation
 ```
 Fund Admin → LoanEngine.createLoan()
-    → CreditPolicy.policyScopeHash()       [verify policy hash matches proof public input]
+    → CreditPolicy.policyScopeHash(version, tierId)       [verify policy hash matches proof public input]
     → Poseidon2.hash()                     [recompute loan hash on-chain]
     → HonkVerifier.verify()                [verify ZK proof against public inputs]
     → [store loan struct, mark nullifier used]
@@ -141,7 +141,7 @@ ACTIVE → FROZEN → INACTIVE
 ACTIVE → INACTIVE
 ```
 
-Once frozen, a policy is permanently immutable. The `policyScopeHash` — a Poseidon2 hash of all 21 policy parameters — is computed off-chain and set on-chain before freezing via `setPolicyScopeHash()`. Every ZK proof must embed this hash as a public input, binding the proof cryptographically to an exact policy version. Even the fund administrator cannot modify the rules a loan was underwritten under.
+Once frozen, a policy is permanently immutable. The `policyScopeHash` — a Poseidon2 hash of the policy tier parameters — is computed **on-chain automatically** during `freezePolicy()`. Every ZK proof must embed this hash as a public input, binding the proof cryptographically to an exact policy version and tier. Even the fund administrator cannot modify the rules a loan was underwritten under.
 
 **What a Policy Contains:**
 
@@ -232,7 +232,7 @@ Calling any function with a non-whitelisted address reverts immediately. None of
 | Loan terms (principal, APR, fee, term) | Submitted in `createLoan` params | ✅ Yes |
 
 The on-chain `LoanEngine` performs three independent verifications on every `createLoan` call. All three must pass or the transaction reverts:
-1. `policy_version_hash` in the proof matches `CreditPolicy.policyScopeHash(policyVersion)`
+1. `policy_version_hash` in the proof matches `CreditPolicy.policyScopeHash(policyVersion, tierId)`
 2. `loan_hash` in the proof matches the Poseidon2 recomputation using the submitted loan params
 3. The proof passes `HonkVerifier.verify(proofData, publicInputs)`
 

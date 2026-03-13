@@ -95,7 +95,7 @@ If the same proof were submitted a second time, the nullifier check in `LoanEngi
 ---
 
 ### Policy Scope Hash (`policyScopeHash`)
-A Poseidon2 hash of all 21 frozen policy parameters, computed off-chain and set on-chain via `setPolicyScopeHash()` before a policy version is frozen. Every ZK proof must embed this hash as a public input, binding the proof permanently to a specific policy version. Once the policy is frozen, the hash (and all underlying parameters) become permanently immutable.
+A Poseidon2 hash of all 21 frozen policy parameters, computed automatically on-chain during `freezePolicy()` for each tier. Every ZK proof must embed this hash as a public input, binding the proof permanently to a specific policy version and tier. Once the policy is frozen, the hash (and all underlying parameters) become permanently immutable.
 
 ---
 

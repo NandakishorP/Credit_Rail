@@ -202,7 +202,6 @@ Poseidon2.hash([borrowerCommitment, uwKeyX, uwKeyY, tierId,
 | `excludeIndustry()` | 2,876 | 23,751 | **35,607** | 35,607 | Mapping write |
 | `includeIndustry()` | 2,524 | 10,702 | **9,135** | 18,149 | Mapping write |
 | `setPolicyDocument()` | 2,858 | 50,687 | **58,782** | 58,782 | Hash + URI storage |
-| `setPolicyScopeHash()` | — | — | **35,349** | 35,349 | Poseidon2 hash storage |
 | `setMaxTiers()` | 3,318 | 25,881 | **26,447** | 26,447 | Config storage |
 
 **Full policy setup (one-time cost):**
@@ -218,8 +217,7 @@ Poseidon2.hash([borrowerCommitment, uwKeyX, uwKeyY, tierId,
 | `updateCovenants()` | 126,261 | 679,263 |
 | `setLoanTier(tier0)` | 305,915 | 985,178 |
 | `setPolicyDocument()` | 58,782 | 1,043,960 |
-| `setPolicyScopeHash()` | 35,349 | 1,079,309 |
-| `freezePolicy()` | 51,511 | 1,130,820 |
+| `freezePolicy()` | 86,860 | 1,130,820 |
 | **Total policy setup** | | **~1,131,000 gas** |
 
 ---
