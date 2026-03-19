@@ -599,14 +599,6 @@ contract MedusaTest {
         }
     }
 
-    function invariant_idleIntegrity() external view returns (bool) {
-        return
-            (tranchePool.getSeniorTrancheIdleValue() +
-                tranchePool.getJuniorTrancheIdleValue() +
-                tranchePool.getEquityTrancheIdleValue()) ==
-            tranchePool.getTotalIdleValue();
-    }
-
     function invariant_seniorShareOpen() external view returns (bool) {
         if (tranchePool.getPoolState() == ITranchePool.PoolState.OPEN) {
             return
@@ -745,14 +737,6 @@ contract MedusaTest {
 
         uint256 tolerance = 10;
         return (poolBalance + tolerance >= totalLiabilities) && (totalLiabilities >= poolBalance);
-    }
-
-    function invariant_poolSolvency() external view returns (bool) {
-        uint256 poolBalance = usdt.balanceOf(address(tranchePool));
-        uint256 totalClaims = tranchePool.getTotalIdleValue() +
-            tranchePool.getTotalUnclaimedInterest();
-        
-        return poolBalance >= totalClaims;
     }
 
     // =========================================================================

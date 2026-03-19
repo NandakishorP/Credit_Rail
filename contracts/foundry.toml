@@ -15,7 +15,8 @@ block_gas_limit = 100000000
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts",
-    "@poseidon2-evm/=lib/poseidon2-evm/src/"
+    "@poseidon2-evm/=lib/poseidon2-evm/src/",
+    "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/"
 ]
 # Exclude scripts and non-foundry fuzz tests from default profile
 ignore = ["script/*", "test/medusa/*", "test/fuzz/echidna/*", "tests/*"]
@@ -45,4 +46,23 @@ zksync = true
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts",
     "@poseidon2-evm/=lib/poseidon2-evm/src/"
+]
+
+[profile.halmos]
+src = "src"
+out = "halmos-out"
+libs = ["lib"]
+test = "test/halmos"
+script = "script-disabled"
+solc = "0.8.30"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+ffi = true
+evm_version = "cancun"
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts",
+    "@poseidon2-evm/=lib/poseidon2-evm/src/",
+    "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/"
 ]

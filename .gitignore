@@ -32,6 +32,15 @@ contracts/.wake/
 contracts/slither_results.json
 contracts/*.txt
 
+# Certora
+contracts/.certora_internal/
+contracts/certora/munged/
+contracts/certora/patched/
+contracts/emv-*/
+
+# Halmos
+contracts/halmos-out/
+
 # Circuits (Noir)
 circuits/target/
 circuits/out/

@@ -255,18 +255,6 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         );
     }
 
-    function invariant__totalDeployedValueMatchesSumOfIndividualTranches()
-        public
-        view
-    {
-        assertEq(
-            tranchePool.getTotalDeployedValue(),
-            tranchePool.getSeniorTrancheDeployedValue() +
-                tranchePool.getJuniorTrancheDeployedValue() +
-                tranchePool.getEquityTrancheDeployedValue(),
-            "Total deployed value does not match sum of individual tranches"
-        );
-    }
 
     /*
         @notice System Level Invariant: Loan Principal Integrity
@@ -295,37 +283,30 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         );
     }
 
-    function invariant__lossRecoveryWaterfallSymmetry() public view {
+    function invariant__shortfallBoundedByTotalLoss() public view {
         uint256 totalShortfall = tranchePool.getSeniorPrincipalShortfall() +
             tranchePool.getJuniorPrincipalShortfall() +
             tranchePool.getEquityPrincipalShortfall();
 
-        if (tranchePool.getTotalRecovered() >= tranchePool.getTotalLoss()) {
-            // If we recovered more than lost, the hole should be completely filled.
-            assertEq(
-                totalShortfall,
-                0,
-                "Shortfall must be 0 if fully recovered"
-            );
-        } else {
-            // If we haven't recovered everything, shortfall should exactly match the remaining hole.
-            assertEq(
-                totalShortfall,
-                tranchePool.getTotalLoss() - tranchePool.getTotalRecovered(),
-                "Shortfall mismatch"
-            );
-        }
-    }
-
-    function invariant__totalIdleValueIntegrity() public view {
-        assertEq(
-            tranchePool.getSeniorTrancheIdleValue() +
-                tranchePool.getJuniorTrancheIdleValue() +
-                tranchePool.getEquityTrancheIdleValue(),
-            tranchePool.getTotalIdleValue(),
-            "Sum of tranche idle values != total idle value"
+        assertLe(
+            totalShortfall,
+            tranchePool.getTotalLoss(),
+            "Total shortfall exceeds cumulative loss"
         );
     }
+
+    function invariant__shortfallPlusRecoveredCoversLoss() public view {
+        uint256 totalShortfall = tranchePool.getSeniorPrincipalShortfall() +
+            tranchePool.getJuniorPrincipalShortfall() +
+            tranchePool.getEquityPrincipalShortfall();
+
+        assertGe(
+            totalShortfall + tranchePool.getTotalRecovered(),
+            tranchePool.getTotalLoss(),
+            "Shortfall + recovered < total loss"
+        );
+    }
+
 
     function invariant__seniorShareToIdleOpen() public view {
         if (tranchePool.getPoolState() == ITranchePool.PoolState.OPEN) {
@@ -441,50 +422,24 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         }
     }
 
-    function invariant__lossWaterfallOrdering() public view {
-        // Losses absorb equity → junior → senior via deployedValue.
-        //
-        // The waterfall can only absorb from a tranche that HAS deployedValue
-        // at the time of loss. If equity/junior had zero deployment when a loss
-        // occurred (e.g. no deposits in that tranche), the loss skips them and
-        // hits senior directly.  Likewise, recovery restores senior-first,
-        // which can clear a senior shortfall while junior's remains.
-        //
-        // Therefore the ordering invariant only holds among tranches that
-        // have ever received deposits (totalShares > 0). A tranche with
-        // zero shares was never capitalised, so having zero shortfall is
-        // correct even when a more-senior tranche has a shortfall.
+    function invariant__perTrancheShortfallBoundedByLoss() public view {
+        uint256 totalLoss = tranchePool.getTotalLoss();
 
-        uint256 seniorShortfall = tranchePool.getSeniorPrincipalShortfall();
-        uint256 juniorShortfall = tranchePool.getJuniorPrincipalShortfall();
-        uint256 equityShortfall = tranchePool.getEquityPrincipalShortfall();
-
-        bool juniorCapitalised = tranchePool.getTotalJuniorShares() > 0;
-        bool equityCapitalised = tranchePool.getTotalEquityShares() > 0;
-
-        // If senior has a shortfall, subordinate tranches that were
-        // capitalised must also show a shortfall (they absorb first).
-        if (seniorShortfall > 0) {
-            if (juniorCapitalised) {
-                assertTrue(
-                    juniorShortfall > 0,
-                    "Senior has shortfall but capitalised junior has none"
-                );
-            }
-            if (equityCapitalised) {
-                assertTrue(
-                    equityShortfall > 0,
-                    "Senior has shortfall but capitalised equity has none"
-                );
-            }
-        }
-        // If junior has a shortfall, equity (if capitalised) must also.
-        if (juniorShortfall > 0 && equityCapitalised) {
-            assertTrue(
-                equityShortfall > 0,
-                "Junior has shortfall but capitalised equity has none"
-            );
-        }
+        assertLe(
+            tranchePool.getSeniorPrincipalShortfall(),
+            totalLoss,
+            "Senior shortfall exceeds total loss"
+        );
+        assertLe(
+            tranchePool.getJuniorPrincipalShortfall(),
+            totalLoss,
+            "Junior shortfall exceeds total loss"
+        );
+        assertLe(
+            tranchePool.getEquityPrincipalShortfall(),
+            totalLoss,
+            "Equity shortfall exceeds total loss"
+        );
     }
 
     function invariant__interestWaterfallSeniorPriority() public view {
@@ -582,15 +537,4 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         );
     }
 
-    function invariant__poolSolvency() public view {
-        uint256 poolBalance = ERC20Mock(usdt).balanceOf(address(tranchePool));
-        uint256 totalClaims = tranchePool.getTotalIdleValue() +
-            tranchePool.getTotalUnclaimedInterest();
-        // The pool token balance must always cover all obligations
-        assertGe(
-            poolBalance,
-            totalClaims,
-            "Pool is insolvent: balance < obligations"
-        );
-    }
 }

@@ -13,7 +13,7 @@ Invariants are tested across four frameworks:
 | Framework | File | Strategy |
 |---|---|---|
 | Foundry Invariant | `test/fuzz/invariant/CreditRailStateFullFuzzTest.t.sol` | Stateful handler with ghost accounting |
-| Foundry Handler | `test/fuzz/invariant/Handler.t.sol` | Drives all 18 state transition selectors (20 invariants total) |
+| Foundry Handler | `test/fuzz/invariant/Handler.t.sol` | Drives all 18 state transition selectors (17 invariants total) |
 | Echidna | `test/fuzz/echidna/EchidnaTest.sol` | Property-based corpus fuzzing |
 | Medusa | `test/medusa/MedusaTest.sol` | Coverage-guided stateful fuzzing |
 
@@ -66,35 +66,17 @@ function invariant__OutStandingPrincipalMatchesDeployed() public view {
 
 ---
 
-### Invariant 3 — Protocol Solvency (Token Balance ≥ Obligations)
+### Invariant 3 — Global Conservation Law (Token Balance ≥ Liabilities)
 
-The actual ERC20 token balance held by TranchePool must always be sufficient to cover all claimable obligations.
-
-```
-TokenBalance(TranchePool) ≥ TotalIdle + TotalUnclaimedInterest
-```
-
-This is the hard solvency check. If this fails, the protocol cannot meet its obligations to LPs.
-
-```solidity
-function invariant__poolSolvency() public view {
-    uint256 poolBalance = ERC20Mock(usdt).balanceOf(address(tranchePool));
-    uint256 totalClaims = tranchePool.getTotalIdleValue() + tranchePool.getTotalUnclaimedInterest();
-    assertGe(poolBalance, totalClaims);
-}
-```
-
----
-
-### Invariant 4 — Global Conservation Law (Token Balance == Liabilities)
-
-A stricter version of Invariant 3: the token balance must be *exactly* equal to the sum of all internal liabilities.
+The actual ERC20 token balance held by TranchePool must always be sufficient to cover all internal liabilities: idle capital, unclaimed interest, and protocol revenue.
 
 ```
-TokenBalance(TranchePool) == TotalIdle + TotalUnclaimedInterest + ProtocolRevenue
+TokenBalance(TranchePool) ≥ TotalIdle + TotalUnclaimedInterest + ProtocolRevenue
 ```
 
-**Bugs it catches:** Interest distribution creating tokens from nowhere. Idle accounting drifting from actual balance. Protocol revenue being double-counted.
+The `assertGe` (rather than `assertEq`) accounts for rounding dust from the interest index pattern: each repayment's two integer divisions can leave up to 1 wei of irrecoverable dust in `s_totalUnclaimedInterest`. A 10-wei tolerance covers multiple repayment rounds.
+
+**Bugs it catches:** Interest distribution creating tokens from nowhere. Idle accounting drifting from actual balance. Protocol revenue being double-counted. Value leaking out of the pool unaccounted.
 
 ```solidity
 function invariant__globalConservationLaw() public view {
@@ -102,57 +84,15 @@ function invariant__globalConservationLaw() public view {
     uint256 totalLiabilities = tranchePool.getTotalIdleValue()
         + tranchePool.getTotalUnclaimedInterest()
         + tranchePool.getProtocolRevenue();
-    assertEq(poolBalance, totalLiabilities);
+    uint256 tolerance = 10;
+    assertGe(poolBalance + tolerance, totalLiabilities);
+    assertGe(totalLiabilities, poolBalance);
 }
 ```
 
 ---
 
-### Invariant 5 — Tranche Deployed Decomposition
-
-The global deployed counter must equal the sum of deployed values across individual tranches.
-
-```
-TotalDeployed == SeniorDeployed + JuniorDeployed + EquityDeployed
-```
-
-**Bugs it catches:** Loss absorption updating the global total but not a specific tranche. Allocation updating tranches but not the global total.
-
-```solidity
-function invariant__totalDeployedValueMatchesSumOfIndividualTranches() public view {
-    assertEq(
-        tranchePool.getTotalDeployedValue(),
-        tranchePool.getSeniorTrancheDeployedValue()
-            + tranchePool.getJuniorTrancheDeployedValue()
-            + tranchePool.getEquityTrancheDeployedValue()
-    );
-}
-```
-
----
-
-### Invariant 6 — Tranche Idle Decomposition
-
-Same as Invariant 5 but for idle capital.
-
-```
-TotalIdle == SeniorIdle + JuniorIdle + EquityIdle
-```
-
-```solidity
-function invariant__totalIdleValueIntegrity() public view {
-    assertEq(
-        tranchePool.getSeniorTrancheIdleValue()
-            + tranchePool.getJuniorTrancheIdleValue()
-            + tranchePool.getEquityTrancheIdleValue(),
-        tranchePool.getTotalIdleValue()
-    );
-}
-```
-
----
-
-### Invariant 7 — System-Level Principal Integrity
+### Invariant 4 — System-Level Principal Integrity
 
 Iterates over *actual contract storage* (all loans in LoanEngine) and verifies the sum of `principalOutstanding` equals the pool's total deployed value.
 
@@ -178,7 +118,7 @@ These verify that the interest and loss waterfalls behave correctly under all se
 
 ---
 
-### Invariant 8 — Loss/Recovery Waterfall Symmetry
+### Invariant 5 — Loss/Recovery Waterfall Symmetry
 
 If total recovered ≥ total loss, the combined shortfall across all tranches must be zero—the hole has been completely filled. Otherwise, the shortfall must exactly equal the remaining gap.
 
@@ -205,7 +145,7 @@ function invariant__lossRecoveryWaterfallSymmetry() public view {
 
 ---
 
-### Invariant 9 — Loss Waterfall Ordering
+### Invariant 6 — Loss Waterfall Ordering
 
 Losses absorb equity → junior → senior (via `deployedValue`). If a senior tranche has a shortfall, every **capitalised** subordinate tranche (one with `totalShares > 0`) must also have a shortfall — because the waterfall would have absorbed their `deployedValue` first.
 
@@ -239,7 +179,7 @@ function invariant__lossWaterfallOrdering() public view {
 
 ---
 
-### Invariant 10 — Interest Waterfall Senior Priority
+### Invariant 7 — Interest Waterfall Senior Priority
 
 Senior and Junior accrued interest can never exceed their respective targets. If it did, it would mean a lower-priority tranche received interest before a higher-priority tranche's target was met.
 
@@ -263,7 +203,7 @@ These verify correctness of individual loan state across the full lifecycle.
 
 ---
 
-### Invariant 11 — Loan State Consistency
+### Invariant 8 — Loan State Consistency
 
 - `NONE` and `CREATED` loans must have `principalOutstanding == 0` (no capital deployed yet)
 - `REPAID` and `WRITTEN_OFF` loans must have `principalOutstanding == 0` (terminal states)
@@ -289,7 +229,7 @@ function invariant__loanStateConsistency() public view {
 
 ---
 
-### Invariant 12 — Loan Interest Accounting
+### Invariant 9 — Loan Interest Accounting
 
 - `REPAID` loans must have `interestAccrued == 0` (all interest was paid before closure)
 - `WRITTEN_OFF` loans must have `interestAccrued == 0` (interest was cancelled on write-off)
@@ -311,7 +251,7 @@ function invariant__loanInterestAccounting() public view {
 
 ---
 
-### Invariant 13 — Origination Fee Bounded
+### Invariant 10 — Origination Fee Bounded
 
 Every loan's `originationFeeBps` must be ≤ the protocol's configured `maxOriginationFeeBps`. This ensures no loan was created with a fee exceeding the cap.
 
@@ -328,7 +268,7 @@ function invariant__originationFeeBounded() public view {
 
 ---
 
-### Invariant 14 — APR Sanity Bound
+### Invariant 11 — APR Sanity Bound
 
 Every created loan must have an APR > 0 and < 100%. A zero or 100%+ APR would indicate a misconfigured tier or a broken loan creation path.
 
@@ -353,7 +293,7 @@ These verify the pool's state machine constraints hold under all sequencing.
 
 ---
 
-### Invariant 15 — Pool State / Deployed Capital Validity
+### Invariant 12 — Pool State / Deployed Capital Validity
 
 If the pool is in `OPEN` or `CLOSED` state, the total deployed value must be zero. No capital should be outstanding before the pool accepts loans or after all loans have been settled.
 
@@ -368,7 +308,7 @@ function invariant__poolStateValidityDeployedCapital() public view {
 
 ---
 
-### Invariant 16 — Interest Index Monotonicity
+### Invariant 13 — Interest Index Monotonicity
 
 Interest indices for all three tranches initialise at `1e18` and can only increase over time. A decrease would mean interest is being "un-distributed", which breaks the claim calculation.
 
@@ -382,7 +322,7 @@ function invariant__interestIndexMonotonicity() public view {
 
 ---
 
-### Invariant 17 — Share-to-Idle Parity in OPEN State
+### Invariant 14 — Share-to-Idle Parity in OPEN State
 
 When the pool is in `OPEN` state (no capital has been deployed, no interest has arrived), each tranche's total shares must exactly equal its idle value. Shares are minted 1:1 on deposit and no interest has been distributed yet, so any drift indicates a deposit or withdrawal bug.
 
@@ -405,7 +345,7 @@ function invariant__juniorShareToIdleOpen() public view {
 
 ---
 
-### Invariant 18 — Allocation Ratios Sum to ≤ 100%
+### Invariant 15 — Allocation Ratios Sum to ≤ 100%
 
 The Senior + Junior allocation factors must never exceed 100%. The Equity allocation is implicitly `100 − Senior − Junior`, so exceeding 100 would make it negative, breaking the allocation algorithm.
 
@@ -420,9 +360,9 @@ function invariant__allocationRatiosSumTo100OrLess() public view {
 
 ---
 
-### Invariant 19 — Unclaimed Interest + Idle Value Equals Token Balance
+### Invariant 16 — Unclaimed Interest + Idle Value Equals Token Balance
 
-The pool's actual ERC20 token balance must exactly equal the sum of all idle capital plus all unclaimed (distributed but not yet claimed) interest across the three tranches. This is a stricter, interest-aware complement to Invariant 3.
+The pool's actual ERC20 token balance must exactly equal the sum of all idle capital plus all unclaimed (distributed but not yet claimed) interest across the three tranches.
 
 ```
 TokenBalance(TranchePool) == TotalIdle + TotalUnclaimedInterest

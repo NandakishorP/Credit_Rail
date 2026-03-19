@@ -11,7 +11,6 @@ import {IVerifier} from "./interfaces/IVerifier.sol";
 import {ITranchePool} from "./interfaces/ITranchePool.sol";
 import {ILoanEngine} from "./interfaces/ILoanEngine.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {TranchePool} from "./TranchePool.sol";
 import {IPoseidon2} from "./interfaces/IPoseidon2.sol";
 import {Field} from "@poseidon2-evm/Field.sol";
 
@@ -126,13 +125,13 @@ contract LoanEngine is
     mapping(address whiteListedFeeManager => bool)
         public whitelistedFeeManagers;
     mapping(bytes32 nullifierHash => bool) public s_nullifierHashes;
-    uint256 public s_nextLoanId = 1;
+    uint256 public s_nextLoanId;
     uint256 public s_maxOriginationFeeBps;
     address public i_stableCoin;
     mapping(bytes32 => bool) public authorizedUnderwriters;
-    uint256 public constant PROOF_MAX_AGE = 1 hours;
     IPoseidon2 public i_poseidon2;
 
+    uint256 public constant PROOF_MAX_AGE = 1 hours;
     uint256 public constant POLICY_VERSION_HASH_INDEX = 0;
     uint256 public constant LOAN_HASH_INDEX = 1;
     uint256 public constant NULLIFIER_HASH_INDEX = 2;
@@ -189,7 +188,7 @@ contract LoanEngine is
         i_tranchePool = ITranchePool(_tranchePool);
         i_stableCoin = _stableCoinAddress;
         i_poseidon2 = IPoseidon2(_poseidon2);
-        s_nextLoanId = 1; // proxy storage won't inherit declaration default
+        s_nextLoanId = 1;
 
         // Grant all roles to initialAdmin
         _grantRole(DEFAULT_ADMIN_ROLE, _initialAdmin);
@@ -490,6 +489,7 @@ contract LoanEngine is
     )
         external
         onlyRole(SERVICER_ROLE)
+        whenNotPaused
         isWhiteListedRepaymentAgent(repaymentAgent)
         nonReentrant
     {
@@ -623,7 +623,9 @@ contract LoanEngine is
     )
         external
         onlyRole(SERVICER_ROLE)
+        whenNotPaused
         isWhiteListedRecoveryAgent(recoveryAgent)
+        nonReentrant
     {
         Loan storage loan = s_loans[loanId];
         if (loan.state != LoanState.WRITTEN_OFF) {

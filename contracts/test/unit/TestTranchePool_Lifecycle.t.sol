@@ -288,10 +288,14 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
 
     function test_SetPoolState_ToClosed_Success() public {
         _depositToAllTranches();
-        // Do NOT allocate capital. Closing is only allowed if deployed == 0.
 
-        vm.prank(deployer);
+        // Must transition through COMMITTED → DEPLOYED → CLOSED (single-step only)
+        vm.startPrank(deployer);
+        tranchePool.setPoolState(ITranchePool.PoolState.COMMITTED);
+        tranchePool.setPoolState(ITranchePool.PoolState.DEPLOYED);
+        // No capital deployed, so closing is allowed
         tranchePool.setPoolState(ITranchePool.PoolState.CLOSED);
+        vm.stopPrank();
 
         assertEq(
             uint256(tranchePool.getPoolState()),

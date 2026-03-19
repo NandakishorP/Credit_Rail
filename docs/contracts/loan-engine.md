@@ -107,6 +107,20 @@ If any check fails, the transaction reverts. The nullifier is then stored to pre
 s_nullifierHashes[nullifierHash] = true;
 ```
 
+### Why LoanEngine Does Not Redundantly Check Tier Parameters
+
+`LoanEngine` does **not** independently verify that `originationFeeBps`, `interestRateBps`, or `termDays` match the frozen `LoanTier` stored in `CreditPolicy`. This is intentional — the ZK circuit already enforces exact equality:
+
+```noir
+assert(loan_apr_bps == tier_interest_rate_bps, "APR does not match tier rate");
+assert(loan_origination_fee_bps == tier_origination_fee_bps, "Origination fee mismatch");
+assert(loan_term_days == tier_term_days, "Term does not match tier");
+```
+
+Both the tier parameters and the loan parameters are hashed into the proof's public inputs (`policy_version_hash` and `loan_hash` respectively). On-chain, `LoanEngine` verifies both hashes match. If any parameter was tampered with, the hashes diverge and the transaction reverts — no valid proof can be generated for mismatched values.
+
+Adding redundant `SLOAD`s from `CreditPolicy` storage would contradict the design intent: the proof **is** the enforcement layer. Duplicating checks on-chain would add gas cost without improving security, and would signal distrust in the protocol's own proof system.
+
 ---
 
 ## Role Architecture

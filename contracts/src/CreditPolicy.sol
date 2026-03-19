@@ -225,7 +225,10 @@ contract CreditPolicy is
     /// @dev Can only be called once (via proxy). In production, `initialAdmin`
     ///      should be the ProtocolController (timelock + multisig).
     /// @param initialAdmin The address to receive all admin roles.
-    function initialize(address initialAdmin, address poseidon2_) external initializer {
+    function initialize(
+        address initialAdmin,
+        address poseidon2_
+    ) external initializer {
         if (poseidon2_ == address(0)) revert CreditPolicy__ZeroAddress();
         __AccessControl_init();
         i_poseidon2 = IPoseidon2(poseidon2_);
@@ -306,16 +309,16 @@ contract CreditPolicy is
 
             // 21 elements — exactly matching Noir's compute_policy_hash order
             Field.Type[] memory inputs = new Field.Type[](21);
-            inputs[0]  = Field.toField(e.minAnnualRevenue);
-            inputs[1]  = Field.toField(e.minEBITDA);
-            inputs[2]  = Field.toField(e.minTangibleNetWorth);
-            inputs[3]  = Field.toField(e.minBusinessAgeDays);
-            inputs[4]  = Field.toField(e.maxDefaultsLast36Months);
-            inputs[5]  = Field.toField(e.bankruptcyExcluded ? 1 : 0);
-            inputs[6]  = Field.toField(r.maxTotalDebtToEBITDA);
-            inputs[7]  = Field.toField(r.minInterestCoverageRatio);
-            inputs[8]  = Field.toField(r.minCurrentRatio);
-            inputs[9]  = Field.toField(r.minEBITDAMarginBps);
+            inputs[0] = Field.toField(e.minAnnualRevenue);
+            inputs[1] = Field.toField(e.minEBITDA);
+            inputs[2] = Field.toField(e.minTangibleNetWorth);
+            inputs[3] = Field.toField(e.minBusinessAgeDays);
+            inputs[4] = Field.toField(e.maxDefaultsLast36Months);
+            inputs[5] = Field.toField(e.bankruptcyExcluded ? 1 : 0);
+            inputs[6] = Field.toField(r.maxTotalDebtToEBITDA);
+            inputs[7] = Field.toField(r.minInterestCoverageRatio);
+            inputs[8] = Field.toField(r.minCurrentRatio);
+            inputs[9] = Field.toField(r.minEBITDAMarginBps);
             inputs[10] = Field.toField(a.maxAttestationAgeDays);
             // Tier constraints
             inputs[11] = Field.toField(uint256(t));

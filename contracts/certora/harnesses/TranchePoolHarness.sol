@@ -100,6 +100,10 @@ contract TranchePoolHarness is TranchePool {
             tranches[2].principalShortfall;
     }
 
+    function getLastTrancheAccrualTimestamp() external view returns (uint256) {
+        return lastTrancheAccrualTimestamp;
+    }
+
     // ── Global state (only expose fields NOT already public on TranchePool) ──
 
     function getSeniorAllocationFactor() external view returns (uint256) {

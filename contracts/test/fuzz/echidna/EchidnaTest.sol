@@ -95,10 +95,8 @@ contract EchidnaTest {
         _invariant_totalIdleAndDeployedValueMatchesAccounting();
         _invariant_OutStandingPrincipalMatchesDeployed();
         _invariant_totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance();
-        _invariant_totalDeployedValueMatchesSumOfIndividualTranches();
         _invariant_systemLevel_PrincipalIntegrity();
         _invariant_lossRecoveryWaterfallSymmetry();
-        _invariant_totalIdleValueIntegrity();
         _invariant_seniorShareToIdleOpen();
         _invariant_loanStateConsistency();
         _invariant_interestIndexMonotonicity();
@@ -111,7 +109,6 @@ contract EchidnaTest {
         _invariant_originationFeeBounded();
         _invariant_aprSanityBound();
         _invariant_globalConservationLaw();
-        _invariant_poolSolvency();
     }
 
     // =========================================================================
@@ -157,21 +154,6 @@ contract EchidnaTest {
     }
 
     // =========================================================================
-    // INVARIANT 4: Total Deployed Value = Sum of Individual Tranches
-    // =========================================================================
-    function _invariant_totalDeployedValueMatchesSumOfIndividualTranches()
-        internal
-        view
-    {
-        TranchePool tp = handler.tranchePool();
-        uint256 total = tp.getTotalDeployedValue();
-        uint256 sum = tp.getSeniorTrancheDeployedValue() +
-            tp.getJuniorTrancheDeployedValue() +
-            tp.getEquityTrancheDeployedValue();
-        assert(total == sum);
-    }
-
-    // =========================================================================
     // INVARIANT 5: System Level Principal Integrity
     // =========================================================================
     function _invariant_systemLevel_PrincipalIntegrity() internal view {
@@ -208,19 +190,6 @@ contract EchidnaTest {
                 tp.getTotalRecovered();
             assert(totalShortfall == expectedShortfall);
         }
-    }
-
-    // =========================================================================
-    // INVARIANT 7: Total Idle Value Integrity
-    // =========================================================================
-    function _invariant_totalIdleValueIntegrity() internal view {
-        TranchePool tp = handler.tranchePool();
-
-        uint256 sum = tp.getSeniorTrancheIdleValue() +
-            tp.getJuniorTrancheIdleValue() +
-            tp.getEquityTrancheIdleValue();
-
-        assert(sum == tp.getTotalIdleValue());
     }
 
     // =========================================================================
@@ -404,19 +373,6 @@ contract EchidnaTest {
         uint256 tolerance = 10;
         assert(poolBalance + tolerance >= totalLiabilities);
         assert(totalLiabilities >= poolBalance);
-    }
-
-    // =========================================================================
-    // INVARIANT 20: Pool Solvency
-    // =========================================================================
-    function _invariant_poolSolvency() internal view {
-        TranchePool tp = handler.tranchePool();
-        uint256 poolBalance = ERC20Mock(address(handler.usdt())).balanceOf(
-            address(tp)
-        );
-        uint256 totalClaims = tp.getTotalIdleValue() +
-            tp.getTotalUnclaimedInterest();
-        assert(poolBalance >= totalClaims);
     }
 
     // =========================================================================

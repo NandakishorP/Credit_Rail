@@ -123,7 +123,29 @@ All three core contracts are upgradeable via the UUPS proxy pattern.
 
 **The Cost:** Upgradeability introduces a trust vector — the `DEFAULT_ADMIN_ROLE` (held by `ProtocolController`, a `TimelockController`) can deploy a malicious implementation. This is mitigated by the timelock delay (LPs can exit before the upgrade executes) and the `__gap` storage slots for safe storage layout evolution.
 
-### 3.6 Zero-Share Recovery in Closed Pools
+### 3.6 Fixed Tier Parameters in PolicyScopeHash
+
+V1 hashes `interestRateBps`, `originationFeeBps`, and `termDays` as fixed values into the `policyScopeHash`. The ZK circuit then enforces exact equality between the loan parameters and the tier parameters:
+
+```noir
+assert(loan_apr_bps == tier_interest_rate_bps);
+assert(loan_origination_fee_bps == tier_origination_fee_bps);
+assert(loan_term_days == tier_term_days);
+```
+
+**Why This Is Rigid:** Real-world private credit facilities do not price every loan at the same rate. A tier might specify "12-month term, 800–1400 bps APR" depending on borrower quality within that tier. V1 forces a single fixed value per tier, meaning the fund manager must create separate tiers for every rate/term combination — tier proliferation that doesn't reflect how credit committees actually operate.
+
+**Why V1 Accepts This:** Range enforcement inside a ZK circuit requires inequality constraints (`min ≤ value ≤ max`) rather than equality checks. While Noir supports this, it changes the hashing model: a range cannot be committed to via a single hash of the value. The `policyScopeHash` would need to commit to `(min, max)` bounds instead, doubling the hashed fields and changing the circuit's public input structure. For V1, the simplicity of exact-match hashing was prioritized to reduce circuit complexity and audit surface.
+
+**V2 Migration Path:**
+1. Remove `interestRateBps`, `originationFeeBps`, and `termDays` from the `policyScopeHash`
+2. Store `(min, max)` bounds per tier on-chain instead of fixed values
+3. Circuit enforces range constraints (`min ≤ loan_value ≤ max`) instead of equality
+4. Loan-specific values are still committed to via the `loan_hash` public input, so on-chain verification of exact loan terms is preserved — only the *policy binding* becomes flexible
+
+This preserves the ZK guarantee (every loan provably falls within the frozen policy's bounds) while giving fund managers the pricing flexibility that institutional credit requires.
+
+### 3.7 Zero-Share Recovery in Closed Pools
 
 A pool can only transition to the `CLOSED` state once `totalDeployedValue == 0` (all loans are either fully repaid or written-off). Once closed, LPs can withdraw their remaining capital and burn their shares. 
 
@@ -195,6 +217,7 @@ The actual policy thresholds (min revenue, max debt ratio, etc.) are private inp
 | Soft commitment | No liquidity fragmentation | Deterministic capital reservation |
 | Simple interest | Legal compliance | Compound yield optimization |
 | UUPS upgradeability | Institutional adaptability | Immutability guarantees |
+| Fixed tier params in hash | Hash simplicity, smaller circuit | Pricing flexibility per tier |
 | Zero-share recovery | Accounting simplicity | Orphaned recovered funds |
 | Servicer oracle | Practical fiat integration | Decentralized verification |
 | Linkable pseudonymity | Concentration risk monitoring | Full anonymity |

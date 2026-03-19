@@ -990,8 +990,12 @@ contract TranchePool is
     function setPoolState(
         PoolState newState
     ) external onlyRole(POOL_ADMIN_ROLE) {
-        if (uint256(newState) < uint256(poolState))
+        if (uint256(newState) < uint256(poolState)) {
             revert TranchePool__InvalidStateTransition(newState);
+        }
+        if (uint256(poolState) + 1 != uint256(newState)) {
+            revert TranchePool__InvalidStateTransition(newState);
+        }
 
         if (newState == PoolState.CLOSED) {
             if (getTotalDeployedValue() > 0)

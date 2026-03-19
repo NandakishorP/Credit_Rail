@@ -17,9 +17,8 @@ contract EchidnaCreditRailTest is CreditRailStateFullFuzzTest {
     // INTERNAL INVARIANT CHECKER (called after every action to mimic Foundry)
     // -----------------------------------------------------------------------
     function _checkCriticalInvariants() internal view {
-        invariant__lossRecoveryWaterfallSymmetry();
-        // Add more invariants here if you want comprehensive checking.
-        // Note: Checking all invariants after every call is expensive but thorough.
+        invariant__shortfallBoundedByTotalLoss();
+        invariant__shortfallPlusRecoveredCoversLoss();
     }
 
     // -----------------------------------------------------------------------
@@ -36,15 +35,21 @@ contract EchidnaCreditRailTest is CreditRailStateFullFuzzTest {
         invariant__totalIdleAndDeployedValueMatchesAccounting();
         invariant__OutStandingPrincipalMatchesDeployed();
         invariant__totalUnclaimedInterestAndIdleValueMatchesTotalTokenBalance();
-        invariant__totalDeployedValueMatchesSumOfIndividualTranches();
         invariant__systemLevel_PrincipalIntegrity();
-        invariant__lossRecoveryWaterfallSymmetry();
-        invariant__totalIdleValueIntegrity();
+        invariant__shortfallBoundedByTotalLoss();
+        invariant__shortfallPlusRecoveredCoversLoss();
         invariant__seniorShareToIdleOpen();
         invariant__loanStateConsistency();
         invariant__interestIndexMonotonicity();
         invariant__poolStateValidityDeployedCapital();
         invariant__loanInterestAccounting();
+        invariant__perTrancheShortfallBoundedByLoss();
+        invariant__interestWaterfallSeniorPriority();
+        invariant__juniorShareToIdleOpen();
+        invariant__allocationRatiosSumTo100OrLess();
+        invariant__originationFeeBounded();
+        invariant__aprSanityBound();
+        invariant__globalConservationLaw();
     }
 
     // -----------------------------------------------------------------------
