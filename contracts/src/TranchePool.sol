@@ -1407,17 +1407,6 @@ contract TranchePool is
         return tranches[EQUITY].accruedInterest;
     }
 
-    function seniorInterestIndex() external view returns (uint256) {
-        return tranches[SENIOR].interestIndex;
-    }
-
-    function juniorInterestIndex() external view returns (uint256) {
-        return tranches[JUNIOR].interestIndex;
-    }
-
-    function equityInterestIndex() external view returns (uint256) {
-        return tranches[EQUITY].interestIndex;
-    }
 
     function seniorTargetInterest() external view returns (uint256) {
         return tranches[SENIOR].targetInterest;
@@ -1435,114 +1424,6 @@ contract TranchePool is
         return tranches[JUNIOR].aprBps;
     }
 
-    function seniorPrincipalShortfall() external view returns (uint256) {
-        return tranches[SENIOR].principalShortfall;
-    }
-
-    function juniorPrincipalShortfall() external view returns (uint256) {
-        return tranches[JUNIOR].principalShortfall;
-    }
-
-    function equityPrincipalShortfall() external view returns (uint256) {
-        return tranches[EQUITY].principalShortfall;
-    }
-
-    // share mappings (tests call tranchePool.s_seniorTrancheShares(addr))
-    function s_seniorTrancheShares(address u) external view returns (uint256) {
-        return tranches[SENIOR].shares[u];
-    }
-
-    function s_juniorTrancheShares(address u) external view returns (uint256) {
-        return tranches[JUNIOR].shares[u];
-    }
-
-    function s_equityTrancheShares(address u) external view returns (uint256) {
-        return tranches[EQUITY].shares[u];
-    }
-
-    function s_totalSeniorShares() external view returns (uint256) {
-        return tranches[SENIOR].totalShares;
-    }
-
-    function s_totalJuniorShares() external view returns (uint256) {
-        return tranches[JUNIOR].totalShares;
-    }
-
-    function s_totalEquityShares() external view returns (uint256) {
-        return tranches[EQUITY].totalShares;
-    }
-
-    function s_seniorTrancheIdleValue() external view returns (uint256) {
-        return tranches[SENIOR].idleValue;
-    }
-
-    function s_juniorTrancheIdleValue() external view returns (uint256) {
-        return tranches[JUNIOR].idleValue;
-    }
-
-    function s_equityTrancheIdleValue() external view returns (uint256) {
-        return tranches[EQUITY].idleValue;
-    }
-
-    function s_seniorTrancheDeployedValue() external view returns (uint256) {
-        return tranches[SENIOR].deployedValue;
-    }
-
-    function s_juniorTrancheDeployedValue() external view returns (uint256) {
-        return tranches[JUNIOR].deployedValue;
-    }
-
-    function s_equityTrancheDeployedValue() external view returns (uint256) {
-        return tranches[EQUITY].deployedValue;
-    }
-
-    function s_seniorTrancheMaxCap() external view returns (uint256) {
-        return tranches[SENIOR].maxCap;
-    }
-
-    function s_juniorTrancheMaxCap() external view returns (uint256) {
-        return tranches[JUNIOR].maxCap;
-    }
-
-    function s_equityTrancheMaxCap() external view returns (uint256) {
-        return tranches[EQUITY].maxCap;
-    }
-
-    function s_minimumDepositAmountSeniorTranche()
-        external
-        view
-        returns (uint256)
-    {
-        return tranches[SENIOR].minDeposit;
-    }
-
-    function s_minimumDepositAmountJuniorTranche()
-        external
-        view
-        returns (uint256)
-    {
-        return tranches[JUNIOR].minDeposit;
-    }
-
-    function s_minimumDepositAmountEquityTranche()
-        external
-        view
-        returns (uint256)
-    {
-        return tranches[EQUITY].minDeposit;
-    }
-
-    function seniorUserIndex(address u) external view returns (uint256) {
-        return tranches[SENIOR].userIndex[u];
-    }
-
-    function juniorUserIndex(address u) external view returns (uint256) {
-        return tranches[JUNIOR].userIndex[u];
-    }
-
-    function equityUserIndex(address u) external view returns (uint256) {
-        return tranches[EQUITY].userIndex[u];
-    }
 
     // =========================================================================
     //                          STORAGE GAP

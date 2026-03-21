@@ -57,7 +57,7 @@ contract TestTranchePool_Lifecycle is TestTranchePoolBase {
         uint256 expectedEquityIndex = 1e18 +
             (interestRepaid * 1e18) /
             tranchePool.getTotalEquityShares();
-        assertEq(tranchePool.equityInterestIndex(), expectedEquityIndex);
+        assertEq(tranchePool.getEquityInterestIndex(), expectedEquityIndex);
     }
 
     function test_OnRepayment_BothPrincipalAndInterest_Success() public {

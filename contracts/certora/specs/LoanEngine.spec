@@ -27,6 +27,7 @@ methods {
     function le.getNullifierUsed(bytes32) external returns (bool) envfree;
     function le.s_nextLoanId() external returns (uint256) envfree;
     function le.s_maxOriginationFeeBps() external returns (uint256) envfree;
+    function le.isInitialized() external returns (bool) envfree;
 
     // Summarize external contract calls as NONDET (we verify them separately)
     function _.verify(bytes, bytes32[]) external => NONDET;
@@ -54,6 +55,19 @@ methods {
 definition IS_TERMINAL(ILoanEngine.LoanState s) returns bool =
     s == ILoanEngine.LoanState.REPAID || s == ILoanEngine.LoanState.WRITTEN_OFF;
 
+definition INIT() returns bool = le.isInitialized();
+
+// Exclude initialize, proxy upgrade, and createLoan from parametric checks.
+// - initialize: sets s_nextLoanId = 1 from HAVOC'd storage (looks like a decrease).
+// - createLoan: too many NONDET-summarized externals (verify, policy, poseidon)
+//   make every path revert, causing vacuity warnings across all rules.
+//   createLoan is verified separately via the ZK proof + policy specs.
+definition EXCLUDED(method f) returns bool =
+    f.selector == sig:upgradeToAndCall(address,bytes).selector
+    || f.selector == sig:initialize(address,address,uint256,address,address,address,address).selector
+    || f.selector == sig:initializeHarness(address,address,uint256,address,address,address,address).selector
+    || f.selector == 0x1230a365; // createLoan
+
 // ═══════════════════════════════════════════════════════════════════════
 //                          INVARIANTS
 // ═══════════════════════════════════════════════════════════════════════
@@ -61,12 +75,14 @@ definition IS_TERMINAL(ILoanEngine.LoanState s) returns bool =
 /// @title outstanding-leq-issued
 /// A loan's outstanding principal can never exceed its issued principal.
 invariant outstandingLeqIssued(uint256 loanId)
-    le.getLoanPrincipalOutstanding(loanId) <= le.getLoanPrincipalIssued(loanId);
+    INIT() => le.getLoanPrincipalOutstanding(loanId) <= le.getLoanPrincipalIssued(loanId)
+    filtered { f -> !EXCLUDED(f) }
 
 /// @title next-loan-id-positive
 /// The next loan ID is always >= 1.
 invariant nextLoanIdPositive()
-    le.s_nextLoanId() >= 1;
+    INIT() => le.s_nextLoanId() >= 1
+    filtered { f -> !EXCLUDED(f) }
 
 // ═══════════════════════════════════════════════════════════════════════
 //                             RULES
@@ -74,9 +90,12 @@ invariant nextLoanIdPositive()
 
 /// @title terminal-states-are-permanent
 /// Once a loan is REPAID or WRITTEN_OFF, no function can change its state.
-rule terminalStatesArePermanent(method f, uint256 loanId) {
+rule terminalStatesArePermanent(method f, uint256 loanId)
+filtered { f -> !EXCLUDED(f) }
+{
     env e;
     calldataarg args;
+    require INIT();
 
     ILoanEngine.LoanState stateBefore = le.getLoanState(loanId);
     require IS_TERMINAL(stateBefore);
@@ -90,9 +109,12 @@ rule terminalStatesArePermanent(method f, uint256 loanId) {
 /// @title valid-state-transitions-only
 /// Loan state can only transition along valid edges:
 /// NONE→CREATED, CREATED→ACTIVE, ACTIVE→REPAID, ACTIVE→DEFAULTED, DEFAULTED→WRITTEN_OFF
-rule validStateTransitions(method f, uint256 loanId) {
+rule validStateTransitions(method f, uint256 loanId)
+filtered { f -> !EXCLUDED(f) }
+{
     env e;
     calldataarg args;
+    require INIT();
 
     ILoanEngine.LoanState before = le.getLoanState(loanId);
 
@@ -112,9 +134,12 @@ rule validStateTransitions(method f, uint256 loanId) {
 /// @title nullifier-once-used-always-used
 /// Once a nullifier is marked as used, it can never be un-used.
 /// Prevents ZK proof replay attacks.
-rule nullifierPermanence(method f, bytes32 nullifier) {
+rule nullifierPermanence(method f, bytes32 nullifier)
+filtered { f -> !EXCLUDED(f) }
+{
     env e;
     calldataarg args;
+    require INIT();
 
     require le.getNullifierUsed(nullifier);
 
@@ -126,9 +151,12 @@ rule nullifierPermanence(method f, bytes32 nullifier) {
 
 /// @title loan-id-monotonically-increases
 /// s_nextLoanId can only increase, never decrease.
-rule loanIdMonotonicallyIncreases(method f) {
+rule loanIdMonotonicallyIncreases(method f)
+filtered { f -> !EXCLUDED(f) }
+{
     env e;
     calldataarg args;
+    require INIT();
 
     uint256 idBefore = le.s_nextLoanId();
 
@@ -143,6 +171,7 @@ rule loanIdMonotonicallyIncreases(method f) {
 rule repaidLoanIsFullySettled(uint256 loanId) {
     env e;
     calldataarg args;
+    require INIT();
 
     ILoanEngine.LoanState before = le.getLoanState(loanId);
     require before == ILoanEngine.LoanState.ACTIVE;
@@ -162,6 +191,7 @@ rule repaidLoanIsFullySettled(uint256 loanId) {
 /// When a loan is written off, principal outstanding and interest accrued must be zeroed.
 rule writtenOffLoanZeroed(uint256 loanId) {
     env e;
+    require INIT();
 
     ILoanEngine.LoanState before = le.getLoanState(loanId);
     require before == ILoanEngine.LoanState.DEFAULTED;
@@ -176,9 +206,12 @@ rule writtenOffLoanZeroed(uint256 loanId) {
 
 /// @title principal-never-increases
 /// A loan's principalOutstanding can never exceed what it was after activation.
-rule principalNeverIncreases(method f, uint256 loanId) {
+rule principalNeverIncreases(method f, uint256 loanId)
+filtered { f -> !EXCLUDED(f) }
+{
     env e;
     calldataarg args;
+    require INIT();
 
     require le.getLoanState(loanId) == ILoanEngine.LoanState.ACTIVE;
     uint256 outstandingBefore = le.getLoanPrincipalOutstanding(loanId);

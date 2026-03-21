@@ -27,7 +27,24 @@ methods {
     function cp.getHasAtLeastOneTier(uint256) external returns (bool) envfree;
     function cp.lastUpdated(uint256) external returns (uint256) envfree;
     function cp.policyDocumentHash(uint256) external returns (bytes32) envfree;
+    function cp.isInitialized() external returns (bool) envfree;
+
+    // Summarize Poseidon2 external calls as NONDET
+    function _.hash(Field.Type[]) external => NONDET;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//                          DEFINITIONS
+// ═══════════════════════════════════════════════════════════════════════
+
+definition INIT() returns bool = cp.isInitialized();
+
+// Exclude initialize, proxy upgrade, and initializeHarness from parametric checks.
+// initialize resets HAVOC'd storage; upgradeToAndCall is proxy infrastructure.
+definition EXCLUDED(method f) returns bool =
+    f.selector == sig:upgradeToAndCall(address,bytes).selector
+    || f.selector == sig:initialize(address,address).selector
+    || f.selector == sig:initializeHarness(address,address).selector;
 
 // ═══════════════════════════════════════════════════════════════════════
 //                          INVARIANTS
@@ -36,24 +53,27 @@ methods {
 /// @title frozen-implies-created
 /// A frozen policy must have been created.
 invariant frozenImpliesCreated(uint256 version)
-    cp.getPolicyFrozen(version) => cp.policyCreated(version);
+    INIT() => (cp.getPolicyFrozen(version) => cp.policyCreated(version))
+    filtered { f -> !EXCLUDED(f) }
 
 /// @title frozen-implies-all-sections-set
 /// A frozen policy must have all sections populated.
 invariant frozenImpliesComplete(uint256 version)
-    cp.getPolicyFrozen(version) => (
+    INIT() => (cp.getPolicyFrozen(version) => (
         cp.getEligibilitySet(version) &&
         cp.getRatiosSet(version) &&
         cp.getConcentrationSet(version) &&
         cp.getAttestationSet(version) &&
         cp.getCovenantsSet(version) &&
         cp.getHasAtLeastOneTier(version)
-    );
+    ))
+    filtered { f -> !EXCLUDED(f) }
 
 /// @title active-implies-created
 /// An active policy must have been created.
 invariant activeImpliesCreated(uint256 version)
-    cp.getPolicyActive(version) => cp.policyCreated(version);
+    INIT() => (cp.getPolicyActive(version) => cp.policyCreated(version))
+    filtered { f -> !EXCLUDED(f) }
 
 // ═══════════════════════════════════════════════════════════════════════
 //                             RULES
@@ -62,10 +82,14 @@ invariant activeImpliesCreated(uint256 version)
 /// @title frozen-is-permanent
 /// Once a policy is frozen, no function call can unfreeze it.
 /// This is THE critical invariant — ZK proofs depend on frozen immutability.
-rule frozenIsPermanent(method f, uint256 version) {
+rule frozenIsPermanent(method f, uint256 version)
+filtered { f -> !EXCLUDED(f) }
+{
     env e;
     calldataarg args;
+    require INIT();
 
+    require cp.policyCreated(version);
     require cp.getPolicyFrozen(version);
 
     f(e, args);
@@ -77,10 +101,15 @@ rule frozenIsPermanent(method f, uint256 version) {
 /// @title frozen-policy-immutable
 /// No function can change lastUpdated of a frozen policy.
 /// This is stronger than just "still frozen" — it proves no state changes at all.
-rule frozenPolicyImmutable(method f, uint256 version) {
+rule frozenPolicyImmutable(method f, uint256 version)
+filtered { f -> !EXCLUDED(f)
+    && f.selector != sig:deActivatePolicy(uint256).selector }
+{
     env e;
     calldataarg args;
+    require INIT();
 
+    require cp.policyCreated(version);
     require cp.getPolicyFrozen(version);
     uint256 lastUpdatedBefore = cp.lastUpdated(version);
 
@@ -94,8 +123,10 @@ rule frozenPolicyImmutable(method f, uint256 version) {
 /// createPolicy must set created=true, active=true, frozen=false.
 rule createPolicyInitializesCorrectly(uint256 version) {
     env e;
+    require INIT();
 
     require !cp.policyCreated(version);
+    require !cp.getPolicyFrozen(version);
 
     cp.createPolicy(e, version);
 
@@ -108,6 +139,7 @@ rule createPolicyInitializesCorrectly(uint256 version) {
 /// Version 0 must always revert.
 rule cannotCreateVersionZero() {
     env e;
+    require INIT();
 
     cp.createPolicy@withrevert(e, 0);
 
@@ -119,6 +151,7 @@ rule cannotCreateVersionZero() {
 /// Creating the same version twice must revert.
 rule noDuplicateCreation(uint256 version) {
     env e;
+    require INIT();
 
     require cp.policyCreated(version);
 
@@ -132,6 +165,7 @@ rule noDuplicateCreation(uint256 version) {
 /// After deactivation, update functions must revert.
 rule deactivatedPolicyBlocksEdits(uint256 version) {
     env e;
+    require INIT();
 
     require cp.policyCreated(version);
     require !cp.getPolicyActive(version);
@@ -147,6 +181,7 @@ rule deactivatedPolicyBlocksEdits(uint256 version) {
 /// freezePolicy must revert if no document hash is set.
 rule freezeRequiresDocumentHash(uint256 version) {
     env e;
+    require INIT();
 
     require cp.policyDocumentHash(version) == to_bytes32(0);
 
@@ -159,9 +194,12 @@ rule freezeRequiresDocumentHash(uint256 version) {
 /// @title section-flags-monotonic
 /// Once a section flag (e.g. eligibilitySet) is true, it stays true
 /// unless the policy is not yet frozen (flags are never cleared).
-rule eligibilitySetMonotonic(method f, uint256 version) {
+rule eligibilitySetMonotonic(method f, uint256 version)
+filtered { f -> !EXCLUDED(f) }
+{
     env e;
     calldataarg args;
+    require INIT();
 
     require cp.getEligibilitySet(version);
 

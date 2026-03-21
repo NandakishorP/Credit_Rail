@@ -8,6 +8,34 @@ import {ILoanEngine} from "../patched/interfaces/ILoanEngine.sol";
 /// @notice Exposes internal state and helpers for Certora verification.
 contract LoanEngineHarness is LoanEngine {
 
+    bool private _harnessInitialized;
+
+    function initializeHarness(
+        address _creditPolicyContract,
+        address _loanProofVerifier,
+        uint256 _maxOriginationFeeBps,
+        address _tranchePool,
+        address _stableCoinAddress,
+        address _poseidon2,
+        address _initialAdmin
+    ) external {
+        require(!_harnessInitialized, "already initialized");
+        this.initialize(
+            _creditPolicyContract,
+            _loanProofVerifier,
+            _maxOriginationFeeBps,
+            _tranchePool,
+            _stableCoinAddress,
+            _poseidon2,
+            _initialAdmin
+        );
+        _harnessInitialized = true;
+    }
+
+    function isInitialized() external view returns (bool) {
+        return _harnessInitialized;
+    }
+
     function getLoanState(uint256 loanId) external view returns (ILoanEngine.LoanState) {
         return s_loans[loanId].state;
     }

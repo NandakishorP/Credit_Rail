@@ -634,12 +634,12 @@ contract LoanEngine is
         if (amount == 0) {
             revert LoanEngine__ZeroRecovery();
         }
-        loan.totalRecovered += amount;
         IERC20(i_stableCoin).safeTransferFrom(
             recoveryAgent,
             address(i_tranchePool),
             amount
         );
+        loan.totalRecovered += amount;
         i_tranchePool.onRecovery(amount);
         emit LoanRecovered(loanId, amount, block.timestamp);
     }

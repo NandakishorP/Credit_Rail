@@ -65,8 +65,9 @@ rule interestMonotonicInPrincipal(uint256 d1, uint256 d2, uint256 apr, uint256 t
 }
 
 /// @title interest-linear-in-time
-/// interest(t1 + t2) == interest(t1) + interest(t2)
-/// Holds exactly because the formula is linear (no compounding).
+/// interest(t1 + t2) >= interest(t1) + interest(t2)
+/// The formula is mathematically linear, but integer division truncates once
+/// in the combined call vs twice in the additive — so combined >= additive.
 rule interestLinearInTime(uint256 deployed, uint256 apr, uint256 t1, uint256 t2) {
     require deployed <= 10^30;
     require apr <= 10000;
@@ -78,7 +79,7 @@ rule interestLinearInTime(uint256 deployed, uint256 apr, uint256 t1, uint256 t2)
     mathint additive = im.accrueTargetInterest(deployed, apr, t1)
                      + im.accrueTargetInterest(deployed, apr, t2);
 
-    assert combined == additive;
+    assert combined >= additive;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

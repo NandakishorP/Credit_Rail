@@ -7,6 +7,21 @@ import {CreditPolicy} from "../../src/CreditPolicy.sol";
 /// @notice Exposes internal state for Certora verification.
 contract CreditPolicyHarness is CreditPolicy {
 
+    bool private _harnessInitialized;
+
+    function initializeHarness(
+        address initialAdmin,
+        address poseidon2_
+    ) external {
+        require(!_harnessInitialized, "already initialized");
+        this.initialize(initialAdmin, poseidon2_);
+        _harnessInitialized = true;
+    }
+
+    function isInitialized() external view returns (bool) {
+        return _harnessInitialized;
+    }
+
     function getPolicyFrozen(uint256 version) external view returns (bool) {
         return policyFrozen[version];
     }
@@ -50,4 +65,5 @@ contract CreditPolicyHarness is CreditPolicy {
     function getPolicyScopeHash(uint256 version, uint8 tierId) external view returns (bytes32) {
         return _policyScopeHashes[version][tierId];
     }
+
 }
