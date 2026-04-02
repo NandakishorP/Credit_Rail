@@ -60,9 +60,9 @@ pub fn on_interest_accrued(state: &mut State, interest_amount: i64) {
     junior.accrued_interest += junior_credited;
     remaining -= junior_credited;
 
-    // Equity: gets residual
+    // Equity: residual goes straight to paid (no target, no accrued)
     if remaining > 0 {
-        state.tranches[EQUITY].accrued_interest += remaining;
+        state.tranches[EQUITY].paid_interest += remaining;
     }
 }
 
@@ -98,14 +98,8 @@ pub fn on_repayment(state: &mut State, principal_repaid: i64, interest_repaid: i
         remaining_interest -= junior_pay;
     }
 
-    // Equity: receives residual
-    if remaining_interest > 0 {
-        let equity = &mut state.tranches[EQUITY];
-        let equity_pay = remaining_interest.min(equity.accrued_interest);
-        equity.accrued_interest -= equity_pay;
-        equity.paid_interest += equity_pay;
-        // Any overflow beyond accrued could be protocol revenue — ignored in sim
-    }
+    // Equity residual is already handled in on_interest_accrued (straight to paid).
+    // Any remaining here would be protocol revenue — ignored in sim.
 
     // ── Principal redemption: deployed → idle, senior first ──
     state.pool.idle += principal_repaid;
@@ -149,12 +143,8 @@ pub fn on_loss(state: &mut State, principal_loss: i64, interest_loss: i64) {
         remaining_interest -= junior_cancel;
     }
 
-    // Equity: cancel whatever accrued
-    if remaining_interest > 0 {
-        let equity = &mut state.tranches[EQUITY];
-        let equity_cancel = remaining_interest.min(equity.accrued_interest);
-        equity.accrued_interest -= equity_cancel;
-    }
+    // Equity has no accrued_interest (residual goes straight to paid),
+    // so nothing to cancel here.
 
     // ── Phase 2: Principal loss absorption (equity → junior → senior) ──
     state.pool.deployed -= principal_loss;

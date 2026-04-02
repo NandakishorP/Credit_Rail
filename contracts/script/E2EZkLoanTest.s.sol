@@ -9,9 +9,8 @@ import {TranchePool} from "../src/TranchePool.sol";
 import {ITranchePool} from "../src/interfaces/ITranchePool.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {Poseidon2} from "@poseidon2-evm/Poseidon2.sol";
+import {MockPoseidon2} from "../test/mocks/MockPoseidon2.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
-import {ICreditPolicy} from "../src/interfaces/ICreditPolicy.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
@@ -38,7 +37,7 @@ contract E2EZkLoanTest is Script {
     CreditPolicy public creditPolicy;
     TranchePool public tranchePool;
     ERC20Mock public usdc;
-    Poseidon2 public poseidon2;
+    MockPoseidon2 public poseidon2;
 
     function run() external {
         uint256 deployerPrivateKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
@@ -59,7 +58,7 @@ contract E2EZkLoanTest is Script {
         usdc = new ERC20Mock();
         console2.log("[1/6] USDC:", address(usdc));
 
-        poseidon2 = new Poseidon2();
+        poseidon2 = new MockPoseidon2();
         console2.log("[2/6] Poseidon2:", address(poseidon2));
 
         verifier = new HonkVerifier();
@@ -69,7 +68,7 @@ contract E2EZkLoanTest is Script {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon2)))
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
         console2.log("[4/6] CreditPolicy:", address(creditPolicy));
@@ -115,73 +114,8 @@ contract E2EZkLoanTest is Script {
         uint256 policyVersion = 1;
         creditPolicy.createPolicy(policyVersion);
 
-        creditPolicy.updateEligibility(
-            policyVersion,
-            ICreditPolicy.EligibilityCriteria({
-                minAnnualRevenue: 1_000_000,
-                minEBITDA: 100_000,
-                minTangibleNetWorth: 250_000,
-                minBusinessAgeDays: 730,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            })
-        );
-
-        creditPolicy.updateRatios(
-            policyVersion,
-            ICreditPolicy.FinancialRatios({
-                maxTotalDebtToEBITDA: 40_000,
-                minInterestCoverageRatio: 15_000,
-                minCurrentRatio: 12_000,
-                minEBITDAMarginBps: 1000
-            })
-        );
-
-        creditPolicy.updateConcentration(
-            policyVersion,
-            ICreditPolicy.ConcentrationLimits({
-                maxSingleBorrowerBps: 1000,
-                maxIndustryConcentrationBps: 2500
-            })
-        );
-
-        creditPolicy.updateAttestation(
-            policyVersion,
-            ICreditPolicy.AttestationRequirements({
-                maxAttestationAgeDays: 90,
-                reAttestationFrequencyDays: 365,
-                requiresCPAAttestation: false
-            })
-        );
-
-        creditPolicy.updateCovenants(
-            policyVersion,
-            ICreditPolicy.MaintenanceCovenants({
-                maxLeverageRatio: 50_000,
-                minCoverageRatio: 10_000,
-                minLiquidityAmount: 100_000,
-                allowsDividends: true,
-                reportingFrequencyDays: 30
-            })
-        );
-
-        creditPolicy.setLoanTier(
-            policyVersion,
-            1,
-            ICreditPolicy.LoanTier({
-                name: "Standard",
-                minRevenue: 1_000_000,
-                maxRevenue: 10_000_000,
-                minEBITDA: 100_000,
-                maxDebtToEBITDA: 40_000,
-                maxLoanToEBITDA: 1e18,
-                interestRateBps: 1200,
-                originationFeeBps: 100,
-                termDays: 365,
-                active: true
-            })
-        );
-
+        creditPolicy.setPolicyScopeHash(policyVersion, 1, keccak256("scopeHash_v1_tier1"));
+        creditPolicy.setPolicyDocument(policyVersion, keccak256("policy_doc_v1"), "ipfs://policyDoc");
         creditPolicy.freezePolicy(policyVersion);
         console2.log("      Policy created and frozen");
 

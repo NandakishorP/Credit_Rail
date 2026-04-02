@@ -77,7 +77,7 @@ rule interestLinearInTime(uint256 deployed, uint256 apr, uint256 t1, uint256 t2)
     require to_mathint(t1) + to_mathint(t2) <= to_mathint(max_uint256);
     mathint combined = im.accrueTargetInterest(deployed, apr, require_uint256(t1 + t2));
     mathint additive = im.accrueTargetInterest(deployed, apr, t1)
-                     + im.accrueTargetInterest(deployed, apr, t2);
+                    + im.accrueTargetInterest(deployed, apr, t2);
 
     assert combined >= additive;
 }

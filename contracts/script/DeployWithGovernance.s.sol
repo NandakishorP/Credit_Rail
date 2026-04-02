@@ -34,7 +34,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
  *   │  • RISK_ADMIN_ROLE      — declare defaults, write off loans        │
  *   │  • CONFIG_ADMIN_ROLE    — whitelists, underwriter keys, fees       │
  *   │  • WHITELIST_ADMIN_ROLE — LP deposit whitelist                     │
- *   │  • POLICY_EDITOR_ROLE   — edit unfrozen policy parameters          │
+ *   │  • POLICY_ADMIN_ROLE   — edit unfrozen policy parameters          │
  *   │  • INDUSTRY_ADMIN_ROLE  — manage industry exclusions               │
  *   │  • TREASURY_ROLE        — sweep protocol revenue                   │
  *   └─────────────────────────────────────────────────────────────────────┘
@@ -134,7 +134,7 @@ contract DeployWithGovernance is Script {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon2)))
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
         );
         creditPolicyProxy = address(cpProxy);
         console2.log("[4/7] CreditPolicy proxy:", creditPolicyProxy);
@@ -243,9 +243,9 @@ contract DeployWithGovernance is Script {
         );
 
         // CreditPolicy operational roles
-        cp.grantRole(cp.POLICY_EDITOR_ROLE(), operationsMultisig);
+        cp.grantRole(cp.POLICY_ADMIN_ROLE(), operationsMultisig);
         cp.grantRole(cp.INDUSTRY_ADMIN_ROLE(), operationsMultisig);
-        console2.log("  CreditPolicy:  POLICY_EDITOR / INDUSTRY_ADMIN -> ops");
+        console2.log("  CreditPolicy:  POLICY_ADMIN / INDUSTRY_ADMIN -> ops");
 
         // ====================================================
         // PHASE 6: Grant EMERGENCY roles to guardian
@@ -277,7 +277,7 @@ contract DeployWithGovernance is Script {
         // CreditPolicy
         cp.renounceRole(DEFAULT_ADMIN_ROLE, deployer);
         cp.renounceRole(cp.POLICY_ADMIN_ROLE(), deployer);
-        cp.renounceRole(cp.POLICY_EDITOR_ROLE(), deployer);
+        cp.renounceRole(cp.POLICY_ADMIN_ROLE(), deployer);
         cp.renounceRole(cp.INDUSTRY_ADMIN_ROLE(), deployer);
         console2.log("  CreditPolicy: deployer renounced all roles");
 

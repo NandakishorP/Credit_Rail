@@ -48,6 +48,14 @@ methods {
     function _.safeTransfer(address, uint256) external => NONDET;
 }
 
+ghost mathint sumOutStandingPrincipal{
+    init_state axiom sumOutStandingPrincipal == 0;
+}
+
+hook Sstore loans[KEY uint256 id].outstandingPrincipal uint256 newVal (uint256 oldVal){
+    sumOutStandingPrincipal = sumOutStandingPrincipal + newVal- oldVal ;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //                          DEFINITIONS
 // ═══════════════════════════════════════════════════════════════════════
@@ -82,6 +90,10 @@ invariant outstandingLeqIssued(uint256 loanId)
 /// The next loan ID is always >= 1.
 invariant nextLoanIdPositive()
     INIT() => le.s_nextLoanId() >= 1
+    filtered { f -> !EXCLUDED(f) }
+
+invariant totalDeployedMatchesSum()
+    to_mathint(getTotalDeployed()) == sumOutStandingPrincipal
     filtered { f -> !EXCLUDED(f) }
 
 // ═══════════════════════════════════════════════════════════════════════

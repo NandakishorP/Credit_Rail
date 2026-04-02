@@ -10,11 +10,10 @@ contract CreditPolicyHarness is CreditPolicy {
     bool private _harnessInitialized;
 
     function initializeHarness(
-        address initialAdmin,
-        address poseidon2_
+        address initialAdmin
     ) external {
         require(!_harnessInitialized, "already initialized");
-        this.initialize(initialAdmin, poseidon2_);
+        this.initialize(initialAdmin);
         _harnessInitialized = true;
     }
 
@@ -30,32 +29,8 @@ contract CreditPolicyHarness is CreditPolicy {
         return policyActive[version];
     }
 
-    function getEligibilitySet(uint256 version) external view returns (bool) {
-        return eligibilitySet[version];
-    }
-
-    function getRatiosSet(uint256 version) external view returns (bool) {
-        return ratiosSet[version];
-    }
-
-    function getConcentrationSet(uint256 version) external view returns (bool) {
-        return concentrationSet[version];
-    }
-
-    function getAttestationSet(uint256 version) external view returns (bool) {
-        return attestationSet[version];
-    }
-
-    function getCovenantsSet(uint256 version) external view returns (bool) {
-        return covenantsSet[version];
-    }
-
-    function getHasAtLeastOneTier(uint256 version) external view returns (bool) {
-        return hasAtLeastOneTier[version];
-    }
-
-    function harnessMaxTiers() external view returns (uint8) {
-        return maxTiers;
+    function getHasScopeHash(uint256 version) external view returns (bool) {
+        return hasScopeHash[version];
     }
 
     function getExcludedIndustry(uint256 version, bytes32 industry) external view returns (bool) {

@@ -3,7 +3,9 @@ pragma solidity ^0.8.24;
 
 /**
  * @title CreditPolicy
- * @notice Immutable-by-version credit constitution for private credit funds
+ * @notice Standalone (non-upgradeable) credit policy for Echidna testing.
+ *         Mirrors the production CreditPolicy but without UUPS/AccessControl
+ *         since Echidna cannot use proxies or OZ role machinery.
  */
 contract CreditPolicy {
     /*//////////////////////////////////////////////////////////////
@@ -13,12 +15,13 @@ contract CreditPolicy {
     error CreditPolicy__PolicyFrozen(uint256 version);
     error CreditPolicy__InvalidVersion();
     error CreditPolicy__PolicyVersionExists(uint256 version);
-    error CreditPolicy__InvalidAdmin();
     error CreditPolicy__PolicyNotEditable(uint256 version);
     error CreditPolicy__IncompletePolicy(uint256 version);
     error CreditPolicy__InvalidIndustryHash();
     error CreditPolicy__PolicyNotActive(uint256 version);
-    error CreditPolicy__InvalidTierCount(uint256 count);
+    error CreditPolicy__InvalidScopeHash();
+    error CreditPolicy__InvalidAdmin();
+
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -54,7 +57,6 @@ contract CreditPolicy {
                                 CORE ROLES
     //////////////////////////////////////////////////////////////*/
     address public policyAdmin;
-    uint8 internal maxTiers;
 
     /*//////////////////////////////////////////////////////////////
                             POLICY LIFECYCLE
@@ -65,60 +67,11 @@ contract CreditPolicy {
     mapping(uint256 => uint256) public lastUpdated;
 
     /*//////////////////////////////////////////////////////////////
-                        ELIGIBILITY (PRE-LOAN)
+                        POLICY SCOPE HASHES
     //////////////////////////////////////////////////////////////*/
-    struct EligibilityCriteria {
-        uint256 minAnnualRevenue;
-        uint256 minEBITDA;
-        uint256 minTangibleNetWorth;
-        uint256 minBusinessAgeDays;
-        uint256 maxDefaultsLast36Months;
-        bool bankruptcyExcluded;
-    }
-
-    mapping(uint256 => EligibilityCriteria) public eligibility;
-
-    /*//////////////////////////////////////////////////////////////
-                        FINANCIAL RATIOS (UNDERWRITING)
-    //////////////////////////////////////////////////////////////*/
-    struct FinancialRatios {
-        uint256 maxTotalDebtToEBITDA;
-        uint256 minInterestCoverageRatio;
-        uint256 minCurrentRatio;
-        uint256 minEBITDAMarginBps;
-    }
-
-    mapping(uint256 => FinancialRatios) public ratios;
-
-    /*//////////////////////////////////////////////////////////////
-                        LOAN TIERS (PRICING REFERENCE)
-    //////////////////////////////////////////////////////////////*/
-    struct LoanTier {
-        string name;
-        uint256 minRevenue;
-        uint256 maxRevenue;
-        uint256 minEBITDA;
-        uint256 maxDebtToEBITDA;
-        uint256 maxLoanToEBITDA;
-        uint256 interestRateBps;
-        uint256 originationFeeBps;
-        uint256 termDays;
-        bool active;
-    }
-
-    mapping(uint256 => mapping(uint8 => LoanTier)) public loanTiers;
-    mapping(uint256 => uint8) public totalTiers;
+    mapping(uint256 => mapping(uint8 => bytes32)) internal _policyScopeHashes;
     mapping(uint256 => mapping(uint8 => bool)) public tierExists;
-
-    /*//////////////////////////////////////////////////////////////
-                        CONCENTRATION LIMITS
-    //////////////////////////////////////////////////////////////*/
-    struct ConcentrationLimits {
-        uint256 maxSingleBorrowerBps;
-        uint256 maxIndustryConcentrationBps;
-    }
-
-    mapping(uint256 => ConcentrationLimits) public concentration;
+    mapping(uint256 => bool) public hasScopeHash;
 
     /*//////////////////////////////////////////////////////////////
                         INDUSTRY EXCLUSIONS
@@ -126,73 +79,21 @@ contract CreditPolicy {
     mapping(uint256 => mapping(bytes32 => bool)) public excludedIndustries;
 
     /*//////////////////////////////////////////////////////////////
-                        ATTESTATION REQUIREMENTS
-    //////////////////////////////////////////////////////////////*/
-    struct AttestationRequirements {
-        uint256 maxAttestationAgeDays;
-        uint256 reAttestationFrequencyDays;
-        bool requiresCPAAttestation;
-    }
-
-    mapping(uint256 => AttestationRequirements) public attestation;
-
-    /*//////////////////////////////////////////////////////////////
-                        MAINTENANCE COVENANTS
-    //////////////////////////////////////////////////////////////*/
-    struct MaintenanceCovenants {
-        uint256 maxLeverageRatio;
-        uint256 minCoverageRatio;
-        uint256 minLiquidityAmount;
-        bool allowsDividends;
-        uint256 reportingFrequencyDays;
-    }
-
-    mapping(uint256 => MaintenanceCovenants) public covenants;
-
-    /*//////////////////////////////////////////////////////////////
                         DOCUMENT ANCHORING
     //////////////////////////////////////////////////////////////*/
     mapping(uint256 => bytes32) public policyDocumentHash;
     mapping(uint256 => string) public policyDocumentURI;
-
-    mapping(uint256 => bool) public eligibilitySet;
-    mapping(uint256 => bool) public ratiosSet;
-    mapping(uint256 => bool) public concentrationSet;
-    mapping(uint256 => bool) public attestationSet;
-    mapping(uint256 => bool) public covenantsSet;
-    mapping(uint256 => bool) public hasAtLeastOneTier;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
     event PolicyCreated(uint256 version, uint256 timestamp);
     event PolicyFrozen(uint256 version, uint256 timestamp);
-    event PolicyEligibilityUpdated(uint256 version, uint256 timestamp);
-    event PolicyRatiosUpdated(uint256 version, uint256 timestamp);
-    event PolicyConcentrationUpdated(uint256 version, uint256 timestamp);
-    event PolicyAttestationUpdated(uint256 version, uint256 timestamp);
-    event PolicyCovenantsUpdated(uint256 version, uint256 timestamp);
-    event LoanTierUpdated(uint256 version, uint8 tierId, uint256 timestamp);
-    event IndustryExcluded(
-        uint256 version,
-        bytes32 industry,
-        uint256 timestamp
-    );
-    event MaxTiersChanged(uint8 maxTiers);
-    event IndustryIncluded(
-        uint256 version,
-        bytes32 industry,
-        uint256 timestamp
-    );
-
+    event PolicyScopeHashSet(uint256 version, uint8 tierId, bytes32 hash, uint256 timestamp);
+    event IndustryExcluded(uint256 version, bytes32 industry, uint256 timestamp);
+    event IndustryIncluded(uint256 version, bytes32 industry, uint256 timestamp);
     event PolicyAdminChanged(address newAdmin);
-
-    event PolicyDocumentSet(
-        uint256 version,
-        bytes32 hash,
-        string uri,
-        uint256 timestamp
-    );
+    event PolicyDocumentSet(uint256 version, bytes32 hash, string uri, uint256 timestamp);
     event PolicyDeactivated(uint256 version, uint256 timestamp);
 
     /*//////////////////////////////////////////////////////////////
@@ -229,14 +130,7 @@ contract CreditPolicy {
         if (policyActive[version] == false) {
             revert CreditPolicy__PolicyNotActive(version);
         }
-        if (
-            !eligibilitySet[version] ||
-            !ratiosSet[version] ||
-            !concentrationSet[version] ||
-            !attestationSet[version] ||
-            !covenantsSet[version] ||
-            !hasAtLeastOneTier[version]
-        ) {
+        if (!hasScopeHash[version]) {
             revert CreditPolicy__IncompletePolicy(version);
         }
         if (policyDocumentHash[version] == bytes32(0)) {
@@ -257,89 +151,22 @@ contract CreditPolicy {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        ELIGIBILITY UPDATE
+                        SCOPE HASH MANAGEMENT
     //////////////////////////////////////////////////////////////*/
-    function updateEligibility(
-        uint256 version,
-        EligibilityCriteria calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
-        eligibility[version] = data;
-        lastUpdated[version] = block.timestamp;
-        eligibilitySet[version] = true;
-        emit PolicyEligibilityUpdated(version, block.timestamp);
-    }
 
-    /*//////////////////////////////////////////////////////////////
-                        RATIOS UPDATE
-    //////////////////////////////////////////////////////////////*/
-    function updateRatios(
-        uint256 version,
-        FinancialRatios calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
-        ratios[version] = data;
-        lastUpdated[version] = block.timestamp;
-        ratiosSet[version] = true;
-        emit PolicyRatiosUpdated(version, block.timestamp);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        CONCENTRATION UPDATE
-    //////////////////////////////////////////////////////////////*/
-    function updateConcentration(
-        uint256 version,
-        ConcentrationLimits calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
-        concentration[version] = data;
-        lastUpdated[version] = block.timestamp;
-        concentrationSet[version] = true;
-        emit PolicyConcentrationUpdated(version, block.timestamp);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        ATTESTATION UPDATE
-    //////////////////////////////////////////////////////////////*/
-    function updateAttestation(
-        uint256 version,
-        AttestationRequirements calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
-        attestation[version] = data;
-        lastUpdated[version] = block.timestamp;
-        attestationSet[version] = true;
-        emit PolicyAttestationUpdated(version, block.timestamp);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        COVENANT UPDATE
-    //////////////////////////////////////////////////////////////*/
-    function updateCovenants(
-        uint256 version,
-        MaintenanceCovenants calldata data
-    ) external onlyAdmin policyExists(version) policyEditable(version) {
-        covenants[version] = data;
-        lastUpdated[version] = block.timestamp;
-        covenantsSet[version] = true;
-        emit PolicyCovenantsUpdated(version, block.timestamp);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        LOAN TIERS
-    //////////////////////////////////////////////////////////////*/
-    function setLoanTier(
+    function setPolicyScopeHash(
         uint256 version,
         uint8 tierId,
-        LoanTier calldata tier
+        bytes32 hash
     ) external onlyAdmin policyExists(version) policyEditable(version) {
-        if (tierId >= maxTiers) {
-            revert CreditPolicy__InvalidTierCount(tierId);
+        if (hash == bytes32(0)) {
+            revert CreditPolicy__InvalidScopeHash();
         }
-        loanTiers[version][tierId] = tier;
+        _policyScopeHashes[version][tierId] = hash;
         tierExists[version][tierId] = true;
-        if (tierId >= totalTiers[version]) {
-            totalTiers[version] = tierId + 1;
-        }
-        hasAtLeastOneTier[version] = true;
+        hasScopeHash[version] = true;
         lastUpdated[version] = block.timestamp;
-        emit LoanTierUpdated(version, tierId, block.timestamp);
+        emit PolicyScopeHashSet(version, tierId, hash, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -393,7 +220,7 @@ contract CreditPolicy {
         emit PolicyAdminChanged(newAdmin);
     }
 
-    // getters for interface compliance
+    // View functions for interface compliance
 
     function isPolicyActive(uint256 version) external view returns (bool) {
         return policyActive[version];
@@ -410,16 +237,11 @@ contract CreditPolicy {
         return tierExists[version][tierId];
     }
 
-    function setMaxTiers(uint8 _maxTiers) external onlyAdmin {
-        if (_maxTiers == 255) {
-            revert CreditPolicy__InvalidTierCount(_maxTiers);
-        }
-        maxTiers = _maxTiers;
-        emit MaxTiersChanged(_maxTiers);
-    }
-
-    function getMaxTiers() external view returns (uint8) {
-        return maxTiers;
+    function policyScopeHash(
+        uint256 version,
+        uint8 tierId
+    ) external view returns (bytes32) {
+        return _policyScopeHashes[version][tierId];
     }
 
     function isIndustryExcluded(

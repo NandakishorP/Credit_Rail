@@ -5,7 +5,7 @@
  *   1. Frozen policies are permanently immutable
  *   2. Policy lifecycle is a one-way state machine
  *   3. Only existing policies can be modified
- *   4. Frozen requires all sections set
+ *   4. Frozen requires scope hash + document hash
  */
 
 using CreditPolicyHarness as cp;
@@ -19,18 +19,10 @@ methods {
     function cp.policyCreated(uint256) external returns (bool) envfree;
     function cp.getPolicyFrozen(uint256) external returns (bool) envfree;
     function cp.getPolicyActive(uint256) external returns (bool) envfree;
-    function cp.getEligibilitySet(uint256) external returns (bool) envfree;
-    function cp.getRatiosSet(uint256) external returns (bool) envfree;
-    function cp.getConcentrationSet(uint256) external returns (bool) envfree;
-    function cp.getAttestationSet(uint256) external returns (bool) envfree;
-    function cp.getCovenantsSet(uint256) external returns (bool) envfree;
-    function cp.getHasAtLeastOneTier(uint256) external returns (bool) envfree;
+    function cp.getHasScopeHash(uint256) external returns (bool) envfree;
     function cp.lastUpdated(uint256) external returns (uint256) envfree;
     function cp.policyDocumentHash(uint256) external returns (bytes32) envfree;
     function cp.isInitialized() external returns (bool) envfree;
-
-    // Summarize Poseidon2 external calls as NONDET
-    function _.hash(Field.Type[]) external => NONDET;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -43,8 +35,8 @@ definition INIT() returns bool = cp.isInitialized();
 // initialize resets HAVOC'd storage; upgradeToAndCall is proxy infrastructure.
 definition EXCLUDED(method f) returns bool =
     f.selector == sig:upgradeToAndCall(address,bytes).selector
-    || f.selector == sig:initialize(address,address).selector
-    || f.selector == sig:initializeHarness(address,address).selector;
+    || f.selector == sig:initialize(address).selector
+    || f.selector == sig:initializeHarness(address).selector;
 
 // ═══════════════════════════════════════════════════════════════════════
 //                          INVARIANTS
@@ -56,17 +48,10 @@ invariant frozenImpliesCreated(uint256 version)
     INIT() => (cp.getPolicyFrozen(version) => cp.policyCreated(version))
     filtered { f -> !EXCLUDED(f) }
 
-/// @title frozen-implies-all-sections-set
-/// A frozen policy must have all sections populated.
+/// @title frozen-implies-scope-hash-set
+/// A frozen policy must have a scope hash set.
 invariant frozenImpliesComplete(uint256 version)
-    INIT() => (cp.getPolicyFrozen(version) => (
-        cp.getEligibilitySet(version) &&
-        cp.getRatiosSet(version) &&
-        cp.getConcentrationSet(version) &&
-        cp.getAttestationSet(version) &&
-        cp.getCovenantsSet(version) &&
-        cp.getHasAtLeastOneTier(version)
-    ))
+    INIT() => (cp.getPolicyFrozen(version) => cp.getHasScopeHash(version))
     filtered { f -> !EXCLUDED(f) }
 
 /// @title active-implies-created
@@ -162,7 +147,7 @@ rule noDuplicateCreation(uint256 version) {
 }
 
 /// @title deactivated-policy-not-editable
-/// After deactivation, update functions must revert.
+/// After deactivation, setPolicyScopeHash must revert.
 rule deactivatedPolicyBlocksEdits(uint256 version) {
     env e;
     require INIT();
@@ -170,11 +155,10 @@ rule deactivatedPolicyBlocksEdits(uint256 version) {
     require cp.policyCreated(version);
     require !cp.getPolicyActive(version);
 
-    ICreditPolicy.EligibilityCriteria data;
-    cp.updateEligibility@withrevert(e, version, data);
+    cp.setPolicyScopeHash@withrevert(e, version, 0, to_bytes32(1));
 
     assert lastReverted,
-        "updateEligibility succeeded on a deactivated policy";
+        "setPolicyScopeHash succeeded on a deactivated policy";
 }
 
 /// @title freeze-requires-document-hash
@@ -191,20 +175,19 @@ rule freezeRequiresDocumentHash(uint256 version) {
         "freezePolicy succeeded without a document hash";
 }
 
-/// @title section-flags-monotonic
-/// Once a section flag (e.g. eligibilitySet) is true, it stays true
-/// unless the policy is not yet frozen (flags are never cleared).
-rule eligibilitySetMonotonic(method f, uint256 version)
+/// @title scope-hash-set-monotonic
+/// Once hasScopeHash is true, it stays true.
+rule scopeHashSetMonotonic(method f, uint256 version)
 filtered { f -> !EXCLUDED(f) }
 {
     env e;
     calldataarg args;
     require INIT();
 
-    require cp.getEligibilitySet(version);
+    require cp.getHasScopeHash(version);
 
     f(e, args);
 
-    assert cp.getEligibilitySet(version),
-        "eligibilitySet was reset to false";
+    assert cp.getHasScopeHash(version),
+        "hasScopeHash was reset to false";
 }

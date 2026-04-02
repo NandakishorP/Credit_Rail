@@ -16,7 +16,7 @@ pub const EQUITY_ALLOC_PCT: i64 = 10;
 
 // Tranche target APRs
 pub const SENIOR_APR_BPS: u16 = 500; // 5 %
-pub const JUNIOR_APR_BPS: u16 = 800; // 8 %
+pub const JUNIOR_APR_BPS: u16 = 1200; // 8 %
 
 // Tick duration
 pub const ONE_MONTH_SECS: i64 = 30 * 24 * 3600;

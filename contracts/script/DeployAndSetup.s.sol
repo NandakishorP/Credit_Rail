@@ -4,11 +4,11 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import "../src/LoanEngine.sol";
 import "../src/CreditPolicy.sol";
-import {ICreditPolicy} from "../src/interfaces/ICreditPolicy.sol";
+
 import "../src/TranchePool.sol";
 import {HonkVerifier} from "../src-zk/Verifier.sol";
-import "../test/mocks/MockPoseidon2.sol";
 import "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {MockPoseidon2} from "../test/mocks/MockPoseidon2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployAndSetup is Script {
@@ -18,7 +18,7 @@ contract DeployAndSetup is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // 1. Deploy MockPoseidon2
+        // 1. Deploy MockPoseidon2 (needed by LoanEngine)
         MockPoseidon2 poseidon = new MockPoseidon2();
         console.log("MockPoseidon2:", address(poseidon));
 
@@ -30,7 +30,7 @@ contract DeployAndSetup is Script {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon)))
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
         );
         CreditPolicy policy = CreditPolicy(address(cpProxy));
         console.log("CreditPolicy:", address(policy));
@@ -72,72 +72,7 @@ contract DeployAndSetup is Script {
         uint256 policyVersion = 1;
         policy.createPolicy(policyVersion);
 
-        policy.updateEligibility(
-            policyVersion,
-            ICreditPolicy.EligibilityCriteria({
-                minAnnualRevenue: 1000000,
-                minEBITDA: 100000,
-                minTangibleNetWorth: 250000,
-                minBusinessAgeDays: 730,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            })
-        );
-
-        policy.updateRatios(
-            policyVersion,
-            ICreditPolicy.FinancialRatios({
-                maxTotalDebtToEBITDA: 40000,
-                minInterestCoverageRatio: 15000,
-                minCurrentRatio: 12000,
-                minEBITDAMarginBps: 1000
-            })
-        );
-
-        policy.updateConcentration(
-            policyVersion,
-            ICreditPolicy.ConcentrationLimits({
-                maxSingleBorrowerBps: 1000,
-                maxIndustryConcentrationBps: 2500
-            })
-        );
-
-        policy.updateAttestation(
-            policyVersion,
-            ICreditPolicy.AttestationRequirements({
-                maxAttestationAgeDays: 90,
-                reAttestationFrequencyDays: 365,
-                requiresCPAAttestation: false
-            })
-        );
-
-        policy.updateCovenants(
-            policyVersion,
-            ICreditPolicy.MaintenanceCovenants({
-                maxLeverageRatio: 50000,
-                minCoverageRatio: 10000,
-                minLiquidityAmount: 50000,
-                allowsDividends: true,
-                reportingFrequencyDays: 90
-            })
-        );
-
-        policy.setLoanTier(
-            policyVersion,
-            1,
-            ICreditPolicy.LoanTier({
-                name: "Standard",
-                minRevenue: 1000000,
-                maxRevenue: 10000000,
-                minEBITDA: 100000,
-                maxDebtToEBITDA: 40000,
-                maxLoanToEBITDA: 1e18,
-                interestRateBps: 1200,
-                originationFeeBps: 100,
-                termDays: 365,
-                active: true
-            })
-        );
+        policy.setPolicyScopeHash(policyVersion, 1, keccak256("scopeHash_v1_tier1"));
 
         policy.setPolicyDocument(
             policyVersion,

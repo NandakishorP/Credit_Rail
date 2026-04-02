@@ -90,61 +90,115 @@ fn scenario() -> Vec<Event> {
 
         // Loan 1 full repay
         Event::Repay { id: 1, amount: 40_000 },
+
+        Event::Tick(ONE_MONTH_SECS),
+
+        Event::Tick(ONE_MONTH_SECS),
+
+        Event::Recover { id: 2, amount: 15_000 },
+
+        Event::Repay { id: 1, amount: 996 },
+
     ]
 }
 
+fn csv_header() -> String {
+    [
+        "step", "event",
+        "pool_idle", "pool_deployed", "pool_shortfall", "pool_loss", "pool_recovered",
+        "sr_idle", "sr_deployed", "sr_shortfall", "sr_target", "sr_accrued", "sr_paid",
+        "jr_idle", "jr_deployed", "jr_shortfall", "jr_target", "jr_accrued", "jr_paid",
+        "eq_idle", "eq_deployed", "eq_shortfall", "eq_target", "eq_accrued", "eq_paid",
+        "loan_1_outstanding", "loan_1_interest_accrued", "loan_1_interest_paid", "loan_1_state",
+        "loan_2_outstanding", "loan_2_interest_accrued", "loan_2_interest_paid", "loan_2_state",
+    ]
+    .join(",")
+}
+
+fn event_label(event: &Event) -> String {
+    match event {
+        Event::Allocate { id, principal, .. } => format!("Allocate(id={} amt={})", id, principal),
+        Event::Repay { id, amount } => format!("Repay(id={} amt={})", id, amount),
+        Event::Default { id } => format!("Default(id={})", id),
+        Event::WriteOff { id } => format!("WriteOff(id={})", id),
+        Event::Recover { id, amount } => format!("Recover(id={} amt={})", id, amount),
+        Event::Tick(s) => format!("Tick({}d)", s / (24 * 3600)),
+    }
+}
+
+fn loan_fields(state: &State, id: u32) -> String {
+    if let Some(loan) = state.loans.iter().find(|l| l.id == id) {
+        format!(
+            "{},{},{},{:?}",
+            loan.principal_outstanding, loan.interest_accrued,
+            loan.interest_paid, loan.state
+        )
+    } else {
+        ",,, ".to_string()
+    }
+}
+
+fn csv_row(step: usize, event: &Event, state: &State) -> String {
+    let p = &state.pool;
+    let sr = &state.tranches[SENIOR];
+    let jr = &state.tranches[JUNIOR];
+    let eq = &state.tranches[EQUITY];
+
+    format!(
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        step,
+        event_label(event),
+        p.idle, p.deployed, p.shortfall, p.total_loss, p.total_recovered,
+        sr.idle, sr.deployed, sr.shortfall, sr.target_interest, sr.accrued_interest, sr.paid_interest,
+        jr.idle, jr.deployed, jr.shortfall, jr.target_interest, jr.accrued_interest, jr.paid_interest,
+        eq.idle, eq.deployed, eq.shortfall, eq.target_interest, eq.accrued_interest, eq.paid_interest,
+        loan_fields(state, 1),
+        loan_fields(state, 2),
+    )
+}
+
 fn main() {
+    use std::fs::File;
+    use std::io::Write;
+
     let mut state = initial_state();
-    println!("Initial: {:#?}\n", state);
+    let mut rows = Vec::new();
 
-    for event in scenario() {
-        println!("── {:?} ──", event);
-        apply_event(&mut state, event);
+    rows.push(csv_header());
 
-        // Print loan summary
-        for loan in &state.loans {
-            println!(
-                "  Loan {}: outstanding={} accrued={} paid={} state={:?}",
-                loan.id, loan.principal_outstanding, loan.interest_accrued,
-                loan.interest_paid, loan.state
-            );
-        }
-
-        // Print tranche summary
-        for t in &state.tranches {
-            println!(
-                "  {:<8} idle={:<8} deployed={:<8} shortfall={:<8} target={:<6} accrued={:<6} paid={:<6}",
-                t.name, t.idle, t.deployed, t.shortfall,
-                t.target_interest, t.accrued_interest, t.paid_interest
-            );
-        }
-        println!(
-            "  Pool     idle={:<8} deployed={:<8} shortfall={:<8} loss={:<6} recovered={}",
-            state.pool.idle, state.pool.deployed, state.pool.shortfall,
-            state.pool.total_loss, state.pool.total_recovered
-        );
-        println!();
+    for (i, event) in scenario().into_iter().enumerate() {
+        apply_event(&mut state, event.clone());
+        rows.push(csv_row(i + 1, &event, &state));
     }
 
-    // ── Invariant checks ──
+    // Invariant checks as final row
     let tranche_idle: i64 = state.tranches.iter().map(|t| t.idle).sum();
     let tranche_deployed: i64 = state.tranches.iter().map(|t| t.deployed).sum();
     let tranche_shortfall: i64 = state.tranches.iter().map(|t| t.shortfall).sum();
 
-    println!("── Invariant checks ──");
+    let idle_ok = state.pool.idle == tranche_idle;
+    let deployed_ok = state.pool.deployed == tranche_deployed;
+    let shortfall_ok = state.pool.shortfall == tranche_shortfall;
+
+    rows.push(format!(
+        ",INVARIANTS,idle={},deployed={},shortfall={},,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+        if idle_ok { "OK" } else { "MISMATCH" },
+        if deployed_ok { "OK" } else { "MISMATCH" },
+        if shortfall_ok { "OK" } else { "MISMATCH" },
+    ));
+
+    let csv = rows.join("\n");
+
+    // Write to file
+    let path = "output.csv";
+    let mut file = File::create(path).expect("could not create output.csv");
+    file.write_all(csv.as_bytes()).expect("could not write output.csv");
+
+    println!("Wrote {} rows to {}", rows.len() - 1, path);
     println!(
-        "Idle:      pool={:<8} tranches={:<8} {}",
-        state.pool.idle, tranche_idle,
-        if state.pool.idle == tranche_idle { "OK" } else { "MISMATCH" }
-    );
-    println!(
-        "Deployed:  pool={:<8} tranches={:<8} {}",
-        state.pool.deployed, tranche_deployed,
-        if state.pool.deployed == tranche_deployed { "OK" } else { "MISMATCH" }
-    );
-    println!(
-        "Shortfall: pool={:<8} tranches={:<8} {}",
-        state.pool.shortfall, tranche_shortfall,
-        if state.pool.shortfall == tranche_shortfall { "OK" } else { "MISMATCH" }
+        "Invariants: idle={} deployed={} shortfall={}",
+        if idle_ok { "OK" } else { "MISMATCH" },
+        if deployed_ok { "OK" } else { "MISMATCH" },
+        if shortfall_ok { "OK" } else { "MISMATCH" },
     );
 }

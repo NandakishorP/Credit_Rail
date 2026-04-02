@@ -1407,7 +1407,6 @@ contract TranchePool is
         return tranches[EQUITY].accruedInterest;
     }
 
-
     function seniorTargetInterest() external view returns (uint256) {
         return tranches[SENIOR].targetInterest;
     }
@@ -1423,7 +1422,6 @@ contract TranchePool is
     function s_target_junior_apr_bps() external view returns (uint256) {
         return tranches[JUNIOR].aprBps;
     }
-
 
     // =========================================================================
     //                          STORAGE GAP

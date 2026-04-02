@@ -8,7 +8,6 @@ import {TranchePool} from "../../src/TranchePool.sol";
 import {ITranchePool} from "../../src/interfaces/ITranchePool.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
-import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 import {Field} from "@poseidon2-evm/Field.sol";
@@ -126,31 +125,20 @@ contract TestLoanEngineComplete is Test {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
 
-        // Setup credit policy
+        // Setup credit policy — scope hash set directly (policy params are off-chain)
+        bytes32 scopeHash = keccak256("scopeHash_v1_tier1");
         creditPolicy.createPolicy(1);
-        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
-        creditPolicy.updateRatios(1, _createFinancialRatios());
-        creditPolicy.updateConcentration(1, _createConcentrationLimits());
-        creditPolicy.updateAttestation(1, _createAttestationRequirements());
-        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
-        creditPolicy.setMaxTiers(2);
-
-        creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
-        creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyScopeHash(1, 1, scopeHash);
         creditPolicy.setPolicyDocument(
             1,
             _hashString("document"),
             "ipfs://policyDocHash"
         );
-
         creditPolicy.freezePolicy(1);
-
-        // Read the auto-computed scope hash after freezing
-        bytes32 scopeHash = creditPolicy.policyScopeHash(1, 1);
 
         // Deploy LoanEngine via proxy
         LoanEngine leImpl = new LoanEngine();
@@ -302,11 +290,10 @@ contract TestLoanEngineComplete is Test {
     }
 
     function test_CreateLoan_RevertIf_PolicyNotFrozen() public {
-        // Create unfrozen policy
+        // Create unfrozen policy (not frozen yet)
         vm.startPrank(deployer);
         creditPolicy.createPolicy(2);
-        creditPolicy.updateEligibility(2, _createEligibilityCriteria());
-        creditPolicy.setLoanTier(2, 1, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyScopeHash(2, 1, keccak256("scopeHash_v2_tier1"));
 
         testPublicInputs[2] = keccak256("nullifier2");
         testPublicInputs[0] = creditPolicy.policyScopeHash(2, 1);
@@ -1428,15 +1415,8 @@ contract TestLoanEngineComplete is Test {
 
     function _createAndConfigurePolicy(uint256 version) internal {
         creditPolicy.createPolicy(version);
-        creditPolicy.updateEligibility(version, _createEligibilityCriteria());
-        creditPolicy.updateRatios(version, _createFinancialRatios());
-        creditPolicy.updateConcentration(version, _createConcentrationLimits());
-        creditPolicy.updateAttestation(
-            version,
-            _createAttestationRequirements()
-        );
-        creditPolicy.updateCovenants(version, _createMaintenanceCovenants());
-        creditPolicy.setLoanTier(version, 1, _createMockTier("Tier 1"));
+        creditPolicy.setPolicyScopeHash(version, 1, keccak256(abi.encodePacked("scopeHash_v", version, "_tier1")));
+        creditPolicy.setPolicyDocument(version, keccak256("doc"), "ipfs://doc");
         creditPolicy.freezePolicy(version);
     }
 
@@ -1556,91 +1536,4 @@ contract TestLoanEngineComplete is Test {
         loanEngine.changeDefaultAdmin(address(0));
     }
 
-    function _createEligibilityCriteria()
-        internal
-        pure
-        returns (ICreditPolicy.EligibilityCriteria memory)
-    {
-        return
-            ICreditPolicy.EligibilityCriteria({
-                minAnnualRevenue: 1_00_00_000,
-                minEBITDA: 10_00_000,
-                minTangibleNetWorth: 5_00_00_000,
-                minBusinessAgeDays: 180,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            });
-    }
-
-    function _createFinancialRatios()
-        internal
-        pure
-        returns (ICreditPolicy.FinancialRatios memory)
-    {
-        return
-            ICreditPolicy.FinancialRatios({
-                maxTotalDebtToEBITDA: 4e18,
-                minInterestCoverageRatio: 2e18,
-                minCurrentRatio: 1e18,
-                minEBITDAMarginBps: 1500
-            });
-    }
-
-    function _createConcentrationLimits()
-        internal
-        pure
-        returns (ICreditPolicy.ConcentrationLimits memory)
-    {
-        return
-            ICreditPolicy.ConcentrationLimits({
-                maxSingleBorrowerBps: 1000,
-                maxIndustryConcentrationBps: 3000
-            });
-    }
-
-    function _createAttestationRequirements()
-        internal
-        pure
-        returns (ICreditPolicy.AttestationRequirements memory)
-    {
-        return
-            ICreditPolicy.AttestationRequirements({
-                maxAttestationAgeDays: 90,
-                reAttestationFrequencyDays: 180,
-                requiresCPAAttestation: true
-            });
-    }
-
-    function _createMaintenanceCovenants()
-        internal
-        pure
-        returns (ICreditPolicy.MaintenanceCovenants memory)
-    {
-        return
-            ICreditPolicy.MaintenanceCovenants({
-                maxLeverageRatio: 4e18,
-                minCoverageRatio: 2e18,
-                minLiquidityAmount: 1_00_00_000,
-                allowsDividends: false,
-                reportingFrequencyDays: 90
-            });
-    }
-
-    function _createMockTier(
-        string memory name
-    ) internal pure returns (ICreditPolicy.LoanTier memory) {
-        return
-            ICreditPolicy.LoanTier({
-                name: name,
-                minRevenue: 1_00_00_000,
-                maxRevenue: 5_00_00_000,
-                minEBITDA: 10_00_000,
-                maxDebtToEBITDA: 3e18,
-                maxLoanToEBITDA: 2e18,
-                interestRateBps: 800,
-                originationFeeBps: 100,
-                termDays: 365,
-                active: true
-            });
-    }
 }

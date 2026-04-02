@@ -6,7 +6,6 @@ import {SymTest} from "halmos-cheatcodes/SymTest.sol";
 import {CreditPolicy} from "../../src/CreditPolicy.sol";
 import {ICreditPolicy} from "../../src/interfaces/ICreditPolicy.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 
 /// @title HalmosCreditPolicy
 /// @notice Symbolic tests for CreditPolicy using Halmos.
@@ -14,20 +13,17 @@ import {MockPoseidon2} from "../mocks/MockPoseidon2.sol";
 contract HalmosCreditPolicy is Test, SymTest {
     CreditPolicy creditPolicy;
     address admin;
-    MockPoseidon2 mockPoseidon;
 
     function setUp() public {
         admin = address(0xA);
         vm.startPrank(admin);
 
-        mockPoseidon = new MockPoseidon2();
         CreditPolicy impl = new CreditPolicy();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(CreditPolicy.initialize, (admin, address(mockPoseidon)))
+            abi.encodeCall(CreditPolicy.initialize, (admin))
         );
         creditPolicy = CreditPolicy(address(proxy));
-        creditPolicy.setMaxTiers(10);
 
         vm.stopPrank();
     }

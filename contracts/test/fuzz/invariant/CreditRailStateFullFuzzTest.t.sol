@@ -6,7 +6,6 @@ import {ILoanEngine} from "../../../src/interfaces/ILoanEngine.sol";
 import {TranchePool} from "../../../src/TranchePool.sol";
 import {ITranchePool} from "../../../src/interfaces/ITranchePool.sol";
 import {CreditPolicy} from "../../../src/CreditPolicy.sol";
-import {ICreditPolicy} from "../../../src/interfaces/ICreditPolicy.sol";
 import {MockLoanProofVerifier} from "../../mocks/MockLoanProofVerifier.sol";
 import {MockPoseidon2} from "../../mocks/MockPoseidon2.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
@@ -57,24 +56,13 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer, address(mockPoseidon)))
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
         );
         creditPolicy = CreditPolicy(address(cpProxy));
 
-        creditPolicy.setMaxTiers(3);
         creditPolicy.createPolicy(1);
-
-        creditPolicy.updateEligibility(1, _createEligibilityCriteria());
-        creditPolicy.updateRatios(1, _createFinancialRatios());
-        creditPolicy.updateConcentration(1, _createConcentrationLimits());
-        creditPolicy.updateAttestation(1, _createAttestationRequirements());
-        creditPolicy.updateCovenants(1, _createMaintenanceCovenants());
-        creditPolicy.setLoanTier(1, 1, _createMockTier("Tier 1"));
-        creditPolicy.setPolicyDocument(
-            1,
-            _hashString("document"),
-            "ipfs://policyDocHash"
-        );
+        creditPolicy.setPolicyScopeHash(1, 1, keccak256("scopeHash_v1_tier1"));
+        creditPolicy.setPolicyDocument(1, keccak256("document"), "ipfs://policyDocHash");
         creditPolicy.freezePolicy(1);
 
         // Deploy LoanEngine via proxy
@@ -127,98 +115,6 @@ contract CreditRailStateFullFuzzTest is StdInvariant, Test {
             FuzzSelector({addr: address(handler), selectors: selectors})
         );
         targetContract(address(handler));
-    }
-
-    function _createEligibilityCriteria()
-        internal
-        pure
-        returns (ICreditPolicy.EligibilityCriteria memory)
-    {
-        return
-            ICreditPolicy.EligibilityCriteria({
-                minAnnualRevenue: 1_00_00_000,
-                minEBITDA: 10_00_000,
-                minTangibleNetWorth: 5_00_00_000,
-                minBusinessAgeDays: 180,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            });
-    }
-
-    function _createFinancialRatios()
-        internal
-        pure
-        returns (ICreditPolicy.FinancialRatios memory)
-    {
-        return
-            ICreditPolicy.FinancialRatios({
-                maxTotalDebtToEBITDA: 4e18,
-                minInterestCoverageRatio: 2e18,
-                minCurrentRatio: 1e18,
-                minEBITDAMarginBps: 1500
-            });
-    }
-
-    function _createConcentrationLimits()
-        internal
-        pure
-        returns (ICreditPolicy.ConcentrationLimits memory)
-    {
-        return
-            ICreditPolicy.ConcentrationLimits({
-                maxSingleBorrowerBps: 1000,
-                maxIndustryConcentrationBps: 3000
-            });
-    }
-
-    function _createAttestationRequirements()
-        internal
-        pure
-        returns (ICreditPolicy.AttestationRequirements memory)
-    {
-        return
-            ICreditPolicy.AttestationRequirements({
-                maxAttestationAgeDays: 90,
-                reAttestationFrequencyDays: 180,
-                requiresCPAAttestation: true
-            });
-    }
-
-    function _createMaintenanceCovenants()
-        internal
-        pure
-        returns (ICreditPolicy.MaintenanceCovenants memory)
-    {
-        return
-            ICreditPolicy.MaintenanceCovenants({
-                maxLeverageRatio: 4e18,
-                minCoverageRatio: 2e18,
-                minLiquidityAmount: 1_00_00_000,
-                allowsDividends: false,
-                reportingFrequencyDays: 90
-            });
-    }
-
-    function _createMockTier(
-        string memory name
-    ) internal pure returns (ICreditPolicy.LoanTier memory) {
-        return
-            ICreditPolicy.LoanTier({
-                name: name,
-                minRevenue: 1_00_00_000,
-                maxRevenue: 5_00_00_000,
-                minEBITDA: 10_00_000,
-                maxDebtToEBITDA: 3e18,
-                maxLoanToEBITDA: 2e18,
-                interestRateBps: 800,
-                originationFeeBps: 100,
-                termDays: 365,
-                active: true
-            });
-    }
-
-    function _hashString(string memory str) internal pure returns (bytes32) {
-        return keccak256(bytes(str));
     }
 
     function invariant__totalIdleAndDeployedValueMatchesAccounting()

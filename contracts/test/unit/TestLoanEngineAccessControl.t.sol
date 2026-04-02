@@ -41,7 +41,7 @@ contract TestLoanEngineAccessControl is Test {
         CreditPolicy cpImpl = new CreditPolicy();
         ERC1967Proxy cpProxy = new ERC1967Proxy(
             address(cpImpl),
-            abi.encodeCall(CreditPolicy.initialize, (deployer, address(poseidon)))
+            abi.encodeCall(CreditPolicy.initialize, (deployer))
         );
 
         LoanEngine leImpl = new LoanEngine();

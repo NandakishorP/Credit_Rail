@@ -5,7 +5,6 @@ import {Script, console2} from "forge-std/Script.sol";
 import {LoanEngine} from "../src/LoanEngine.sol";
 import {ILoanEngine} from "../src/interfaces/ILoanEngine.sol";
 import {CreditPolicy} from "../src/CreditPolicy.sol";
-import {ICreditPolicy} from "../src/interfaces/ICreditPolicy.sol";
 import {TranchePool} from "../src/TranchePool.sol";
 import {ITranchePool} from "../src/interfaces/ITranchePool.sol";
 import {IVerifier} from "../src/interfaces/IVerifier.sol";
@@ -58,78 +57,8 @@ contract CreateLoanWithProof is Script {
         uint256 policyVersion = 1;
         creditPolicy.createPolicy(policyVersion);
 
-        // Set eligibility criteria
-        creditPolicy.updateEligibility(
-            policyVersion,
-            ICreditPolicy.EligibilityCriteria({
-                minAnnualRevenue: 1_000_000,
-                minEBITDA: 100_000,
-                minTangibleNetWorth: 250_000,
-                minBusinessAgeDays: 730,
-                maxDefaultsLast36Months: 0,
-                bankruptcyExcluded: true
-            })
-        );
-
-        // Set financial ratios
-        creditPolicy.updateRatios(
-            policyVersion,
-            ICreditPolicy.FinancialRatios({
-                maxTotalDebtToEBITDA: 40_000,
-                minInterestCoverageRatio: 15_000,
-                minCurrentRatio: 12_000,
-                minEBITDAMarginBps: 1000
-            })
-        );
-
-        // Set concentration limits
-        creditPolicy.updateConcentration(
-            policyVersion,
-            ICreditPolicy.ConcentrationLimits({
-                maxSingleBorrowerBps: 1000,
-                maxIndustryConcentrationBps: 2500
-            })
-        );
-
-        // Set attestation requirements
-        creditPolicy.updateAttestation(
-            policyVersion,
-            ICreditPolicy.AttestationRequirements({
-                maxAttestationAgeDays: 90,
-                reAttestationFrequencyDays: 365,
-                requiresCPAAttestation: false
-            })
-        );
-
-        // Set covenants
-        creditPolicy.updateCovenants(
-            policyVersion,
-            ICreditPolicy.MaintenanceCovenants({
-                maxLeverageRatio: 50_000,
-                minCoverageRatio: 10_000,
-                minLiquidityAmount: 100_000,
-                allowsDividends: true,
-                reportingFrequencyDays: 30
-            })
-        );
-
-        // Set a loan tier
-        creditPolicy.setLoanTier(
-            policyVersion,
-            1,
-            ICreditPolicy.LoanTier({
-                name: "Standard",
-                minRevenue: 1_000_000,
-                maxRevenue: 10_000_000,
-                minEBITDA: 100_000,
-                maxDebtToEBITDA: 40_000,
-                maxLoanToEBITDA: 1e18,
-                interestRateBps: 1200,
-                originationFeeBps: 100,
-                termDays: 365,
-                active: true
-            })
-        );
+        // Set scope hash for tier 1
+        creditPolicy.setPolicyScopeHash(policyVersion, 1, keccak256("scopeHash_v1_tier1"));
 
         // Freeze the policy
         creditPolicy.freezePolicy(policyVersion);
